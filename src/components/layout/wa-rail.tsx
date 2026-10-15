@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -134,6 +135,15 @@ function RailLink({
 export function WaRail() {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+
+  // Phones: the rail is a sideways-scrolling bottom bar, so keep the
+  // active section in view (e.g. Settings sits past the fold).
+  useEffect(() => {
+    navRef.current
+      ?.querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname]);
   const { profile, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
@@ -165,6 +175,7 @@ export function WaRail() {
   return (
     <TooltipProvider delay={300}>
       <nav
+        ref={navRef}
         aria-label={t("primaryNav")}
         className={cn(
           "z-30 flex shrink-0 bg-rail",
