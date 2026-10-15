@@ -1,16 +1,40 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { Notification } from "@/types";
-import { Bell, CheckCheck, Loader2, UserPlus } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import {
+  Bell,
+  CheckCheck,
+  EllipsisVertical,
+  Loader2,
+  MessageCircle,
+  Settings,
+  UserPlus,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  WaChip,
+  WaChipRow,
+  WaEmptyState,
+  WaListLayout,
+  WaListPanel,
+  WaListRow,
+  WaSearchPill,
+} from "@/components/layout/wa-panel";
+import { formatListTime } from "@/components/inbox/wa-format";
+import { FullBleedFrame } from "@/components/dashboard/full-bleed-frame";
 
 // Icon per notification type. Only one type exists today
 // (conversation_assigned) but this keeps future types a one-line add.
@@ -27,6 +51,9 @@ export default function NotificationsPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const locale = useLocale();
+  const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     if (!accountId) return;
@@ -144,126 +171,181 @@ export default function NotificationsPage() {
     }
   }, [unreadIds.length, load, t]);
 
-  if (error) {
-    return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2">
-        <p className="text-sm text-destructive">{error}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>
-          {t("retry")}
-        </Button>
-      </div>
-    );
-  }
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (notifications ?? []).filter((n) => {
+      if (filter === "unread" && n.read_at) return false;
+      if (!q) return true;
+      return (
+        n.title.toLowerCase().includes(q) ||
+        (n.body ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [notifications, filter, query]);
 
-  if (notifications === null) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("description")}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
+  // Header actions: kebab menu (mark all read) — WA list-panel idiom.
+  const actions = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label={t("moreActions")}
+            className="inline-flex size-10 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-hover-surface hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        }
+      >
+        <EllipsisVertical className="size-5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        <DropdownMenuItem
           disabled={unreadIds.length === 0 || markingAll}
           onClick={markAllRead}
         >
           {markingAll ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="animate-spin" />
           ) : (
-            <CheckCheck className="h-4 w-4" />
+            <CheckCheck />
           )}
           {t("markAllRead")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  let body: React.ReactNode;
+  if (error) {
+    body = (
+      <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
+        <p className="text-sm text-destructive">{error}</p>
+        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+          {t("retry")}
         </Button>
       </div>
-
-      {notifications.length === 0 ? (
-        <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/40">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <Bell className="h-6 w-6 text-primary" />
-          </div>
-          <p className="mt-3 text-sm font-medium text-foreground">
-            {t("emptyTitle")}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t("emptyDesc")}
-          </p>
-        </div>
-      ) : (
-        <ul className="space-y-2">
-          {notifications.map((n) => {
-            const Icon = TYPE_ICON[n.type] ?? Bell;
-            const isUnread = !n.read_at;
-            return (
-              <li key={n.id}>
-                <button
-                  type="button"
-                  onClick={() => handleClick(n)}
-                  className={cn(
-                    "flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors",
-                    isUnread
-                      ? "border-primary/30 bg-primary/5 hover:border-primary/50"
-                      : "border-border bg-card hover:border-border/70",
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg",
-                      isUnread ? "bg-primary/15" : "bg-muted",
-                    )}
+    );
+  } else if (notifications === null) {
+    body = (
+      <div className="flex justify-center py-10">
+        <Loader2 className="size-6 animate-spin text-primary-text" />
+      </div>
+    );
+  } else if (notifications.length === 0) {
+    body = (
+      <div className="flex flex-col items-center px-6 py-12 text-center">
+        <span className="flex size-16 items-center justify-center rounded-full bg-hover-surface text-muted-foreground">
+          <Bell className="size-7" strokeWidth={1.75} />
+        </span>
+        <p className="mt-4 text-[15px] text-foreground">{t("emptyTitle")}</p>
+        <p className="mt-1 text-[13px] text-muted-foreground">{t("emptyDesc")}</p>
+      </div>
+    );
+  } else if (visible.length === 0) {
+    body = (
+      <div className="flex justify-center py-8">
+        <span className="rounded-full bg-surface px-4 py-2 text-sm text-muted-foreground">
+          {t("noMatches")}
+        </span>
+      </div>
+    );
+  } else {
+    body = (
+      <ul>
+        {visible.map((n) => {
+          const Icon = TYPE_ICON[n.type] ?? Bell;
+          const isUnread = !n.read_at;
+          return (
+            <li key={n.id}>
+              <WaListRow
+                onClick={() => handleClick(n)}
+                avatar={
+                  <span
                     aria-hidden
-                  >
-                    <Icon
-                      className={cn(
-                        "h-5 w-5",
-                        isUnread ? "text-primary" : "text-muted-foreground",
-                      )}
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "truncate text-sm font-semibold",
-                          isUnread ? "text-foreground" : "text-muted-foreground",
-                        )}
-                      >
-                        {n.title}
-                      </span>
-                      {isUnread && (
-                        <span
-                          aria-label={t("unread")}
-                          className="h-2 w-2 flex-shrink-0 rounded-full bg-primary"
-                        />
-                      )}
-                    </div>
-                    {n.body && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {n.body}
-                      </p>
+                    className={cn(
+                      "flex size-[49px] items-center justify-center rounded-full",
+                      isUnread
+                        ? "bg-chip-active text-chip-active-foreground"
+                        : "bg-hover-surface text-muted-foreground",
                     )}
-                    <p className="mt-1 text-[11px] text-muted-foreground/70">
-                      {formatDistanceToNow(new Date(n.created_at), {
-                        addSuffix: true,
-                      })}
-                    </p>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+                  >
+                    <Icon className="size-[22px]" strokeWidth={1.75} />
+                  </span>
+                }
+                title={
+                  <span className={cn(isUnread ? "font-medium" : "text-muted-foreground")}>
+                    {n.title}
+                  </span>
+                }
+                meta={formatListTime(n.created_at, locale, t("yesterday"))}
+                metaHighlight={isUnread}
+                subtitle={n.body ? <span className="truncate">{n.body}</span> : null}
+                trailing={
+                  isUnread ? (
+                    <span
+                      aria-label={t("unread")}
+                      className="size-2.5 rounded-full bg-primary"
+                    />
+                  ) : null
+                }
+              />
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  const list = (
+    <WaListPanel
+      title={t("title")}
+      actions={actions}
+      search={
+        <WaSearchPill
+          value={query}
+          onChange={setQuery}
+          placeholder={t("searchPlaceholder")}
+          clearLabel={t("clearSearch")}
+          aria-label={t("searchPlaceholder")}
+        />
+      }
+      filters={
+        <WaChipRow>
+          <WaChip active={filter === "all"} onClick={() => setFilter("all")}>
+            {t("filterAll")}
+          </WaChip>
+          <WaChip
+            active={filter === "unread"}
+            count={unreadIds.length}
+            onClick={() => setFilter("unread")}
+          >
+            {t("unread")}
+          </WaChip>
+        </WaChipRow>
+      }
+    >
+      {body}
+    </WaListPanel>
+  );
+
+  return (
+    <FullBleedFrame>
+      <WaListLayout list={list}>
+        <div className="h-full bg-wallpaper">
+          <WaEmptyState
+            icon={Bell}
+            title={t("title")}
+            description={t("description")}
+            cta={
+              unreadIds.length > 0
+                ? { label: t("markAllRead"), onClick: markAllRead }
+                : undefined
+            }
+            actions={[
+              { icon: MessageCircle, label: t("openInbox"), href: "/inbox" },
+              { icon: Settings, label: t("alertSettings"), href: "/settings?tab=profile" },
+            ]}
+          />
+        </div>
+      </WaListLayout>
+    </FullBleedFrame>
   );
 }

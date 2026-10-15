@@ -1,5 +1,6 @@
 'use client';
 
+import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -63,9 +64,9 @@ type HeaderFormat = 'none' | 'text' | 'image' | 'video' | 'document';
 const HEADER_FORMATS: HeaderFormat[] = ['none', 'text', 'image', 'video', 'document'];
 
 const categoryColors: Record<string, string> = {
-  Marketing: 'bg-purple-600/20 text-purple-400 border-purple-600/30',
-  Utility: 'bg-blue-600/20 text-blue-400 border-blue-600/30',
-  Authentication: 'bg-amber-600/20 text-amber-400 border-amber-600/30',
+  Marketing: 'bg-purple-500/15 text-purple-500',
+  Utility: 'bg-blue-500/15 text-blue-500',
+  Authentication: 'bg-amber-500/15 text-amber-600',
 };
 
 interface TemplateFormData {
@@ -459,7 +460,7 @@ export function TemplateManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-primary" />
+        <Loader2 className="size-6 animate-spin text-primary-text" />
       </div>
     );
   }
@@ -565,11 +566,12 @@ export function TemplateManager() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-medium text-foreground">{template.name}</h3>
                       <Badge
-                        className={`text-xs border ${categoryColors[template.category] || ''}`}
+                        className={`text-xs border-transparent ${categoryColors[template.category] || ''}`}
                       >
                         {categoryLabel(template.category)}
                       </Badge>
-                      <Badge className={`text-xs border ${status.classes}`}>
+                      {/* WA pills are borderless: keep the shared status tint, drop its border. */}
+                      <Badge className={cn('text-xs', status.classes, 'border-transparent')}>
                         {status.label}
                       </Badge>
                       {template.language && (
@@ -601,7 +603,7 @@ export function TemplateManager() {
                       </p>
                     )}
                     {(template.rejection_reason || template.submission_error) && (
-                      <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-950/20 border border-red-900/40 rounded px-2 py-1.5">
+                      <div className="flex items-start gap-1.5 text-xs text-destructive bg-destructive/10 rounded-lg px-2 py-1.5">
                         <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
                         <span>
                           {template.rejection_reason || template.submission_error}
@@ -617,7 +619,7 @@ export function TemplateManager() {
                         onClick={() => openEdit(template)}
                         title={t('editTitle')}
                         aria-label={t('editLabel')}
-                        className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
+                        className="text-muted-foreground hover:text-primary-text hover:bg-primary/10 h-8 px-2"
                       >
                         <Pencil className="size-3.5" />
                         {t('edit')}
@@ -630,7 +632,7 @@ export function TemplateManager() {
                         onClick={() => openEdit(template)}
                         title={t('resubmitTitle')}
                         aria-label={t('resubmitLabel')}
-                        className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
+                        className="text-muted-foreground hover:text-primary-text hover:bg-primary/10 h-8 px-2"
                       >
                         <RotateCcw className="size-3.5" />
                         {t('resubmit')}
@@ -690,7 +692,7 @@ export function TemplateManager() {
           </DialogHeader>
 
           {form.category === 'Authentication' && (
-            <div className="flex items-start gap-2 rounded border border-amber-700/40 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+            <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-600 [html[data-mode=dark]_&]:text-amber-300">
               <AlertCircle className="size-4 mt-0.5 shrink-0" />
               <p>{t.rich('authWarning', { bold: (chunks) => <strong>{chunks}</strong> })}</p>
             </div>
@@ -885,7 +887,7 @@ export function TemplateManager() {
                     <img
                       src={form.header_media_url}
                       alt={t('headerSampleAlt')}
-                      className="max-h-28 rounded-md border border-border object-contain"
+                      className="max-h-28 rounded-lg object-contain"
                     />
                   )}
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -981,7 +983,7 @@ export function TemplateManager() {
                   {form.buttons.map((btn, i) => (
                     <div
                       key={i}
-                      className="space-y-2 rounded border border-border bg-muted/50 p-2"
+                      className="space-y-2 rounded-xl bg-bubble-quote p-2.5"
                     >
                       <div className="flex items-center gap-2">
                         <Select
@@ -1103,7 +1105,7 @@ export function TemplateManager() {
             <Button
               onClick={handleSubmit}
               disabled={submitting || form.category === 'Authentication'}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              className="bg-primary hover:bg-primary-hover text-primary-foreground"
             >
               {submitting ? (
                 <>

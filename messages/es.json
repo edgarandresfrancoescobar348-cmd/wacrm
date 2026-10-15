@@ -2100,6 +2100,23 @@
       "textPlaceholder": "El texto del mensaje que se insertará",
       "cancel": "Cancelar",
       "save": "Guardar"
+    },
+    "searchPlaceholder": "Buscar configuración",
+    "clearSearch": "Borrar búsqueda",
+    "noMatches": "No se encontró ninguna configuración",
+    "back": "Volver a configuración",
+    "sectionHints": {
+      "overview": "Tu espacio de trabajo de un vistazo",
+      "profile": "Nombre, foto y alertas",
+      "security": "Contraseña y sesiones activas",
+      "appearance": "Modo y color de acento",
+      "whatsapp": "Conexión con la API de WhatsApp Cloud",
+      "templates": "Plantillas de mensaje aprobadas por Meta",
+      "quick-replies": "Atajos para respuestas frecuentes",
+      "fields": "Etiquetas y campos personalizados",
+      "deals": "Moneda predeterminada de los negocios",
+      "members": "Invitaciones, roles y acceso",
+      "api": "Claves para la API pública"
     }
   },
   "SignupPage": {
@@ -2198,7 +2215,15 @@
     "retry": "Reintentar",
     "emptyTitle": "Aún no hay notificaciones",
     "emptyDesc": "Verás una alerta aquí cuando alguien te asigne una conversación.",
-    "unread": "Sin leer"
+    "unread": "Sin leer",
+    "filterAll": "Todas",
+    "searchPlaceholder": "Buscar notificaciones",
+    "clearSearch": "Borrar búsqueda",
+    "moreActions": "Más opciones",
+    "noMatches": "No se encontraron notificaciones",
+    "yesterday": "Ayer",
+    "openInbox": "Abrir bandeja de entrada",
+    "alertSettings": "Configurar alertas"
   },
   "Agents": {
     "title": "Agentes de IA",
@@ -2218,7 +2243,8 @@
       "placeholder": "Escribe un mensaje de cliente…",
       "notConfigured": "Aún no hay un agente configurado; completa primero la Configuración.",
       "noReply": "No se pudo obtener una respuesta.",
-      "unreachable": "No se pudo conectar con el agente."
+      "unreachable": "No se pudo conectar con el agente.",
+      "send": "Enviar"
     },
     "usage": {
       "title": "Uso de tokens",

@@ -2100,6 +2100,23 @@
       "textPlaceholder": "삽입할 메시지 텍스트",
       "cancel": "취소",
       "save": "저장"
+    },
+    "searchPlaceholder": "설정 검색",
+    "clearSearch": "검색 지우기",
+    "noMatches": "설정을 찾을 수 없습니다",
+    "back": "설정으로 돌아가기",
+    "sectionHints": {
+      "overview": "워크스페이스 한눈에 보기",
+      "profile": "이름, 사진 및 알림",
+      "security": "비밀번호 및 활성 세션",
+      "appearance": "모드 및 강조 색상",
+      "whatsapp": "WhatsApp Cloud API 연결",
+      "templates": "Meta 승인 메시지 템플릿",
+      "quick-replies": "자주 쓰는 답변 바로가기",
+      "fields": "태그 및 사용자 정의 필드",
+      "deals": "기본 거래 통화",
+      "members": "초대, 역할 및 접근 권한",
+      "api": "공개 API 키"
     }
   },
   "SignupPage": {
@@ -2198,7 +2215,15 @@
     "retry": "다시 시도",
     "emptyTitle": "아직 알림이 없습니다",
     "emptyDesc": "누군가 대화를 배정하면 여기에 알림이 표시됩니다.",
-    "unread": "읽지 않음"
+    "unread": "읽지 않음",
+    "filterAll": "전체",
+    "searchPlaceholder": "알림 검색",
+    "clearSearch": "검색 지우기",
+    "moreActions": "더보기",
+    "noMatches": "알림을 찾을 수 없습니다",
+    "yesterday": "어제",
+    "openInbox": "받은편지함 열기",
+    "alertSettings": "알림 설정"
   },
   "Agents": {
     "title": "AI 에이전트",
@@ -2218,7 +2243,8 @@
       "placeholder": "고객 메시지를 입력하세요…",
       "notConfigured": "아직 에이전트가 설정되지 않았습니다 — 먼저 설정을 완료하세요.",
       "noReply": "답변을 받을 수 없습니다.",
-      "unreachable": "에이전트에 연결할 수 없습니다."
+      "unreachable": "에이전트에 연결할 수 없습니다.",
+      "send": "보내기"
     },
     "usage": {
       "title": "토큰 사용량",

@@ -5,6 +5,7 @@ import type { PipelineDonutData } from '@/lib/dashboard/types'
 import { formatCurrencyShort } from '@/lib/currency'
 import { EmptyState } from './empty-state'
 import { Skeleton } from './skeleton'
+import { DashCard } from './dash-card'
 
 interface PipelineDonutProps {
   data: PipelineDonutData | null
@@ -18,48 +19,39 @@ import { useTranslations } from 'next-intl'
 export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
   const t = useTranslations('Dashboard.pipelineDonut')
   return (
-    <section className="flex h-full flex-col rounded-xl border border-border bg-card">
-      <header className="border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {t('description')}
-        </p>
-      </header>
-
-      <div className="flex flex-1 flex-col p-5">
-        {loading || !data ? (
-          <Skeleton className="h-56 w-full" />
-        ) : data.stages.length === 0 ? (
-          <EmptyState
-            icon={GitBranch}
-            title={t('noOpenDeals')}
-            hint={t('noOpenDealsHint')}
-          />
-        ) : (
-          <>
-            <Donut data={data} currency={currency} />
-            <ul className="mt-5 space-y-2">
-              {data.stages.map((s) => (
-                <li key={s.id} className="flex items-center gap-3 text-xs">
-                  <span
-                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                    style={{ background: s.color }}
-                    aria-hidden
-                  />
-                  <span className="flex-1 truncate text-muted-foreground">{s.name}</span>
-                  <span className="text-muted-foreground tabular-nums">
-                    {t('dealCount', { count: s.dealCount })}
-                  </span>
-                  <span className="w-20 text-right text-muted-foreground tabular-nums">
-                    {formatCurrencyShort(s.totalValue, currency)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
-    </section>
+    <DashCard title={t('title')} subtitle={t('description')}>
+      {loading || !data ? (
+        <Skeleton className="h-56 w-full" />
+      ) : data.stages.length === 0 ? (
+        <EmptyState
+          icon={GitBranch}
+          title={t('noOpenDeals')}
+          hint={t('noOpenDealsHint')}
+        />
+      ) : (
+        <>
+          <Donut data={data} currency={currency} />
+          <ul className="mt-5 space-y-2.5">
+            {data.stages.map((s) => (
+              <li key={s.id} className="flex items-center gap-3 text-[13px]">
+                <span
+                  className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                  style={{ background: s.color }}
+                  aria-hidden
+                />
+                <span className="flex-1 truncate text-foreground">{s.name}</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {t('dealCount', { count: s.dealCount })}
+                </span>
+                <span className="w-20 text-right text-muted-foreground tabular-nums">
+                  {formatCurrencyShort(s.totalValue, currency)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </DashCard>
   )
 }
 
@@ -102,7 +94,7 @@ function Donut({ data, currency }: { data: PipelineDonutData; currency: string }
     <div className="flex items-center justify-center">
       <svg viewBox={`0 0 ${size} ${size}`} className="h-48 w-48" role="img" aria-label={t('ariaLabel')}>
         {/* background ring */}
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--muted)" strokeWidth={ringWidth} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--hover-surface)" strokeWidth={ringWidth} />
         {segments.map((seg) => (
           <path
             key={seg.id}

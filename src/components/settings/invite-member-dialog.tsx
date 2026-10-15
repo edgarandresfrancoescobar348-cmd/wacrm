@@ -185,7 +185,7 @@ export function InviteMemberDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-popover-foreground">
-                <Sparkles className="size-4 text-primary" />
+                <Sparkles className="size-4 text-primary-text" />
                 {t('inviteCreated')}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground">
@@ -209,7 +209,7 @@ export function InviteMemberDialog({
                 <Button
                   type="button"
                   onClick={copyToClipboard}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
+                  className="bg-primary hover:bg-primary-hover text-primary-foreground shrink-0"
                 >
                   <Copy className="size-4" />
                   {t('copy')}
@@ -221,7 +221,7 @@ export function InviteMemberDialog({
                   text (target ratio 7:1). Border bumped to /50, bg to
                   /15, foreground promoted to amber-100 for the strong
                   intro, amber-200 for the body. */}
-              <div className="rounded-md border border-amber-500/50 bg-amber-500/15 px-3 py-2 text-xs text-amber-200">
+              <div className="rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-600 [html[data-mode=dark]_&]:text-amber-300">
                 <strong className="font-semibold text-amber-100">
                   {t('saveLinkNow')}
                 </strong>{' '}
@@ -251,7 +251,7 @@ export function InviteMemberDialog({
             <DialogFooter className="bg-popover border-border">
               <Button
                 onClick={() => onOpenChange(false)}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="bg-primary hover:bg-primary-hover text-primary-foreground"
               >
                 {t('done')}
               </Button>
@@ -335,7 +335,7 @@ export function InviteMemberDialog({
               <Button
                 onClick={handleCreate}
                 disabled={submitting}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="bg-primary hover:bg-primary-hover text-primary-foreground"
               >
                 {submitting ? (
                   <>

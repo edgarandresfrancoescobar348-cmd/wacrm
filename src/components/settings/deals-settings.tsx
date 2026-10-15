@@ -78,7 +78,7 @@ export function DealsSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-foreground">
-            <Coins className="size-4 text-primary" />
+            <Coins className="size-4 text-primary-text" />
             {t("defaultCurrency")}
           </CardTitle>
           <CardDescription className="text-muted-foreground">
@@ -92,7 +92,7 @@ export function DealsSettings() {
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
               disabled={!canEditSettings || profileLoading}
-              className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-10 w-full rounded-lg border-0 bg-hover-surface px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
             >
               {CURRENCIES.map((c) => (
                 <option key={c.code} value={c.code}>
@@ -111,7 +111,7 @@ export function DealsSettings() {
             <Button
               onClick={handleSave}
               disabled={saving || !dirty}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              className="bg-primary text-primary-foreground hover:bg-primary-hover"
             >
               {saving ? (
                 <>

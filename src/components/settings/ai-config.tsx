@@ -260,7 +260,7 @@ export function AiConfig() {
       />
 
       {!canEdit && (
-        <p className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+        <p className="mb-4 rounded-xl bg-bubble-quote px-3 py-2 text-sm text-muted-foreground">
           {t('adminOnlyConfig')}
         </p>
       )}
@@ -269,7 +269,7 @@ export function AiConfig() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-4 w-4 text-primary" /> {t('providerAndKey')}
+              <Sparkles className="h-4 w-4 text-primary-text" /> {t('providerAndKey')}
             </CardTitle>
             <CardDescription>
               {t('encryptionNotice')}
@@ -430,7 +430,7 @@ export function AiConfig() {
               />
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+            <div className="flex items-center justify-between gap-4 rounded-xl bg-hover-surface p-3">
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {t('enableAssistant')}
@@ -446,7 +446,7 @@ export function AiConfig() {
               />
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+            <div className="flex items-center justify-between gap-4 rounded-xl bg-hover-surface p-3">
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {t('autoReply')}

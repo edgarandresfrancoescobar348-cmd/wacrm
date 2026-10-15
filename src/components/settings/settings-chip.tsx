@@ -13,12 +13,15 @@ import { cn } from '@/lib/utils';
  */
 export type ChipVariant = 'owner' | 'admin' | 'ok' | 'warn' | 'muted';
 
+// WA pills: borderless, soft fills. Good = the green chip tone; owner /
+// attention = a soft amber that reads in both modes (no `dark:` — that
+// variant isn't wired to data-mode).
 const VARIANTS: Record<ChipVariant, string> = {
-  owner: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300',
-  admin: 'border-primary-soft-2 bg-primary-soft text-primary',
-  ok: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
-  warn: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300',
-  muted: 'border-border bg-muted text-muted-foreground',
+  owner: 'border-transparent bg-amber-500/15 text-amber-600 [html[data-mode=dark]_&]:text-amber-300',
+  admin: 'border-transparent bg-chip-active text-chip-active-foreground',
+  ok: 'border-transparent bg-chip-active text-chip-active-foreground',
+  warn: 'border-transparent bg-amber-500/15 text-amber-600 [html[data-mode=dark]_&]:text-amber-300',
+  muted: 'border-transparent bg-hover-surface text-muted-foreground',
 };
 
 export function SettingsChip({
@@ -33,7 +36,7 @@ export function SettingsChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap [&_svg]:size-3.5',
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap [&_svg]:size-3.5',
         VARIANTS[variant],
         className,
       )}
@@ -55,8 +58,8 @@ export function StatusDot({
     <span
       aria-hidden
       className={cn(
-        'inline-block size-1.5 shrink-0 rounded-full',
-        tone === 'ok' ? 'bg-emerald-500' : 'bg-muted-foreground',
+        'inline-block size-2 shrink-0 rounded-full',
+        tone === 'ok' ? 'bg-primary' : 'bg-muted-foreground',
         className,
       )}
     />

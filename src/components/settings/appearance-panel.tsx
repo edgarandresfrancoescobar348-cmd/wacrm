@@ -31,16 +31,16 @@ export function AppearancePanel() {
         description={t("description")}
       />
 
-      <div className="space-y-4">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <SunMoon className="size-4 text-muted-foreground" />
+      <div className="space-y-3">
+        <h3 className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
+          <SunMoon className="size-4" />
           {t("mode")}
         </h3>
 
         <div
           role="radiogroup"
           aria-label={t("colorMode")}
-          className="grid max-w-md grid-cols-2 gap-3"
+          className="overflow-hidden rounded-xl bg-surface py-1"
         >
           {MODES.map((m) => (
             <ModeCard
@@ -53,9 +53,9 @@ export function AppearancePanel() {
         </div>
       </div>
 
-      <div className="mt-8 space-y-4">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Palette className="size-4 text-muted-foreground" />
+      <div className="mt-8 space-y-3">
+        <h3 className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
+          <Palette className="size-4" />
           {t("accentColor")}
         </h3>
 
@@ -96,27 +96,24 @@ function ModeCard({
       onClick={onPick}
       aria-checked={isActive}
       aria-label={t("useMode", { mode })}
-      className={cn(
-        "flex items-center gap-3 rounded-lg border bg-card p-4 text-left transition-colors",
-        isActive
-          ? "border-primary/60 ring-2 ring-primary/40"
-          : "border-border hover:border-border hover:bg-muted/40",
-      )}
+      className="flex min-h-14 w-full items-center gap-4 px-4 text-left outline-none transition-colors hover:bg-hover-surface focus-visible:bg-hover-surface"
     >
+      {/* WA radio: ring, filled accent dot when selected */}
       <span
         aria-hidden
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground"
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-full border-2",
+          isActive ? "border-primary" : "border-muted-foreground",
+        )}
       >
-        <Icon className="h-4 w-4" />
+        {isActive && <span className="size-2.5 rounded-full bg-primary" />}
       </span>
-      <span className="flex-1 text-sm font-semibold capitalize text-foreground">
+      <Icon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+      <span className="flex-1 text-[15px] capitalize text-foreground">
         {mode}
       </span>
       {isActive && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
-          <Check className="h-3 w-3" />
-          {t("active")}
-        </span>
+        <span className="text-[13px] text-primary-text">{t("active")}</span>
       )}
     </button>
   );
@@ -145,10 +142,8 @@ function ThemeCard({
       aria-pressed={isActive}
       aria-label={t("useTheme", { name })}
       className={cn(
-        "flex flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors",
-        isActive
-          ? "border-primary/60 ring-2 ring-primary/40"
-          : "border-border hover:border-border hover:bg-muted/40",
+        "flex flex-col gap-3 rounded-xl bg-surface p-4 text-left outline-none transition-colors hover:bg-hover-surface focus-visible:ring-2 focus-visible:ring-ring",
+        isActive && "ring-2 ring-primary",
       )}
     >
       <div className="flex items-center justify-between">
@@ -161,14 +156,14 @@ function ThemeCard({
           }}
         />
         {isActive && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
-            <Check className="h-3 w-3" />
+          <span className="inline-flex items-center gap-1 rounded-full bg-chip-active px-2 py-0.5 text-[11px] font-medium text-chip-active-foreground">
+            <Check className="size-3" />
             {t("active")}
           </span>
         )}
       </div>
       <div>
-        <div className="text-sm font-semibold text-foreground">{name}</div>
+        <div className="text-[15px] text-foreground">{name}</div>
         <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
           {tagline}
         </div>
@@ -179,8 +174,8 @@ function ThemeCard({
       >
         <span className="flex-1" style={{ background: swatch }} />
         <span className="w-3 bg-muted-foreground/60" />
-        <span className="w-3 bg-muted" />
-        <span className="w-3 bg-card" />
+        <span className="w-3 bg-hover-surface" />
+        <span className="w-3 bg-background" />
       </div>
       <span className="sr-only">{t("themeId", { id })}</span>
     </button>

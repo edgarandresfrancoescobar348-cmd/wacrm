@@ -2100,6 +2100,23 @@
       "textPlaceholder": "The message text to insert",
       "cancel": "Cancel",
       "save": "Save"
+    },
+    "searchPlaceholder": "Search settings",
+    "clearSearch": "Clear search",
+    "noMatches": "No settings found",
+    "back": "Back to settings",
+    "sectionHints": {
+      "overview": "Your workspace at a glance",
+      "profile": "Name, photo and alerts",
+      "security": "Password and active sessions",
+      "appearance": "Mode and accent color",
+      "whatsapp": "WhatsApp Cloud API connection",
+      "templates": "Message templates approved by Meta",
+      "quick-replies": "Shortcuts for frequent answers",
+      "fields": "Tags and custom fields",
+      "deals": "Default deal currency",
+      "members": "Invites, roles and access",
+      "api": "Keys for the public API"
     }
   },
   "SignupPage": {
@@ -2198,7 +2215,15 @@
     "retry": "Retry",
     "emptyTitle": "No notifications yet",
     "emptyDesc": "You'll see an alert here when someone assigns you a conversation.",
-    "unread": "Unread"
+    "unread": "Unread",
+    "filterAll": "All",
+    "searchPlaceholder": "Search notifications",
+    "clearSearch": "Clear search",
+    "moreActions": "More options",
+    "noMatches": "No notifications found",
+    "yesterday": "Yesterday",
+    "openInbox": "Open inbox",
+    "alertSettings": "Alert settings"
   },
   "Agents": {
     "title": "AI Agents",
@@ -2218,7 +2243,8 @@
       "placeholder": "Type a customer message…",
       "notConfigured": "No agent configured yet — finish Setup first.",
       "noReply": "Couldn't get a reply.",
-      "unreachable": "Couldn't reach the agent."
+      "unreachable": "Couldn't reach the agent.",
+      "send": "Send"
     },
     "usage": {
       "title": "Token usage",

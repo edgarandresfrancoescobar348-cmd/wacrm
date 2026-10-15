@@ -161,7 +161,7 @@ export function AiKnowledgeCard({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <BookOpen className="h-4 w-4 text-primary" /> {t('title')}
+          <BookOpen className="h-4 w-4 text-primary-text" /> {t('title')}
         </CardTitle>
         <CardDescription>
           {t('description', {
@@ -183,7 +183,7 @@ export function AiKnowledgeCard({
             )}
 
             {docs.length > 0 && (
-              <ul className="divide-y divide-border rounded-md border border-border">
+              <ul className="divide-y divide-background overflow-hidden rounded-xl bg-hover-surface">
                 {docs.map((doc) => (
                   <li
                     key={doc.id}
@@ -220,7 +220,7 @@ export function AiKnowledgeCard({
             )}
 
             {editing !== null ? (
-              <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="space-y-3 rounded-xl bg-hover-surface p-3">
                 <div className="space-y-2">
                   <Label htmlFor="kb-title">{t('editDocTitle')}</Label>
                   <Input
