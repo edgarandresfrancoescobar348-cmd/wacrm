@@ -14,6 +14,7 @@
  */
 
 export const THEME_IDS = [
+  "whatsapp",
   "violet",
   "emerald",
   "cobalt",
@@ -23,21 +24,20 @@ export const THEME_IDS = [
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "whatsapp";
 
 export const STORAGE_KEY = "wacrm.theme";
 
 /**
  * MODE — the light/dark dimension, orthogonal to the accent theme.
  *
- * The CSS variables live in `src/app/globals.css` under
- * `html[data-mode="..."]` blocks (neutral surfaces only). Applied
- * at runtime via `document.documentElement.dataset.mode`. Dark is
- * the historical default and stays the app's identity; light is the
- * opt-in eye-strain-friendly alternative.
+ * Selecting "dark" or "light" changes neutral surfaces (--background,
+ * --card, --border, etc.) while the accent (--primary, --ring, etc.)
+ * stays put. The boot script in layout.tsx and the ThemeProvider in
+ * use-theme.tsx manage both independently.
  *
- * Persisted under its own localStorage key so it composes freely
- * with the accent choice (you can run Violet-light or Violet-dark).
+ * Dark is the default (WhatsApp convention). Light mode follows the
+ * light column of the WA palette.
  */
 export const MODES = ["light", "dark"] as const;
 
@@ -68,9 +68,15 @@ export interface ThemeMeta {
 
 export const THEMES: ReadonlyArray<ThemeMeta> = [
   {
+    id: "whatsapp",
+    name: "WhatsApp",
+    tagline: "The default — WhatsApp green, feels like home.",
+    swatch: "#21c063",
+  },
+  {
     id: "violet",
     name: "Violet",
-    tagline: "The default — confident, slightly playful.",
+    tagline: "Confident, slightly playful.",
     swatch: "oklch(0.526 0.247 293)",
   },
   {

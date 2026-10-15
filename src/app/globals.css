@@ -40,14 +40,34 @@
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   /* Secondary card surface (tile / hover backgrounds) and the accent
-   * extras the Settings redesign leans on. The raw --primary-* vars
-   * already exist per-accent below; these mappings expose them (and
-   * --card-2) as Tailwind utilities: bg-card-2, bg-primary-soft,
+   * extras the Settings redesign leans on: bg-card-2, bg-primary-soft,
    * bg-primary-soft-2, hover:bg-primary-hover. */
   --color-card-2: var(--card-2);
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
   --color-primary-soft-2: var(--primary-soft-2);
+  /* Accent as TEXT / ICON colour. Equal to --primary for every accent
+   * except whatsapp-light, where the fill green (#25d366) is too light
+   * for text on white and WA uses #1daa61 instead. → text-primary-text */
+  --color-primary-text: var(--primary-text);
+  /* WhatsApp layout tokens (mode-scoped, see the MODE blocks):
+   *   bg-rail, bg-wallpaper, bg-surface (raised: cards, popovers,
+   *   incoming bubble, composer pill), bg-hover-surface (hover / selected
+   *   row / search pill / inputs), bg-bubble-in, bg-bubble-out,
+   *   bg-chip-active + text-chip-active-foreground, text-read-ticks,
+ *   bg-bubble-quote (quoted reply / doc card inside a bubble),
+   *   bg-doodle (wallpaper pattern ink, used through a mask). */
+  --color-rail: var(--rail);
+  --color-wallpaper: var(--wallpaper);
+  --color-surface: var(--surface);
+  --color-hover-surface: var(--hover-surface);
+  --color-bubble-in: var(--bubble-in);
+  --color-bubble-out: var(--bubble-out);
+  --color-chip-active: var(--chip-active);
+  --color-chip-active-foreground: var(--chip-active-foreground);
+  --color-read-ticks: var(--read-ticks);
+  --color-bubble-quote: var(--bubble-quote);
+  --color-doodle: var(--doodle);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -60,94 +80,147 @@
 /* ============================================================
  * THEMING — two orthogonal dimensions
  *
- *   1. MODE   (light / dark)  → neutral surfaces. Selected with
+ *   1. MODE   (light / dark)  → neutral surfaces + the WhatsApp layout
+ *      tokens (rail, wallpaper, bubbles, chips…). Selected with
  *      `document.documentElement.dataset.mode`. Defaults to dark.
- *   2. ACCENT (violet / …)    → the primary color only. Selected
- *      with `document.documentElement.dataset.theme`.
+ *   2. ACCENT (whatsapp / violet / …) → the primary color only.
+ *      Selected with `document.documentElement.dataset.theme`.
+ *      Defaults to whatsapp green.
  *
- * The two compose: any accent works in either mode. Neutral
- * tokens (background / card / border / muted / sidebar surfaces /
- * neutral charts / radius) live in the MODE blocks below; accent
- * tokens (--primary*, --ring, --chart-1, --sidebar-primary*,
- * --sidebar-ring) live in the ACCENT blocks. They set disjoint
- * variables, so cascade order between them doesn't matter.
+ * The two compose: any accent works in either mode. They set disjoint
+ * variables, so cascade order between them doesn't matter — with one
+ * exception: whatsapp-light has its own block below because WA uses a
+ * lighter fill green and a darker text green on white.
  *
- * `:root` carries the dark-mode + violet defaults so a visitor
- * renders correctly before JS runs; the boot script in
- * layout.tsx replays the saved mode + accent before first paint.
+ * `:root` carries the dark-mode + whatsapp defaults so a visitor renders
+ * correctly before JS runs; the boot script in layout.tsx replays the
+ * saved mode + accent before first paint.
  *
- * The three `--primary-*` extras (hover / soft / soft-2) feed
- * hovered primary buttons and tinted-primary surfaces (sidebar
- * active pill, validation badges).
- *
- * Token shapes come straight from the design handoff at
- * project/Color Themes.html — change one, change the other.
+ * Palette source: .tmp/briefs/whatsapp-design-spec.md (sampled from
+ * WhatsApp Web, dark + light columns).
  * ============================================================ */
 
-/* ---- MODE: neutral surfaces ---- */
+:root {
+  /* WhatsApp Web's system stack — no webfont. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+    Helvetica, "Lucida Grande", Arial, Ubuntu, Cantarell, "Fira Sans",
+    sans-serif;
+  --primary-text: var(--primary);
+}
+
+/* ---- MODE: neutral surfaces + WA layout tokens ---- */
 
 :root,
 html[data-mode="dark"] {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 260);
-  --card-2: oklch(0.205 0.01 260);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.01 260);
-  --popover-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0.01 260);
-  --muted-foreground: oklch(0.65 0.01 260);
-  --accent: oklch(0.22 0.01 260);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.28 0.01 260);
-  --input: oklch(0.28 0.01 260);
+  color-scheme: dark;
+  --background: #161717;
+  --foreground: #fafafa;
+  --card: #242626;
+  --card-2: #2e2f2f;
+  --card-foreground: #fafafa;
+  --popover: #242626;
+  --popover-foreground: #fafafa;
+  --secondary: #2e2f2f;
+  --secondary-foreground: #fafafa;
+  --muted: #2e2f2f;
+  --muted-foreground: #a5a5a5;
+  --accent: #2e2f2f;
+  --accent-foreground: #fafafa;
+  --destructive: #f15c6d;
+  --border: #2e2f2f;
+  --input: #2e2f2f;
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.16 0.01 260);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.28 0.01 260);
+  --sidebar: #1d1f1f;
+  --sidebar-foreground: #fafafa;
+  --sidebar-accent: #2e2f2f;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #2e2f2f;
+  --rail: #1d1f1f;
+  --wallpaper: #161717;
+  --surface: #242626;
+  --hover-surface: #2e2f2f;
+  --bubble-in: #242626;
+  --bubble-out: #144d37;
+  --chip-active: #103529;
+  --chip-active-foreground: #d9fdd3;
+  --read-ticks: #53bdeb;
+  --bubble-quote: rgb(0 0 0 / 0.2);
+  --doodle: rgb(255 255 255 / 0.06);
 }
 
 html[data-mode="light"] {
-  --background: oklch(0.99 0.002 260);
-  --foreground: oklch(0.21 0.01 260);
-  --card: oklch(1 0 0);
-  --card-2: oklch(0.985 0.002 260);
-  --card-foreground: oklch(0.21 0.01 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 260);
-  --secondary: oklch(0.967 0.003 260);
-  --secondary-foreground: oklch(0.25 0.01 260);
-  --muted: oklch(0.967 0.003 260);
-  --muted-foreground: oklch(0.52 0.015 260);
-  --accent: oklch(0.96 0.004 260);
-  --accent-foreground: oklch(0.25 0.01 260);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0.004 260);
-  --input: oklch(0.922 0.004 260);
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-2: #f7f5f3;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --secondary: #f0f2f5;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f0f2f5;
+  --muted-foreground: #667781;
+  --accent: #f7f5f3;
+  --accent-foreground: #0a0a0a;
+  --destructive: #ea0038;
+  --border: #e9edef;
+  --input: #e9edef;
   --chart-2: oklch(0.6 0.1 260);
   --chart-3: oklch(0.7 0.06 260);
   --chart-4: oklch(0.8 0.04 260);
   --chart-5: oklch(0.87 0.03 260);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.002 260);
-  --sidebar-foreground: oklch(0.21 0.01 260);
-  --sidebar-accent: oklch(0.96 0.004 260);
-  --sidebar-accent-foreground: oklch(0.25 0.01 260);
-  --sidebar-border: oklch(0.922 0.004 260);
+  --sidebar: #f7f5f3;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-accent: #f0f2f5;
+  --sidebar-accent-foreground: #0a0a0a;
+  --sidebar-border: #e9edef;
+  --rail: #f7f5f3;
+  --wallpaper: #f5f1eb;
+  --surface: #ffffff;
+  --hover-surface: #f0f2f5;
+  --bubble-in: #ffffff;
+  --bubble-out: #d9fdd3;
+  --chip-active: #d9fdd3;
+  --chip-active-foreground: #15603e;
+  --read-ticks: #53bdeb;
+  --bubble-quote: rgb(11 20 26 / 0.05);
+  --doodle: rgb(84 64 40 / 0.07);
 }
 
 /* ---- ACCENT: primary color ---- */
 
 :root,
+html[data-theme="whatsapp"] {
+  --primary: #21c063;
+  --primary-foreground: #0a0a0a;
+  --primary-hover: #1dab58;
+  --primary-soft: rgb(33 192 99 / 0.12);
+  --primary-soft-2: rgb(33 192 99 / 0.2);
+  --ring: #21c063;
+  --chart-1: #21c063;
+  --sidebar-primary: #21c063;
+  --sidebar-primary-foreground: #0a0a0a;
+  --sidebar-ring: #21c063;
+}
+
+html[data-mode="light"][data-theme="whatsapp"] {
+  --primary: #25d366;
+  --primary-hover: #1fbe5b;
+  --primary-text: #1daa61;
+  --primary-soft: rgb(37 211 102 / 0.14);
+  --primary-soft-2: rgb(37 211 102 / 0.24);
+  --ring: #1daa61;
+  --chart-1: #1daa61;
+  --sidebar-primary: #25d366;
+  --sidebar-ring: #1daa61;
+}
+
 html[data-theme="violet"] {
   --primary: oklch(0.526 0.247 293);
   --primary-foreground: oklch(0.985 0 0);
@@ -226,5 +299,64 @@ html[data-theme="rose"] {
   }
   html {
     @apply font-sans;
+  }
+
+  /* Thin, quiet scrollbars like WhatsApp Web. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent)
+      transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted-foreground) 35%, transparent);
+    border-radius: 3px;
+  }
+}
+
+/* ============================================================
+ * WhatsApp utilities shared by every screen (phase 1 contract —
+ * documented in .tmp/briefs/whatsapp-design-spec.md).
+ * ============================================================ */
+
+/* Chat wallpaper: the mode's base colour plus the original doodle tile
+ * (public/wa-doodle.svg) painted through a mask in --doodle ink, so the
+ * pattern follows the mode without shipping two SVGs. Put it on a
+ * positioned container; content must sit above (relative z-[1] or later
+ * in the stacking order — the pattern is a ::before at z-index 0). */
+@utility wa-wallpaper {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--wallpaper);
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--doodle);
+    mask-image: url("/wa-doodle.svg");
+    mask-repeat: repeat;
+    mask-size: 400px 400px;
+  }
+}
+
+/* Global loading bar: fills quickly, then eases towards the end while
+ * the app finishes booting (WA's "Loading your chats" bar). */
+@keyframes wa-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  40% {
+    transform: translateX(-35%);
+  }
+  100% {
+    transform: translateX(-6%);
   }
 }
