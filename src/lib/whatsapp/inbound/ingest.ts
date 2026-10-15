@@ -265,6 +265,24 @@ async function updateAccountMessages(
   return { error: updErr }
 }
 
+/** Match the reply against the menu it quotes, if it quotes one of ours. */
+async function mapReplyToQuotedMenu(
+  quotedInternalId: string,
+  text: string
+): Promise<{ id: string; title: string } | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('messages')
+    .select('sender_type, content_type, interactive_payload')
+    .eq('id', quotedInternalId)
+    .maybeSingle()
+  if (error || !data) return null
+  if (data.content_type !== 'interactive' || !['agent', 'bot'].includes(String(data.sender_type))) {
+    return null
+  }
+  const payload = data.interactive_payload as InteractiveMessagePayload | null
+  return payload ? matchNumberedMenuReply(payload, text) : null
+}
+
 /**
  * Match the customer's typed reply against the last message WE sent in
  * the conversation, when that message is an interactive menu.
@@ -720,7 +738,14 @@ export async function ingestInboundMessage(
     !interactiveReplyId &&
     contentText
   ) {
-    const mapped = await mapReplyToLastMenu(conversation.id, contentText)
+    // A swipe-reply names its menu: map ONLY against the quoted message
+    // (and leave the text alone if that isn't one of our menus). Without
+    // a quote, the conversation's latest outbound message is the prompt.
+    const mapped = inbound.contextMessageId
+      ? replyToInternalId
+        ? await mapReplyToQuotedMenu(replyToInternalId, contentText)
+        : null
+      : await mapReplyToLastMenu(conversation.id, contentText)
     if (mapped) {
       contentType = 'interactive'
       contentText = mapped.title

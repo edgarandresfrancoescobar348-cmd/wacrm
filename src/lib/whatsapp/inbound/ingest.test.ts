@@ -263,3 +263,38 @@ describe('F6 — status is monotonic and early acks are kept', () => {
     expect(h.tables.message_status_pending?.[0]).toMatchObject({ scope: 'global', status: 'read' })
   })
 })
+
+// F7 (review): a swipe-reply to menu A must be mapped against menu A,
+// even when a later menu B is the conversation's latest prompt.
+describe('F7 — a quoted reply maps only against the quoted menu', () => {
+  const menuA = { kind: 'buttons', body: 'A', buttons: [{ id: 'A_buy', title: 'Comprar' }] }
+  const menuB = { kind: 'buttons', body: 'B', buttons: [{ id: 'B_cancel', title: 'Cancelar' }] }
+  beforeEach(() => {
+    h.tables.messages.push(
+      { id: 'menu-a', conversation_id: 'conv-1', message_id: 'prov-menu-A', sender_type: 'bot', content_type: 'interactive', interactive_payload: menuA, created_at: '2026-10-15T10:00:00Z' },
+      { id: 'menu-b', conversation_id: 'conv-1', message_id: 'prov-menu-B', sender_type: 'bot', content_type: 'interactive', interactive_payload: menuB, created_at: '2026-10-15T10:05:00Z' },
+      { id: 'plain', conversation_id: 'conv-1', message_id: 'prov-plain', sender_type: 'agent', content_type: 'text', content_text: 'oi', created_at: '2026-10-15T10:06:00Z' },
+    )
+  })
+  const inserted = (id: string) => h.tables.messages.find((m) => m.message_id === id)!
+
+  it('quote of menu A + "1" → A_buy (not B_cancel)', async () => {
+    // Menu B is the latest outbound message — the reviewer's scenario.
+    h.tables.messages = h.tables.messages.filter((m) => m.id !== 'plain')
+    const msg = inbound({ body: '1', contextMessageId: 'prov-menu-A' })
+    await ingestInboundMessage(msg, ACCOUNT, 'owner', { mapNumberedMenuReplies: true, runBots: false })
+    expect(inserted(msg.messageId)).toMatchObject({ reply_to_message_id: 'menu-a', interactive_reply_id: 'A_buy', content_type: 'interactive' })
+  })
+
+  it('a quote of a plain message leaves the text alone', async () => {
+    const msg = inbound({ body: '1', contextMessageId: 'prov-plain' })
+    await ingestInboundMessage(msg, ACCOUNT, 'owner', { mapNumberedMenuReplies: true, runBots: false })
+    expect(inserted(msg.messageId)).toMatchObject({ content_type: 'text', interactive_reply_id: null })
+  })
+
+  it('a quote of an unknown message leaves the text alone', async () => {
+    const msg = inbound({ body: '1', contextMessageId: 'prov-unknown' })
+    await ingestInboundMessage(msg, ACCOUNT, 'owner', { mapNumberedMenuReplies: true, runBots: false })
+    expect(inserted(msg.messageId)).toMatchObject({ content_type: 'text', interactive_reply_id: null })
+  })
+})
