@@ -26,16 +26,14 @@ import { after } from 'next/server';
 
 import { requireApiKey } from '@/lib/auth/api-context';
 
-// The `after()` fan-out below sends to every recipient sequentially and
-// runs within this route's max duration (the same constraint the
-// webhook route documents). Give it headroom beyond the platform
-// default so a modest batch isn't cut off mid-send — which would leave
-// recipient rows 'pending' and the broadcast stuck 'sending'. This is a
-// bound, not a guarantee: a near-cap (MAX_RECIPIENTS) audience can
-// still exceed 60s, so very large sends should be split across
-// requests. A durable queue/cron drain is the complete fix (follow-up).
-export const maxDuration = 60;
+// The `after()` fan-out below sends sequentially within this route's max
+// duration. It is bounded by that budget (broadcastSendDeadline): what
+// doesn't fit — a large audience, or any audience on a paced QR-code
+// connection — is left `pending` with the broadcast still `sending`,
+// and Resume continues from there. A send is never cut off mid-way.
+export const maxDuration = 300;
 import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { broadcastSendDeadline } from '@/lib/whatsapp/transport/pacing';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 import {
   createBroadcast,
@@ -44,6 +42,7 @@ import {
 } from '@/lib/whatsapp/broadcast-core';
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   try {
     const ctx = await requireApiKey(request, 'broadcasts:send');
 
@@ -77,7 +76,12 @@ export async function POST(request: Request) {
     // Fan out after the response is sent. Uses the same service-role
     // client — no request-scoped auth needed for the Meta calls or
     // the account-scoped row updates.
-    after(() => deliverBroadcast(ctx.supabase, plan));
+    // Bounded by this invocation's budget: on a paced (QR) connection a
+    // large audience can't finish in one handler — the recipients not
+    // reached stay pending and the broadcast stays `sending`, ready for
+    // Resume (dashboard) — never a handler killed mid-send.
+    const deadline = broadcastSendDeadline(maxDuration, startedAt);
+    after(() => deliverBroadcast(ctx.supabase, plan, { deadline }));
 
     return ok(
       {

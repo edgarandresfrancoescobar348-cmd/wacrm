@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { paceBroadcastSend, resetBroadcastPacing } from './pacing'
+import {
+  broadcastSendDeadline,
+  paceBroadcastSend,
+  resetBroadcastPacing,
+  SEND_RESERVE_MS,
+} from './pacing'
 
 function clock() {
   let now = 1_000_000
@@ -58,5 +63,29 @@ describe('paceBroadcastSend', () => {
     await paceBroadcastSend('a', 8000, c.opts)
     await paceBroadcastSend('b', 8000, c.opts)
     expect(c.sleeps).toEqual([])
+  })
+})
+
+// F8 (review): pacing must respect the handler's time budget.
+describe('paceBroadcastSend with a deadline (F8)', () => {
+  beforeEach(() => resetBroadcastPacing())
+
+  it('refuses — without waiting or reserving — a send that would start after the deadline', async () => {
+    const c = clock()
+    expect(await paceBroadcastSend('acct', 8000, { ...c.opts, deadline: 1_000_000 + 5000 })).toBe(true)
+    expect(await paceBroadcastSend('acct', 8000, { ...c.opts, deadline: 1_000_000 + 5000 })).toBe(false)
+    expect(c.sleeps).toEqual([])
+    // The slot was not taken: a later caller with room still gets it.
+    expect(await paceBroadcastSend('acct', 8000, c.opts)).toBe(true)
+    expect(c.sleeps).toEqual([8000])
+  })
+
+  it('refuses immediately once the deadline has passed (Meta too)', async () => {
+    const c = clock()
+    expect(await paceBroadcastSend('acct', 0, { ...c.opts, deadline: 999_999 })).toBe(false)
+  })
+
+  it('broadcastSendDeadline leaves room for the last send to finish', () => {
+    expect(broadcastSendDeadline(300, 0)).toBe(300_000 - SEND_RESERVE_MS)
   })
 })

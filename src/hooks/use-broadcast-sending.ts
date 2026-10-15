@@ -66,6 +66,8 @@ interface UseBroadcastSendingReturn {
  */
 const SEND_BATCH_SIZE = 10;
 const SEND_BATCH_DELAY_MS = 1000;
+/** Re-queues allowed for a recipient the server deferred (time budget). */
+const MAX_DEFERRALS = 3;
 
 /** `broadcast_recipients` inserts are independent of the send rate. */
 const INSERT_BATCH_SIZE = 200;
@@ -76,7 +78,9 @@ function sleep(ms: number) {
 
 interface BroadcastApiResult {
   phone: string;
-  status: 'sent' | 'failed';
+  /** `deferred`: the server ran out of its time budget before this
+   *  recipient (paced QR connection) — re-queued, not failed. */
+  status: 'sent' | 'failed' | 'deferred';
   whatsapp_message_id?: string;
   error?: string;
 }
@@ -426,6 +430,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       const messageParams =
         isMediaHeader && headerMediaUrl ? { headerMediaUrl } : undefined;
 
+      const deferrals = new Map<string, number>();
       for (let i = 0; i < recipients.length; i += SEND_BATCH_SIZE) {
         const batch = recipients.slice(i, i + SEND_BATCH_SIZE);
 
@@ -479,13 +484,24 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             const phone = recipient.contact?.phone;
             const result = phone ? resultsByPhone.get(phone) : undefined;
 
-            if (!result) {
+            // Out of the request's time budget: send it in a later batch.
+            // Bounded, so a server that can never fit it can't loop.
+            if (result?.status === 'deferred') {
+              const tries = (deferrals.get(recipient.id) ?? 0) + 1;
+              deferrals.set(recipient.id, tries);
+              if (tries <= MAX_DEFERRALS) {
+                recipients.push(recipient);
+                continue;
+              }
+            }
+
+            if (!result || result.status === 'deferred') {
               failedCount++;
               await supabase
                 .from('broadcast_recipients')
                 .update({
                   status: 'failed',
-                  error_message: t('noPhoneOnContact'),
+                  error_message: result ? t('unknownError') : t('noPhoneOnContact'),
                 })
                 .eq('id', recipient.id);
               continue;

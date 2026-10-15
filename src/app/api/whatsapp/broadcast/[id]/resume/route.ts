@@ -32,6 +32,7 @@ import {
   type ResumeScope,
 } from '@/lib/whatsapp/broadcast-resume';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { broadcastSendDeadline } from '@/lib/whatsapp/transport/pacing';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -49,6 +50,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   let claimedId: string | null = null;
+  const startedAt = Date.now();
 
   try {
     // Same gate as the batch send endpoint: running a broadcast is a
@@ -99,9 +101,12 @@ export async function POST(
     // every id in the plan was already resolved through an
     // account-scoped read above.
     const admin = supabaseAdmin();
+    const deadline = broadcastSendDeadline(maxDuration, startedAt);
     after(async () => {
       try {
-        await deliverBroadcast(admin, plan);
+        // Bounded by this invocation's budget; whatever doesn't fit stays
+        // pending for the next Resume (see broadcastSendDeadline).
+        await deliverBroadcast(admin, plan, { deadline });
       } catch (err) {
         console.error(
           '[broadcast-resume] delivery threw:',

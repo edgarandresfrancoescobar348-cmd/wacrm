@@ -252,3 +252,83 @@ describe('finalizeBroadcastStatus', () => {
     expect(writes.update?.status).toBe('sent');
   });
 });
+
+// F8 (review): a paced broadcast must stop at the handler's budget and
+// leave the rest pending (the checkpoint Resume continues from) — never
+// run the handler past its maxDuration.
+describe('deliverBroadcast — bounded by the time budget (F8)', () => {
+  it('sends what fits, leaves the rest pending, keeps the broadcast sending', async () => {
+    const { deliverBroadcast } = await import('./broadcast-core');
+    const { resetBroadcastPacing } = await import('./transport/pacing');
+    resetBroadcastPacing();
+
+    const statuses = new Map<string, string>([1, 2, 3, 4, 5].map((n) => [`r${n}`, 'pending']));
+    const broadcastUpdates: Record<string, unknown>[] = [];
+    const db = {
+      from(table: string) {
+        if (table === 'broadcasts') {
+          return { update: (v: Record<string, unknown>) => (broadcastUpdates.push(v), { eq: async () => ({ error: null }) }) };
+        }
+        // broadcast_recipients
+        let patch: Record<string, unknown> | null = null;
+        const filters: Record<string, unknown> = {};
+        const q: Record<string, unknown> = {
+          update: (v: Record<string, unknown>) => ((patch = v), q),
+          select: () => q,
+          eq: (c: string, v: unknown) => {
+            filters[c] = v;
+            if (patch && c === 'id') statuses.set(String(v), String(patch.status));
+            return q;
+          },
+          then: (resolve: (r: unknown) => unknown) => {
+            const want = filters.status;
+            const count = [...statuses.values()].filter((s) => want === undefined || s === want).length;
+            return Promise.resolve({ count, error: null }).then(resolve);
+          },
+        };
+        return q;
+      },
+    } as unknown as SupabaseClient;
+
+    const sends: string[] = [];
+    let now = 1_000_000;
+    const sleeps: number[] = [];
+    const plan = {
+      accountId: 'acct-f8',
+      broadcastId: 'bc-1',
+      templateName: 't',
+      templateLanguage: 'pt_BR',
+      templateRow: null,
+      rejected: 0,
+      planned: [1, 2, 3, 4, 5].map((n) => ({ recipientRowId: `r${n}`, phone: `551199999000${n}`, params: [] })),
+      transport: {
+        provider: 'openwa',
+        capabilities: { templates: 'local', serviceWindow: false, interactive: 'numbered_text', broadcastDelayMs: 8000 },
+        recipientVariants: (p: string) => [p],
+        isRecipientRetryable: () => false,
+        sendTemplate: async ({ to }: { to: string }) => (sends.push(to), { messageId: `id-${to}` }),
+      },
+    } as unknown as Parameters<typeof deliverBroadcast>[1];
+
+    const result = await deliverBroadcast(db, plan, {
+      deadline: now + 20_000,
+      pace: {
+        now: () => now,
+        sleep: async (ms: number) => {
+          sleeps.push(ms);
+          now += ms;
+        },
+        random: () => 0,
+      },
+    });
+
+    // 0 s, 8 s, 16 s fit; 24 s would start past the deadline.
+    expect(result).toEqual({ attempted: 3, deferred: 2 });
+    expect(sends).toHaveLength(3);
+    expect(sleeps.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(20_000);
+    expect(statuses.get('r4')).toBe('pending');
+    expect(statuses.get('r5')).toBe('pending');
+    // still pending work → not finalized (stays `sending` for Resume)
+    expect(broadcastUpdates).toEqual([]);
+  });
+});

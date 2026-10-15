@@ -6,7 +6,10 @@ import {
   TransportNotConfiguredError,
   type WhatsAppTransport,
 } from '@/lib/whatsapp/transport'
-import { paceBroadcastSend } from '@/lib/whatsapp/transport/pacing'
+import {
+  broadcastSendDeadline,
+  paceBroadcastSend,
+} from '@/lib/whatsapp/transport/pacing'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
@@ -26,7 +29,9 @@ export const maxDuration = 300
 
 interface BroadcastResult {
   phone: string
-  status: 'sent' | 'failed'
+  /** `deferred`: not attempted — out of this request's time budget
+   *  (paced QR connection); the wizard re-queues it. */
+  status: 'sent' | 'failed' | 'deferred'
   whatsapp_message_id?: string
   error?: string
 }
@@ -67,6 +72,7 @@ interface NewRecipient {
 }
 
 export async function POST(request: Request) {
+  const deadline = broadcastSendDeadline(maxDuration)
   try {
     // Requires the 'agent' role — `canSendMessages` in lib/auth/roles is
     // explicit that running broadcasts is a write operation and that
@@ -167,6 +173,7 @@ export async function POST(request: Request) {
     const results: BroadcastResult[] = []
     let sentCount = 0
     let failedCount = 0
+    let deferredCount = 0
 
     for (const recipient of recipients) {
       const sanitized = sanitizePhoneForMeta(recipient.phone)
@@ -181,8 +188,19 @@ export async function POST(request: Request) {
         continue
       }
 
-      // Provider pacing (a no-op on Meta) — see transport/pacing.ts.
-      await paceBroadcastSend(accountId, transport.capabilities.broadcastDelayMs)
+      // Provider pacing (a no-op on Meta), bounded by this request's
+      // budget: a recipient that can't START in time is returned as
+      // `deferred` (not sent, not failed) for the wizard to re-queue.
+      const mayStart = await paceBroadcastSend(
+        accountId,
+        transport.capabilities.broadcastDelayMs,
+        { deadline }
+      )
+      if (!mayStart) {
+        results.push({ phone: recipient.phone, status: 'deferred' })
+        deferredCount++
+        continue
+      }
 
       // Retry with phone variants on "not in allowed list" so numbers
       // that differ only in a trunk-prefix 0 still reach recipients.
@@ -235,6 +253,7 @@ export async function POST(request: Request) {
       total: recipients.length,
       sent: sentCount,
       failed: failedCount,
+      deferred: deferredCount,
       results,
     })
   } catch (error) {

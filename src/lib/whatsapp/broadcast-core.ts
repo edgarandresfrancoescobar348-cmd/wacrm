@@ -26,7 +26,7 @@ import {
   TransportNotConfiguredError,
   type WhatsAppTransport,
 } from '@/lib/whatsapp/transport';
-import { paceBroadcastSend } from '@/lib/whatsapp/transport/pacing';
+import { paceBroadcastSend, type PaceOptions } from '@/lib/whatsapp/transport/pacing';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
@@ -275,14 +275,31 @@ export async function loadBroadcastTransport(
  */
 export async function deliverBroadcast(
   db: SupabaseClient,
-  plan: BroadcastPlan
-): Promise<void> {
+  plan: BroadcastPlan,
+  opts: {
+    /** Last moment a send may start (broadcastSendDeadline). Recipients
+     *  not reached stay `pending` for a resume pass. */
+    deadline?: number;
+    /** Clock / sleep / jitter injection for tests. */
+    pace?: Omit<PaceOptions, 'deadline'>;
+  } = {}
+): Promise<{ attempted: number; deferred: number }> {
+  let attempted = 0;
   for (const recipient of plan.planned) {
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
 
-    // Provider pacing (a no-op on Meta) — see transport/pacing.ts.
-    await paceBroadcastSend(plan.accountId, plan.transport.capabilities.broadcastDelayMs);
+    // Provider pacing (a no-op on Meta) bounded by the handler's time
+    // budget — see transport/pacing.ts. Out of budget: stop here; the
+    // rest stays `pending` (the checkpoint) and the broadcast stays
+    // `sending`, which is exactly what Resume continues from.
+    const mayStart = await paceBroadcastSend(
+      plan.accountId,
+      plan.transport.capabilities.broadcastDelayMs,
+      { ...opts.pace, deadline: opts.deadline }
+    );
+    if (!mayStart) break;
+    attempted++;
 
     try {
       const { result } = await sendWithRecipientVariants(
@@ -325,6 +342,7 @@ export async function deliverBroadcast(
   }
 
   await finalizeBroadcastStatus(db, plan.broadcastId);
+  return { attempted, deferred: plan.planned.length - attempted };
 }
 
 /**

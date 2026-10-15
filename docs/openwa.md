@@ -88,6 +88,11 @@ so quoting or reacting to messages from before the switch stops resolving.
 
 - Pacing state is per server process; a multi-instance deployment paces per
   instance.
+- A paced broadcast never runs a request past its time limit: each request
+  only starts sends that can finish inside it. The wizard re-queues what
+  didn't fit into its next batch; an API broadcast or a Resume pass leaves
+  the rest `pending` with the campaign still "Enviando" — press **Resume**
+  on the broadcast to continue from there.
 - Template quick-reply buttons have no reply mapping in QR mode (they are
   rendered as labels).
 - OpenWA has no API to send buttons or lists on either engine, so menus are
