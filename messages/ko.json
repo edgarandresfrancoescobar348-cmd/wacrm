@@ -2856,5 +2856,10 @@
   },
   "AuthScreen": {
     "footnote": "워크스페이스에 안전하게 연결됨"
+  },
+  "WhatsAppTransport": {
+    "numberedMenuHint": "옵션 번호로 답장해 주세요.",
+    "templateNotFound": "템플릿 \"{name}\"을(를) 로컬에서 찾을 수 없습니다.",
+    "noPhoneForQr": "이 연락처에는 전화번호가 없어 QR 코드 연결로는 연락할 수 없습니다."
   }
 }

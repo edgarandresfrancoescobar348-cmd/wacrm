@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
-import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
+import {
+  loadAccountTransport,
+  providerErrorLabel,
+  TransportNotConfiguredError,
+  type WhatsAppTransport,
+} from '@/lib/whatsapp/transport';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import {
   checkRateLimit,
@@ -17,7 +21,7 @@ const t = getT('Api');
  *
  * Body: { message_id: <internal UUID>, emoji: <single emoji or "" to remove> }
  *
- * Sends the reaction to Meta and mirrors it into `message_reactions`
+ * Sends the reaction through the account's WhatsApp transport and mirrors it into `message_reactions`
  * (delete on empty emoji). Customer-side reactions are handled by the
  * webhook — this route only writes `actor_type = 'agent'` rows.
  */
@@ -94,26 +98,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token. Account-scoped post-multi-user.
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, access_token')
-      .eq('account_id', accountId)
-      .single();
-
-    if (configError || !config) {
+    // The account's active WhatsApp connection. Account-scoped.
+    let transport: WhatsAppTransport;
+    try {
+      transport = await loadAccountTransport(supabase, accountId);
+    } catch (err) {
+      if (!(err instanceof TransportNotConfiguredError)) throw err;
       return NextResponse.json(
         { error: t('common.whatsappNotConfiguredDot') },
         { status: 400 },
       );
     }
 
-    const accessToken = decrypt(config.access_token);
-
     try {
-      await sendReactionMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      await transport.sendReaction({
         to: sendTarget.target,
         targetMessageId: targetMessage.message_id,
         emoji,
@@ -121,7 +119,10 @@ export async function POST(request: Request) {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : t('react.unknownMetaError');
-      console.error('[whatsapp/react] Meta send failed:', message);
+      console.error(
+        `[whatsapp/react] ${providerErrorLabel(transport.provider)}:`,
+        message,
+      );
       return NextResponse.json(
         { error: t('react.metaError', { message }) },
         { status: 502 },

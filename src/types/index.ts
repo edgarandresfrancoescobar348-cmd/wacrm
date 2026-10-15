@@ -270,6 +270,13 @@ export interface Message {
    */
   ai_generated?: boolean;
   /**
+   * The customer deleted the message for everyone / edited it. Only a
+   * QR-code (OpenWA) connection reports these; the original text is
+   * kept and the bubble is labelled. Migration 047.
+   */
+  revoked_at?: string | null;
+  edited_at?: string | null;
+  /**
    * Meta's reason for a failed send, from the `failed` status webhook's
    * `errors[0]` (code / title / error_data.details). Only set when
    * `status === 'failed'`; never cleared by a later status. Migration 042.
@@ -294,6 +301,13 @@ export interface MessageReaction {
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
+  /**
+   * The ACTIVE connection (migration 047): Meta's Cloud API, or a
+   * regular number paired by QR code through OpenWA. The other mode's
+   * settings are kept so switching back is quick.
+   */
+  provider?: 'meta' | 'openwa';
+  /** Null on an account that only ever connected by QR code. */
   phone_number_id: string;
   waba_id?: string;
   access_token: string;
@@ -360,6 +374,8 @@ export interface MessageTemplate {
   sample_values?: TemplateSampleValues;
   status?: MessageTemplateStatus;
   meta_template_id?: string;
+  /** 'local' = saved on a QR-code connection, never submitted to Meta (047). */
+  origin?: 'meta' | 'local';
   rejection_reason?: string;
   quality_score?: 'GREEN' | 'YELLOW' | 'RED';
   submission_error?: string;

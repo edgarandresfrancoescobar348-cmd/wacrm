@@ -2856,5 +2856,10 @@
   },
   "AuthScreen": {
     "footnote": "Conexión segura con tu espacio de trabajo"
+  },
+  "WhatsAppTransport": {
+    "numberedMenuHint": "Responde con el número de la opción.",
+    "templateNotFound": "Plantilla \"{name}\" no encontrada localmente.",
+    "noPhoneForQr": "Este contacto no tiene número de teléfono, así que no se le puede escribir por una conexión con código QR."
   }
 }

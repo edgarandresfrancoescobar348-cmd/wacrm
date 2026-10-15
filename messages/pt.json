@@ -2856,5 +2856,10 @@
   },
   "AuthScreen": {
     "footnote": "Conexão segura com o seu espaço de trabalho"
+  },
+  "WhatsAppTransport": {
+    "numberedMenuHint": "Responda com o número da opção.",
+    "templateNotFound": "Modelo \"{name}\" não encontrado localmente.",
+    "noPhoneForQr": "Este contato não tem número de telefone, então não pode ser alcançado por uma conexão via QR Code."
   }
 }

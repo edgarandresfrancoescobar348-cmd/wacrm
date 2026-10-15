@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import {
+  loadAccountTransport,
+  sendWithRecipientVariants,
+  TransportNotConfiguredError,
+  type WhatsAppTransport,
+} from '@/lib/whatsapp/transport'
+import { paceBroadcastSend } from '@/lib/whatsapp/transport/pacing'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
-import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils'
+import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -18,6 +18,11 @@ import {
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
+
+// On a QR-code (OpenWA) connection every send waits out the account's
+// broadcast pacing (transport/pacing.ts), so one batch of 10 can take
+// most of a minute. Meta sends are not paced.
+export const maxDuration = 300
 
 interface BroadcastResult {
   phone: string
@@ -68,7 +73,7 @@ export async function POST(request: Request) {
     // viewers are read-only.
     //
     // This endpoint writes NOTHING to the database: it reads the config
-    // and template, then calls Meta directly. So unlike the rest of the
+    // and template, then calls the WhatsApp provider directly. So unlike the rest of the
     // app there was no RLS policy backstopping a missing role check —
     // resolving `account_id` straight off the profile (which only needs
     // 'viewer') was the ONLY gate, and it let a viewer blast a template
@@ -123,13 +128,11 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
-
-    if (configError || !config) {
+    let transport: WhatsAppTransport
+    try {
+      transport = await loadAccountTransport(supabase, accountId)
+    } catch (err) {
+      if (!(err instanceof TransportNotConfiguredError)) throw err
       return NextResponse.json(
         {
           error:
@@ -139,9 +142,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
-
-    // Load the template row once so sendTemplateMessage can build
+    // Load the template row once so the transport can build
     // header + button components on each iteration. Loading inside
     // the loop would N+1 against Supabase for every recipient.
     // Guard against a malformed local row crashing every send in
@@ -180,37 +181,32 @@ export async function POST(request: Request) {
         continue
       }
 
+      // Provider pacing (a no-op on Meta) — see transport/pacing.ts.
+      await paceBroadcastSend(accountId, transport.capabilities.broadcastDelayMs)
+
       // Retry with phone variants on "not in allowed list" so numbers
       // that differ only in a trunk-prefix 0 still reach recipients.
-      const variants = phoneVariants(sanitized)
       let sentMessageId: string | null = null
       let lastError: string | null = null
-
-      for (const variant of variants) {
-        try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
-            to: variant,
-            templateName: template_name,
-            language: resolvedTemplate.language,
-            template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
-            params: recipient.params ?? [],
-          })
-          sentMessageId = result.messageId
-          lastError = null
-          break
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : t('common.unknownError')
-          if (!isRecipientNotAllowedError(errorMessage)) {
-            lastError = errorMessage
-            break
-          }
-          lastError = errorMessage
-          // retry with next variant
-        }
+      try {
+        const { result } = await sendWithRecipientVariants(
+          transport,
+          sanitized,
+          true,
+          (to) =>
+            transport.sendTemplate({
+              to,
+              templateName: template_name,
+              language: resolvedTemplate.language,
+              template: templateRow,
+              messageParams: recipient.messageParams,
+              params: recipient.params ?? [],
+            })
+        )
+        sentMessageId = result.messageId
+      } catch (error) {
+        lastError =
+          error instanceof Error ? error.message : t('common.unknownError')
       }
 
       if (sentMessageId) {

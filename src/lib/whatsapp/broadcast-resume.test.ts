@@ -232,7 +232,8 @@ describe('planBroadcastResume', () => {
         params: ['B456', 'Monday'],
       },
     ]);
-    expect(plan.accessToken).toBe('decrypted:tok');
+    // The plan carries the account's Meta transport (config row above).
+    expect(plan.transport.provider).toBe('meta');
     expect(remaining).toBe(0);
     expect(unsendable).toBe(0);
   });

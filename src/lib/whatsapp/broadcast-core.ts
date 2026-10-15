@@ -7,8 +7,9 @@
 //   createBroadcast()  — validate, resolve contacts, insert the
 //                        `broadcasts` row + `broadcast_recipients`
 //                        rows (status 'pending'), return a plan.
-//   deliverBroadcast() — send each recipient's template via Meta
-//                        (phone-variant retry), stamp each recipient
+//   deliverBroadcast() — send each recipient's template through the
+//                        account's transport (phone-variant retry,
+//                        provider pacing), stamp each recipient
 //                        row + the aggregate counts, finalize status.
 //
 // Recipient rows carry `whatsapp_message_id`, so the inbound webhook's
@@ -18,13 +19,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
+import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import {
-  parseInternationalPhone,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils';
+  loadAccountTransport,
+  sendWithRecipientVariants,
+  TransportNotConfiguredError,
+  type WhatsAppTransport,
+} from '@/lib/whatsapp/transport';
+import { paceBroadcastSend } from '@/lib/whatsapp/transport/pacing';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
@@ -62,11 +64,13 @@ interface PlannedRecipient {
 }
 
 export interface BroadcastPlan {
+  /** Tenancy key — also the pacing key between sends. */
+  accountId: string;
   broadcastId: string;
   templateName: string;
   templateLanguage: string;
-  phoneNumberId: string;
-  accessToken: string;
+  /** The account's active WhatsApp transport, resolved at plan time. */
+  transport: WhatsAppTransport;
   templateRow: MessageTemplate | null;
   planned: PlannedRecipient[];
   /** Phones rejected up front (invalid E.164) — counted as failed. */
@@ -107,21 +111,9 @@ export async function createBroadcast(
     );
   }
 
-  // Config (fail fast + provides the audit trail owner already resolved
-  // by the caller). Meta send needs phone_number_id + decrypted token.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-  if (configError || !config) {
-    throw new BroadcastError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
-  }
-  const accessToken = decrypt(config.access_token);
+  // The account's WhatsApp transport — fail fast before anything is
+  // persisted when there is no usable connection.
+  const transport = await loadBroadcastTransport(db, accountId);
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
@@ -234,15 +226,38 @@ export async function createBroadcast(
   );
 
   return {
+    accountId,
     broadcastId,
     templateName,
     templateLanguage: resolvedTemplate.language,
-    phoneNumberId: config.phone_number_id,
-    accessToken,
+    transport,
     templateRow,
     planned,
     rejected,
   };
+}
+
+/**
+ * Resolve the account's transport for a broadcast, mapping "nothing
+ * configured" to the {@link BroadcastError} both create and resume
+ * surface.
+ */
+export async function loadBroadcastTransport(
+  db: SupabaseClient,
+  accountId: string
+): Promise<WhatsAppTransport> {
+  try {
+    return await loadAccountTransport(db, accountId);
+  } catch (err) {
+    if (err instanceof TransportNotConfiguredError) {
+      throw new BroadcastError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    throw err;
+  }
 }
 
 /**
@@ -263,30 +278,29 @@ export async function deliverBroadcast(
   plan: BroadcastPlan
 ): Promise<void> {
   for (const recipient of plan.planned) {
-    const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
 
-    for (const variant of variants) {
-      try {
-        const result = await sendTemplateMessage({
-          phoneNumberId: plan.phoneNumberId,
-          accessToken: plan.accessToken,
-          to: variant,
-          templateName: plan.templateName,
-          language: plan.templateLanguage,
-          template: plan.templateRow ?? undefined,
-          params: recipient.params,
-        });
-        sentMessageId = result.messageId;
-        lastError = null;
-        break;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        lastError = message;
-        // Only a "recipient not allowed" error is worth another variant.
-        if (!isRecipientNotAllowedError(message)) break;
-      }
+    // Provider pacing (a no-op on Meta) — see transport/pacing.ts.
+    await paceBroadcastSend(plan.accountId, plan.transport.capabilities.broadcastDelayMs);
+
+    try {
+      const { result } = await sendWithRecipientVariants(
+        plan.transport,
+        recipient.phone,
+        true,
+        (to) =>
+          plan.transport.sendTemplate({
+            to,
+            templateName: plan.templateName,
+            language: plan.templateLanguage,
+            template: plan.templateRow,
+            params: recipient.params,
+          })
+      );
+      sentMessageId = result.messageId;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Unknown error';
     }
 
     if (sentMessageId) {

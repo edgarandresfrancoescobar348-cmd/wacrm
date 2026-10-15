@@ -1,62 +1,147 @@
-import {
-  sendInteractiveButtons,
-  sendInteractiveList,
-  sendMediaMessage,
-  sendTextMessage,
-  type InteractiveButton,
-  type InteractiveListSection,
-  type MediaKind,
-} from '@/lib/whatsapp/meta-api'
-import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
-import { decrypt } from '@/lib/whatsapp/encryption'
-import {
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils'
+import type {
+  InteractiveButton,
+  InteractiveListSection,
+  InteractiveMessagePayload,
+} from '@/lib/whatsapp/interactive'
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity'
 import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
+import {
+  loadAccountTransport,
+  sendWithRecipientVariants,
+  TransportNotConfiguredError,
+  type MediaKind,
+  type WhatsAppTransport,
+} from '@/lib/whatsapp/transport'
 import { supabaseAdmin } from './admin-client'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('LibErrors')
 
 // ------------------------------------------------------------
-// Flows-side Meta sender (interactive variants).
+// Engine-side WhatsApp senders (text, media, interactive).
 //
-// Mirrors src/lib/automations/meta-send.ts (engineSendText /
-// engineSendTemplate) but emits interactive button + list messages.
-// Kept separate from the automations file so the two engines don't
-// fight over each other's shape — once both stabilize, the
-// phone-variant retry + DB persistence are obvious extraction
-// candidates into a shared base.
-//
-// PR #1 ships this in isolation: callers don't exist yet. PR #2
-// brings the flow runner online and wires it up. Shipping it now
-// keeps the foundation PR self-contained and unit-testable.
+// Used by the Flows runner, the automation engine (interactive sends
+// delegate here) and the AI auto-reply. Every send goes through the
+// account's active transport (`@/lib/whatsapp/transport` — Meta Cloud
+// API or OpenWA), so none of these functions know which provider is on
+// the other end. The shared part — account-scoped contact +
+// conversation checks, the recipient-variant retry, the contact phone
+// auto-fix — lives in `sendToContact`.
 // ------------------------------------------------------------
 
 /**
- * Resolve the account's Meta sending credentials: the phone number id
- * plus the DECRYPTED access token from `whatsapp_config`. The single
- * home for that decrypt step — callers outside this file (the AI
- * auto-reply's typing indicator) reuse it rather than growing a copy.
+ * Resolve the account's active WhatsApp transport, mapping "nothing
+ * configured" to the engines' localized error. The single home for that
+ * lookup — callers outside this file (the AI auto-reply's typing
+ * indicator, automation template sends) reuse it.
  */
-export async function loadAccountMetaCredentials(
+export async function loadEngineTransport(
   db: ReturnType<typeof supabaseAdmin>,
   accountId: string,
-): Promise<{ phoneNumberId: string; accessToken: string }> {
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('phone_number_id, access_token')
-    .eq('account_id', accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error(t('send.notConfigured'))
+): Promise<WhatsAppTransport> {
+  try {
+    return await loadAccountTransport(db, accountId)
+  } catch (err) {
+    if (err instanceof TransportNotConfiguredError) {
+      throw new Error(t('send.notConfigured'))
+    }
+    throw err
   }
-  return {
-    phoneNumberId: config.phone_number_id,
-    accessToken: decrypt(config.access_token),
+}
+
+/**
+ * Mark an inbound message read and show "typing…" to the contact on
+ * the account's active transport. Throws on any failure (no connection,
+ * unknown contact, provider error) — callers treat it as best-effort.
+ */
+export async function engineSendTyping(args: {
+  accountId: string
+  contactId: string
+  inboundMessageId: string
+}): Promise<void> {
+  const db = supabaseAdmin()
+  const { data: contact, error } = await db
+    .from('contacts')
+    .select('id, phone, wa_user_id')
+    .eq('id', args.contactId)
+    .eq('account_id', args.accountId)
+    .maybeSingle()
+  if (error || !contact) throw new Error(t('send.contactNotFound'))
+  const target = resolveContactSendTarget(contact)
+  if (!target) {
+    throw new Error(
+      t('send.noWhatsAppAddress', { phone: contact.phone || t('send.none') })
+    )
   }
+  const transport = await loadEngineTransport(db, args.accountId)
+  await transport.sendTyping({
+    to: target.target,
+    inboundMessageId: args.inboundMessageId,
+  })
+}
+
+interface SendToContactArgs {
+  accountId: string
+  conversationId: string
+  contactId: string
+}
+
+/**
+ * Account-scoped contact + conversation checks, transport lookup and
+ * the recipient-variant retry around `send`. Returns the provider
+ * message id. Persisting the message row stays with each caller — the
+ * row shape is what differs between them.
+ */
+export async function sendToContact(
+  args: SendToContactArgs,
+  send: (transport: WhatsAppTransport, to: string) => Promise<string>,
+): Promise<{ waMessageId: string; transport: WhatsAppTransport }> {
+  const db = supabaseAdmin()
+
+  // Scope the contact lookup by account_id, not user_id. The engines use
+  // the service-role client (bypassing RLS); without this filter, an
+  // authenticated user could fire their own automations against another
+  // tenant's contact UUID and send via their own WhatsApp connection.
+  const { data: contact, error: contactErr } = await db
+    .from('contacts')
+    .select('id, phone, wa_user_id')
+    .eq('id', args.contactId)
+    .eq('account_id', args.accountId)
+    .maybeSingle()
+  if (contactErr || !contact) {
+    throw new Error(t('send.contactNotFound'))
+  }
+
+  // Same for the conversation the message lands in — see
+  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
+  await assertConversationInAccount(db, args.conversationId, args.accountId)
+
+  // Phone number, or the business-scoped user ID when Meta has never
+  // given us a number for this customer (issue #519).
+  const sendTarget = resolveContactSendTarget(contact)
+  if (!sendTarget) {
+    throw new Error(
+      t('send.noWhatsAppAddress', { phone: contact.phone || t('send.none') })
+    )
+  }
+  const sanitized = sendTarget.target
+
+  const transport = await loadEngineTransport(db, args.accountId)
+
+  // Phone-variant retry — numbers registered with/without a trunk 0 and
+  // Meta's sandbox quirks both need it to reliably land a message.
+  const { result: waMessageId, workingTarget } = await sendWithRecipientVariants(
+    transport,
+    sanitized,
+    sendTarget.isPhone,
+    (to) => send(transport, to),
+  )
+
+  if (sendTarget.isPhone && workingTarget !== sanitized) {
+    await db.from('contacts').update({ phone: workingTarget }).eq('id', contact.id)
+  }
+
+  return { waMessageId, transport }
 }
 
 interface SendTextEngineArgs {
@@ -83,77 +168,15 @@ interface SendTextEngineArgs {
  * Used by the runner's `send_message` and `collect_input` nodes —
  * both prompt the customer with text and either auto-advance (the
  * send_message case) or suspend awaiting a text reply (collect_input).
- *
- * Wraps the same phone-variant retry + DB persistence pattern as the
- * interactive senders; the duplication will be DRY'd into a shared
- * `engineSendBase` once the v2 features (templates with variables,
- * media sends) settle.
+
  */
 export async function engineSendText(
   args: SendTextEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
-
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', args.contactId)
-    .eq('account_id', args.accountId)
-    .maybeSingle()
-  if (contactErr || !contact) {
-    throw new Error(t('send.contactNotFound'))
-  }
-
-  // Same for the conversation the message lands in — see
-  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
-  await assertConversationInAccount(db, args.conversationId, args.accountId)
-
-  // Phone number, or the business-scoped user ID when Meta has never
-  // given us a number for this customer (issue #519).
-  const sendTarget = resolveContactSendTarget(contact)
-  if (!sendTarget) {
-    throw new Error(
-      t('send.noWhatsAppAddress', { phone: contact.phone || t('send.none') })
-    )
-  }
-  const sanitized = sendTarget.target
-
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
-    db,
-    args.accountId,
+  const { waMessageId } = await sendToContact(args, async (transport, to) =>
+    (await transport.sendText({ to, text: args.text })).messageId,
   )
-
-  const attempt = async (phone: string): Promise<string> => {
-    const r = await sendTextMessage({
-      phoneNumberId,
-      accessToken,
-      to: phone,
-      text: args.text,
-    })
-    return r.messageId
-  }
-
-  const variants = sendTarget.isPhone ? phoneVariants(sanitized) : [sanitized]
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
-    }
-  }
-  if (lastError) throw lastError
-
-  if (sendTarget.isPhone && workingPhone !== sanitized) {
-    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
-  }
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: args.conversationId,
@@ -187,7 +210,7 @@ interface SendMediaEngineArgs {
   conversationId: string
   contactId: string
   kind: MediaKind
-  /** Public URL Meta fetches at send time. */
+  /** Public URL the provider fetches at send time. */
   link: string
   caption?: string
   /** Document-only; ignored by Meta for image/video. */
@@ -207,70 +230,17 @@ export async function engineSendMedia(
   args: SendMediaEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
-
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', args.contactId)
-    .eq('account_id', args.accountId)
-    .maybeSingle()
-  if (contactErr || !contact) {
-    throw new Error(t('send.contactNotFound'))
-  }
-
-  // Same for the conversation the message lands in — see
-  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
-  await assertConversationInAccount(db, args.conversationId, args.accountId)
-
-  // Phone number, or the business-scoped user ID when Meta has never
-  // given us a number for this customer (issue #519).
-  const sendTarget = resolveContactSendTarget(contact)
-  if (!sendTarget) {
-    throw new Error(
-      t('send.noWhatsAppAddress', { phone: contact.phone || t('send.none') })
-    )
-  }
-  const sanitized = sendTarget.target
-
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
-    db,
-    args.accountId,
+  const { waMessageId } = await sendToContact(args, async (transport, to) =>
+    (
+      await transport.sendMedia({
+        to,
+        kind: args.kind,
+        link: args.link,
+        caption: args.caption,
+        filename: args.filename,
+      })
+    ).messageId,
   )
-
-  const attempt = async (phone: string): Promise<string> => {
-    const r = await sendMediaMessage({
-      phoneNumberId,
-      accessToken,
-      to: phone,
-      kind: args.kind,
-      link: args.link,
-      caption: args.caption,
-      filename: args.filename,
-    })
-    return r.messageId
-  }
-
-  const variants = sendTarget.isPhone ? phoneVariants(sanitized) : [sanitized]
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
-    }
-  }
-  if (lastError) throw lastError
-
-  if (sendTarget.isPhone && workingPhone !== sanitized) {
-    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
-  }
 
   // content_type='image'|'video'|'document' — these are already in the
   // messages_content_type_check constraint (migration 001 + 010).
@@ -333,13 +303,13 @@ interface SendInteractiveListEngineArgs {
  * surfaces it with the "Button reply" affordance and the conversation
  * thread reflects the bot's prompt.
  *
- * Returns the Meta message id so the caller (engine) can stash it on
+ * Returns the provider message id so the caller (engine) can stash it on
  * the `flow_runs.last_prompt_message_id` field for later reference.
  */
 export async function engineSendInteractiveButtons(
   args: SendInteractiveButtonsEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
-  return sendInteractiveViaMeta({ ...args, kind: 'buttons' })
+  return sendInteractiveViaTransport({ ...args, kind: 'buttons' })
 }
 
 /**
@@ -349,100 +319,17 @@ export async function engineSendInteractiveButtons(
 export async function engineSendInteractiveList(
   args: SendInteractiveListEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
-  return sendInteractiveViaMeta({ ...args, kind: 'list' })
+  return sendInteractiveViaTransport({ ...args, kind: 'list' })
 }
 
 type SendInput =
   | (SendInteractiveButtonsEngineArgs & { kind: 'buttons' })
   | (SendInteractiveListEngineArgs & { kind: 'list' })
 
-async function sendInteractiveViaMeta(
+async function sendInteractiveViaTransport(
   input: SendInput,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
-
-  // Scope the contact + whatsapp_config lookups by account_id —
-  // same defense-in-depth rationale as automations/meta-send.ts.
-  // Migration 017 moved both tables to account-scoped tenancy.
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', input.contactId)
-    .eq('account_id', input.accountId)
-    .maybeSingle()
-  if (contactErr || !contact) {
-    throw new Error(t('send.contactNotFound'))
-  }
-
-  // Same for the conversation the message lands in — see
-  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
-  await assertConversationInAccount(db, input.conversationId, input.accountId)
-
-  // Phone number, or the business-scoped user ID when Meta has never
-  // given us a number for this customer (issue #519).
-  const sendTarget = resolveContactSendTarget(contact)
-  if (!sendTarget) {
-    throw new Error(
-      t('send.noWhatsAppAddress', { phone: contact.phone || t('send.none') })
-    )
-  }
-  const sanitized = sendTarget.target
-
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
-    db,
-    input.accountId,
-  )
-
-  const attempt = async (phone: string): Promise<string> => {
-    if (input.kind === 'buttons') {
-      const r = await sendInteractiveButtons({
-        phoneNumberId,
-        accessToken,
-        to: phone,
-        bodyText: input.bodyText,
-        buttons: input.buttons,
-        headerText: input.headerText,
-        footerText: input.footerText,
-      })
-      return r.messageId
-    }
-    const r = await sendInteractiveList({
-      phoneNumberId,
-      accessToken,
-      to: phone,
-      bodyText: input.bodyText,
-      buttonLabel: input.buttonLabel,
-      sections: input.sections,
-      headerText: input.headerText,
-      footerText: input.footerText,
-    })
-    return r.messageId
-  }
-
-  // Same phone-variant retry as automations/meta-send.ts. Numbers
-  // registered with/without a trunk 0 + Meta's sandbox quirks all
-  // need this to reliably land a message.
-  const variants = sendTarget.isPhone ? phoneVariants(sanitized) : [sanitized]
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
-    }
-  }
-  if (lastError) throw lastError
-
-  if (sendTarget.isPhone && workingPhone !== sanitized) {
-    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
-  }
 
   // Persist the bot's prompt to the messages table so it appears in
   // the inbox. content_type='interactive' is supported as of
@@ -472,6 +359,13 @@ async function sendInteractiveViaMeta(
           button_label: input.buttonLabel,
           sections: input.sections,
         }
+
+  // The structured payload goes to the transport as-is (native
+  // buttons/list on Meta, a numbered text menu where the provider has
+  // none) and is persisted below so the inbox re-renders it.
+  const { waMessageId } = await sendToContact(input, async (transport, to) =>
+    (await transport.sendInteractive({ to, payload: interactivePayload })).messageId,
+  )
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: input.conversationId,

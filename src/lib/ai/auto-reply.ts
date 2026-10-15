@@ -7,11 +7,7 @@ import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
-import {
-  engineSendText,
-  loadAccountMetaCredentials,
-} from '@/lib/flows/meta-send'
-import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
+import { engineSendText, engineSendTyping } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface DispatchArgs {
@@ -119,7 +115,7 @@ export async function dispatchInboundToAiReply(
     // nothing to undo on the handoff / no-text path. Strictly
     // best-effort: a failed indicator must never cost us the reply.
     if (inboundMessageId) {
-      await showTypingIndicator(db, accountId, inboundMessageId)
+      await showTypingIndicator(accountId, contactId, inboundMessageId)
     }
 
     // Ground the reply in the account's knowledge base (best-effort).
@@ -222,20 +218,12 @@ export async function dispatchInboundToAiReply(
  * — the indicator is cosmetic, the reply is not.
  */
 async function showTypingIndicator(
-  db: ReturnType<typeof supabaseAdmin>,
   accountId: string,
+  contactId: string,
   inboundMessageId: string,
 ): Promise<void> {
   try {
-    const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
-      db,
-      accountId,
-    )
-    await sendTypingIndicator({
-      phoneNumberId,
-      accessToken,
-      messageId: inboundMessageId,
-    })
+    await engineSendTyping({ accountId, contactId, inboundMessageId })
   } catch (err) {
     console.warn('[ai auto-reply] typing indicator failed (continuing):', err)
   }
