@@ -153,7 +153,9 @@ export interface StatusScope {
 async function updateAccountMessages(
   accountId: string,
   providerMessageId: string,
-  update: Record<string, unknown>
+  update: Record<string, unknown>,
+  /** Extra PostgREST `or` filter the update is conditional on. */
+  onlyIf?: string
 ): Promise<{ error: { message: string } | null }> {
   const { data: rows, error } = await supabaseAdmin()
     .from('messages')
@@ -163,10 +165,9 @@ async function updateAccountMessages(
   if (error) return { error }
   const ids = (rows ?? []).map((r: { id: string }) => r.id)
   if (ids.length === 0) return { error: null }
-  const { error: updErr } = await supabaseAdmin()
-    .from('messages')
-    .update(update)
-    .in('id', ids)
+  let q = supabaseAdmin().from('messages').update(update).in('id', ids)
+  if (onlyIf) q = q.or(onlyIf)
+  const { error: updErr } = await q
   return { error: updErr }
 }
 
@@ -989,7 +990,14 @@ export async function applyMessageMutation(
     mutation.kind === 'revoked'
       ? { revoked_at: mutation.at }
       : { edited_at: mutation.at, content_text: mutation.text }
-  const { error } = await updateAccountMessages(accountId, providerMessageId, update)
+  // Edits are newest-wins: an older edit (redelivered late, replayed)
+  // never overwrites a newer text.
+  const { error } = await updateAccountMessages(
+    accountId,
+    providerMessageId,
+    update,
+    mutation.kind === 'edited' ? `edited_at.is.null,edited_at.lt.${mutation.at}` : undefined
+  )
   if (error) {
     console.error(`[webhook] message ${mutation.kind} update failed:`, error.message)
     if (options.throwOnFailure) throw new IngestFailure(`message ${mutation.kind}`, error)

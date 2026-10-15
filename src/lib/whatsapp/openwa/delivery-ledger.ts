@@ -53,8 +53,9 @@ export async function claimDelivery(
     .eq('account_id', args.accountId)
     .maybeSingle()
   if (readErr) throw new Error(`ledger read failed: ${readErr.message}`)
-  // The key exists but for another account: never process it here.
-  if (!row) return 'done'
+  // The key is (account_id, idempotency_key) (migration 049), so a
+  // conflict without a row of ours is a race with a delete — retry later.
+  if (!row) return 'busy'
   const current = row as LedgerRow
   if (current.status === 'done') return 'done'
   const fresh = now.getTime() - Date.parse(current.updated_at) < CLAIM_TIMEOUT_MS

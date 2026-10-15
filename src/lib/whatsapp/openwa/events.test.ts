@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   recordOutboundEcho: vi.fn(async () => 'recorded'),
   mirrorInboundMedia: vi.fn(async () => 'https://storage/chat-media/x.jpg'),
   updates: [] as { table: string; patch: Record<string, unknown> }[],
+  orFilters: [] as string[],
+  staleSession: false,
 }))
 
 vi.mock('@/lib/whatsapp/inbound/ingest', () => ({
@@ -38,7 +40,13 @@ const admin = {
   from: (table: string) => ({
     update: (patch: Record<string, unknown>) => {
       h.updates.push({ table, patch })
-      const chain = { eq: () => chain, then: (r: (v: unknown) => unknown) => r({ error: null }) }
+      const chain = {
+        eq: () => chain,
+        or: (f: string) => (h.orFilters.push(f), chain),
+        // A stale session event matches no row (status_event_at is newer).
+        select: async () => ({ data: h.staleSession ? [] : [{ id: 'row' }], error: null }),
+        then: (r: (v: unknown) => unknown) => r({ error: null }),
+      }
       return chain
     },
   }),
@@ -63,6 +71,8 @@ function env(event: string, data: Record<string, unknown>): OpenWaEnvelope {
 beforeEach(() => {
   vi.clearAllMocks()
   h.updates.length = 0
+  h.orFilters.length = 0
+  h.staleSession = false
 })
 
 describe('classification helpers', () => {
@@ -280,5 +290,21 @@ describe('message.sent (phone echo)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// F4 (review): a captured old session event replayed later (or a late
+// at-least-once redelivery) must not overwrite newer session state.
+describe('session events are newest-wins (F4)', () => {
+  it('applies only when not older than the last applied event', async () => {
+    await handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx())
+    expect(h.updates[0].patch.status_event_at).toBe('2026-10-15T22:17:00.000Z')
+    expect(h.orFilters[0]).toBe('status_event_at.is.null,status_event_at.lte.2026-10-15T22:17:00.000Z')
+  })
+
+  it('an older event changes nothing — not even the active-connection flag', async () => {
+    h.staleSession = true
+    await handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx())
+    expect(h.updates.filter((u) => u.table === 'whatsapp_config')).toHaveLength(0)
   })
 })

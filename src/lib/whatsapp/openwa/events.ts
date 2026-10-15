@@ -465,7 +465,8 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       await applyMessageMutation(
         accountId,
         target,
-        { kind: 'edited', at: new Date().toISOString(), text: body },
+        // Gateway event time — edits apply newest-wins (see ingest).
+        { kind: 'edited', at: new Date(Number(envelopeSeconds(env)) * 1000).toISOString(), text: body },
         { throwOnFailure: true },
       )
       return 'mutation'
@@ -543,14 +544,26 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
       break
   }
 
-  const { error } = await ctx.admin
+  // Monotonic by the gateway's event time: a session event older than
+  // the newest one applied (a late redelivery, a replayed capture) must
+  // not overwrite newer state — e.g. an old "disconnected" over a live
+  // session.
+  const eventAt = new Date(Number(envelopeSeconds(env)) * 1000).toISOString()
+  patch.status_event_at = eventAt
+  const { data: applied, error } = await ctx.admin
     .from('whatsapp_openwa_config')
     .update(patch)
     .eq('account_id', ctx.row.account_id)
     .eq('session_id', env.sessionId)
+    .or(`status_event_at.is.null,status_event_at.lte.${eventAt}`)
+    .select('id')
   if (error) {
     console.error('[openwa] session state update failed:', error.message)
     throw new Error(`session state update failed: ${error.message}`)
+  }
+  if (!applied || applied.length === 0) {
+    console.info(`[openwa] ignored ${env.event} older than the current session state`)
+    return
   }
 
   if (typeof patch.status === 'string' && isOpenWaSessionStatus(patch.status)) {

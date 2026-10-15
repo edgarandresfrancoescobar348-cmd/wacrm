@@ -38,9 +38,13 @@ vi.mock('@/lib/whatsapp/openwa/events', async (importOriginal) => ({
 type LedgerRow = Record<string, unknown> & { idempotency_key: string }
 function ledgerTable() {
   return {
+    // Primary key (account_id, idempotency_key), as migration 049.
     insert: async (row: LedgerRow) => {
-      if (h.ledger.has(row.idempotency_key)) return { error: { code: '23505', message: 'duplicate key' } }
-      h.ledger.set(row.idempotency_key, { ...row })
+      const clash = [...h.ledger.values()].some(
+        (r) => r.idempotency_key === row.idempotency_key && r.account_id === row.account_id,
+      )
+      if (clash) return { error: { code: '23505', message: 'duplicate key' } }
+      h.ledger.set(`${String(row.account_id)}|${row.idempotency_key}`, { ...row })
       return { error: null }
     },
     select: () => {
@@ -110,7 +114,7 @@ function sign(body: string, secret = SECRET) {
 function delivery(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
     event: 'message.received',
-    timestamp: '2026-10-15T22:15:03.412Z',
+    timestamp: new Date().toISOString(),
     sessionId: SESSION,
     idempotencyKey: 'msg_key_1',
     deliveryId: 'dlv_1',
@@ -248,13 +252,13 @@ describe('OpenWA webhook — failures are redeliverable (F3)', () => {
     const headers = { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' }
     const first = await post(body, headers)
     expect(first.status).toBe(503)
-    expect(h.ledger.get('msg_key_1')).toMatchObject({ status: 'failed' })
+    expect(h.ledger.get('acct-1|msg_key_1')).toMatchObject({ status: 'failed' })
 
     const retry = await post(body, headers)
     expect(retry.status).toBe(200)
     expect(retry.body).toEqual({ status: 'received' })
     expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(2)
-    expect(h.ledger.get('msg_key_1')).toMatchObject({ status: 'done', attempts: 2 })
+    expect(h.ledger.get('acct-1|msg_key_1')).toMatchObject({ status: 'done', attempts: 2 })
 
     const third = await post(body, headers)
     expect(third.body).toEqual({ status: 'duplicate' })
@@ -262,7 +266,7 @@ describe('OpenWA webhook — failures are redeliverable (F3)', () => {
   })
 
   it('asks for a later retry while another request is processing the same delivery', async () => {
-    h.ledger.set('msg_key_1', { idempotency_key: 'msg_key_1', account_id: 'acct-1', status: 'processing', attempts: 1, updated_at: new Date().toISOString() })
+    h.ledger.set('acct-1|msg_key_1', { idempotency_key: 'msg_key_1', account_id: 'acct-1', status: 'processing', attempts: 1, updated_at: new Date().toISOString() })
     const body = delivery()
     const res = await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' })
     expect(res.status).toBe(409)
@@ -270,24 +274,66 @@ describe('OpenWA webhook — failures are redeliverable (F3)', () => {
   })
 
   it('re-claims a delivery abandoned by a crashed worker', async () => {
-    h.ledger.set('msg_key_1', { idempotency_key: 'msg_key_1', account_id: 'acct-1', status: 'processing', attempts: 1, updated_at: new Date(Date.now() - 5 * 60_000).toISOString() })
+    h.ledger.set('acct-1|msg_key_1', { idempotency_key: 'msg_key_1', account_id: 'acct-1', status: 'processing', attempts: 1, updated_at: new Date(Date.now() - 5 * 60_000).toISOString() })
     const body = delivery()
     const res = await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' })
     expect(res.status).toBe(200)
     expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(1)
-    expect(h.ledger.get('msg_key_1')).toMatchObject({ status: 'done' })
+    expect(h.ledger.get('acct-1|msg_key_1')).toMatchObject({ status: 'done' })
   })
 
   it('runs the bot fan-out only after the delivery is recorded as done', async () => {
     const order: string[] = []
     h.handleOpenWaEvent.mockImplementationOnce(async (_env: unknown, ctx: { defer?: (t: () => Promise<void>) => void }) => {
       ctx.defer?.(async () => {
-        order.push(`fan-out sees ledger ${String(h.ledger.get('msg_key_1')?.status)}`)
+        order.push(`fan-out sees ledger ${String(h.ledger.get('acct-1|msg_key_1')?.status)}`)
       })
       return 'ingested'
     })
     const body = delivery()
     await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' })
     expect(order).toEqual(['fan-out sees ledger done'])
+  })
+})
+
+// F4 (review): the delivery identity is the one inside the signed body.
+describe('OpenWA webhook — replay guards (F4)', () => {
+  it('rejects a signed body replayed under a different idempotency header', async () => {
+    const body = delivery({ event: 'session.disconnected', data: { reason: 'old disconnect' } })
+    const first = await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' })
+    const replay = await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'second' })
+    expect(first.status).toBe(200)
+    expect(replay.status).toBe(401)
+    expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('without the header, the body key de-duplicates the replay', async () => {
+    const body = delivery({ event: 'session.disconnected', data: { reason: 'old disconnect' } })
+    await post(body, { 'x-openwa-signature': sign(body) })
+    const replay = await post(body, { 'x-openwa-signature': sign(body) })
+    expect(replay.body).toEqual({ status: 'duplicate' })
+    expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a signed body without its own idempotency key', async () => {
+    const body = delivery({ idempotencyKey: undefined })
+    const res = await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'header-only' })
+    expect(res.status).toBe(400)
+    expect(h.handleOpenWaEvent).not.toHaveBeenCalled()
+  })
+
+  it('refuses a delivery older than the ledger remembers', async () => {
+    const body = delivery({ timestamp: new Date(Date.now() - 8 * 24 * 3600_000).toISOString(), idempotencyKey: 'ancient' })
+    const res = await post(body, { 'x-openwa-signature': sign(body) })
+    expect(res.status).toBe(400)
+    expect(h.handleOpenWaEvent).not.toHaveBeenCalled()
+  })
+
+  it('scopes the ledger per account: another account cannot pre-empt a key', async () => {
+    h.ledger.set('attacker-acct|msg_key_1', { idempotency_key: 'msg_key_1', account_id: 'attacker-acct', status: 'done', attempts: 1, updated_at: new Date().toISOString() })
+    const body = delivery()
+    const res = await post(body, { 'x-openwa-signature': sign(body) })
+    expect(res.body).toEqual({ status: 'received' })
+    expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(1)
   })
 })

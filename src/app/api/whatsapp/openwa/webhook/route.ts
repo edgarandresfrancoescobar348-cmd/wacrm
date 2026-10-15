@@ -38,6 +38,9 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 /** Ledger rows older than this are pruned opportunistically. */
 const LEDGER_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+/** Deliveries older than this are refused — kept below the retention so
+ *  anything the ledger has forgotten can't be replayed. */
+export const MAX_DELIVERY_AGE_MS = 6 * 24 * 60 * 60 * 1000
 
 function unauthorized() {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -90,10 +93,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: 'ok' })
   }
 
+  // The delivery's identity comes from the SIGNED body. The header is
+  // unsigned: trusting it let a captured delivery be replayed under a
+  // fresh key. It must match when present.
   const idempotencyKey =
-    request.headers.get('x-openwa-idempotency-key') || envelope.idempotencyKey || null
+    typeof envelope.idempotencyKey === 'string' && envelope.idempotencyKey.trim()
+      ? envelope.idempotencyKey
+      : null
   if (!idempotencyKey) {
     return NextResponse.json({ error: 'Missing idempotency key' }, { status: 400 })
+  }
+  const headerKey = request.headers.get('x-openwa-idempotency-key')
+  if (headerKey !== null && headerKey !== idempotencyKey) {
+    console.warn('[openwa webhook] idempotency header does not match the signed body')
+    return unauthorized()
+  }
+  // Older than the ledger's memory: a replayed capture, not a retry.
+  const sentAt = envelope.timestamp ? Date.parse(envelope.timestamp) : NaN
+  if (!Number.isFinite(sentAt) || Date.now() - sentAt > MAX_DELIVERY_AGE_MS) {
+    console.warn('[openwa webhook] rejected a stale or undated delivery')
+    return NextResponse.json({ error: 'Stale delivery' }, { status: 400 })
   }
 
   // Claim the delivery. Only a COMPLETED delivery is a duplicate; one
