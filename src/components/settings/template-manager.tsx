@@ -543,7 +543,7 @@ export function TemplateManager() {
     <section className="animate-in fade-in-50 space-y-4 duration-200">
       <SettingsPanelHead
         title={t('title')}
-        description={t('description')}
+        description={localMode ? t('descriptionLocal') : t('description')}
         action={
           <div className="flex items-center gap-2">
             {!localMode && (

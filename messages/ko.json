@@ -1745,7 +1745,8 @@
       "readyToUse": "사용 가능",
       "localOrigin": "로컬",
       "localOriginTitle": "QR 코드 모드에서 만들어졌으며 Meta에 승인 요청을 제출한 적이 없습니다.",
-      "saveLocal": "템플릿 저장"
+      "saveLocal": "템플릿 저장",
+      "descriptionLocal": "받은편지함, 일괄 발송, 자동화에서 사용할 변수 포함 메시지 템플릿을 만드세요."
     },
     "roles": {
       "admin": "관리자",
@@ -1967,7 +1968,8 @@
         "howTemplates": "템플릿은 로컬로 관리됩니다. Meta 승인이 필요 없으며 텍스트로 발송됩니다.",
         "howMenus": "버튼과 목록은 번호가 매겨진 메뉴로 바뀌며, 연락처가 답장한 번호나 제목으로 같은 옵션이 실행됩니다.",
         "howWindow": "24시간 창이 없으므로 언제든지 답장할 수 있습니다.",
-        "howGroups": "그룹 및 상태 메시지는 무시됩니다."
+        "howGroups": "그룹 및 상태 메시지는 무시됩니다.",
+        "cancelConnect": "연결 취소"
       }
     },
     "sections": {

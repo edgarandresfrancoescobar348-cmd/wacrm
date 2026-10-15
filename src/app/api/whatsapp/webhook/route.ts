@@ -3,10 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl } from '@/lib/whatsapp/meta-api'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
-import {
-  resolveInboundIdentity,
-  type WaContactPayload,
-} from '@/lib/whatsapp/wa-identity'
+import { resolveInboundIdentity } from '@/lib/whatsapp/wa-identity'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import {
   applyStatusUpdate,

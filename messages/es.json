@@ -1745,7 +1745,8 @@
       "readyToUse": "Lista para usar",
       "localOrigin": "Local",
       "localOriginTitle": "Creada en el modo de código QR; nunca se envió a Meta para su aprobación.",
-      "saveLocal": "Guardar plantilla"
+      "saveLocal": "Guardar plantilla",
+      "descriptionLocal": "Crea plantillas de mensaje con variables para usar en la bandeja de entrada, difusiones y automatizaciones."
     },
     "roles": {
       "admin": "Administrador",
@@ -1967,7 +1968,8 @@
         "howTemplates": "Las plantillas son locales: sin aprobación de Meta, se envían como texto.",
         "howMenus": "Los botones y las listas se convierten en un menú numerado; la respuesta del contacto (número o título) activa la misma opción.",
         "howWindow": "No hay ventana de 24 h: puedes responder en cualquier momento.",
-        "howGroups": "Los mensajes de grupos y de estados se ignoran."
+        "howGroups": "Los mensajes de grupos y de estados se ignoran.",
+        "cancelConnect": "Cancelar conexión"
       }
     },
     "sections": {

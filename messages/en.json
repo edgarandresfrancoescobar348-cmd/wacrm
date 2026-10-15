@@ -1745,7 +1745,8 @@
       "readyToUse": "Ready to use",
       "localOrigin": "Local",
       "localOriginTitle": "Created in QR-code mode; never submitted to Meta for approval.",
-      "saveLocal": "Save template"
+      "saveLocal": "Save template",
+      "descriptionLocal": "Create message templates with variables to use in the inbox, broadcasts and automations."
     },
     "roles": {
       "admin": "Admin",
@@ -1967,7 +1968,8 @@
         "howTemplates": "Templates are local: no Meta approval, sent as text.",
         "howMenus": "Buttons and lists become a numbered menu; the contact's reply (number or title) triggers the same option.",
         "howWindow": "There's no 24 h window: you can reply at any time.",
-        "howGroups": "Group and status messages are ignored."
+        "howGroups": "Group and status messages are ignored.",
+        "cancelConnect": "Cancel connection"
       }
     },
     "sections": {

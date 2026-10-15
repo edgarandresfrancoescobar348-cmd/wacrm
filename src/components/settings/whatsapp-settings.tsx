@@ -12,6 +12,11 @@ import { OpenWaPanel, type OpenWaApiState } from './openwa-panel';
 
 export type ConnectionMode = 'meta' | 'openwa';
 
+async function fetchConnectionState(): Promise<OpenWaApiState | null> {
+  const res = await fetch('/api/whatsapp/openwa', { cache: 'no-store' });
+  return res.ok ? ((await res.json()) as OpenWaApiState) : null;
+}
+
 /**
  * Settings → WhatsApp. Two ways to connect, one active at a time
  * (`whatsapp_config.provider`): Meta's official Cloud API, or a regular
@@ -28,22 +33,27 @@ export function WhatsAppSettings() {
   const [state, setState] = useState<OpenWaApiState | null>(null);
   const [view, setView] = useState<ConnectionMode | null>(null);
 
+  const apply = useCallback((data: OpenWaApiState | null) => {
+    if (!data) return;
+    setState(data);
+    setView((current) => current ?? (data.provider === 'openwa' ? 'openwa' : 'meta'));
+  }, []);
+
+  /** Re-read the connection state (after a save / connect / switch). */
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/whatsapp/openwa', { cache: 'no-store' });
-      if (!res.ok) return;
-      const data = (await res.json()) as OpenWaApiState;
-      setState(data);
-      setView((current) => current ?? (data.provider === 'openwa' ? 'openwa' : 'meta'));
+      apply(await fetchConnectionState());
     } catch (err) {
       console.error('Failed to load WhatsApp connection mode:', err);
     }
-  }, []);
+  }, [apply]);
 
   useEffect(() => {
     if (authLoading || profileLoading || !accountId) return;
-    void load();
-  }, [authLoading, profileLoading, accountId, load]);
+    fetchConnectionState()
+      .then(apply)
+      .catch((err) => console.error('Failed to load WhatsApp connection mode:', err));
+  }, [authLoading, profileLoading, accountId, apply]);
 
   const active: ConnectionMode | null = state?.provider ?? null;
   const shown: ConnectionMode = view ?? 'meta';

@@ -713,7 +713,7 @@ function ConnectionBody({
     return (
       <div className="space-y-4">
         <StatusLine tone="wait" icon={<QrCode className="size-4" />} text={t('statusQr')} />
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
+        <div className="flex flex-col gap-4">
           <div className="flex size-[232px] shrink-0 items-center justify-center rounded-xl bg-white p-2">
             {qrCode ? (
               // eslint-disable-next-line @next/next/no-img-element -- data URL from the gateway
@@ -775,6 +775,12 @@ function ConnectionBody({
             </div>
           )}
         </div>
+        {canEdit && (
+          <Button variant="ghost" size="sm" onClick={onLogout} disabled={busy !== null}>
+            {busy === 'logout' ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+            {t('cancelConnect')}
+          </Button>
+        )}
       </div>
     );
   }

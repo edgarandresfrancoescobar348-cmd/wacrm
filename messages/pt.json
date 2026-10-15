@@ -1745,7 +1745,8 @@
       "readyToUse": "Pronto para uso",
       "localOrigin": "Local",
       "localOriginTitle": "Criado no modo QR Code; nunca foi enviado à Meta para aprovação.",
-      "saveLocal": "Salvar modelo"
+      "saveLocal": "Salvar modelo",
+      "descriptionLocal": "Crie modelos de mensagem com variáveis para usar no inbox, em disparos e automações."
     },
     "roles": {
       "admin": "Administrador",
@@ -1967,7 +1968,8 @@
         "howTemplates": "Modelos são locais: não passam pela aprovação da Meta e são enviados como texto.",
         "howMenus": "Botões e listas viram um menu numerado; a resposta do contato (número ou título) aciona a mesma opção.",
         "howWindow": "Não existe janela de 24 h: você pode responder a qualquer momento.",
-        "howGroups": "Mensagens de grupos e status são ignoradas."
+        "howGroups": "Mensagens de grupos e status são ignoradas.",
+        "cancelConnect": "Cancelar conexão"
       }
     },
     "sections": {
