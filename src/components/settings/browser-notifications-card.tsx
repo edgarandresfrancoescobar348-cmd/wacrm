@@ -120,7 +120,7 @@ export function BrowserNotificationsCard({ className }: { className?: string }) 
           </p>
         ) : (
           <>
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+            <div className="flex items-center justify-between gap-4 rounded-xl bg-hover-surface p-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">
                   {t('toggleLabel')}
@@ -143,7 +143,7 @@ export function BrowserNotificationsCard({ className }: { className?: string }) 
             <p className="text-xs text-muted-foreground">{t(statusKey)}</p>
 
             {permission === 'denied' && (
-              <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              <p className="flex items-start gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-700 [html[data-mode=dark]_&]:text-amber-300">
                 <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
                 <span>{t('deniedHint')}</span>
               </p>

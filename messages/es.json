@@ -2049,6 +2049,23 @@
       "textPlaceholder": "El texto del mensaje que se insertará",
       "cancel": "Cancelar",
       "save": "Guardar"
+    },
+    "searchPlaceholder": "Buscar configuración",
+    "clearSearch": "Borrar búsqueda",
+    "noMatches": "No se encontró ninguna configuración",
+    "back": "Volver a configuración",
+    "sectionHints": {
+      "overview": "Tu espacio de trabajo de un vistazo",
+      "profile": "Nombre, foto y alertas",
+      "security": "Contraseña y sesiones activas",
+      "appearance": "Modo y color de acento",
+      "whatsapp": "Conexión con la API de WhatsApp Cloud",
+      "templates": "Plantillas de mensaje aprobadas por Meta",
+      "quick-replies": "Atajos para respuestas frecuentes",
+      "fields": "Etiquetas y campos personalizados",
+      "deals": "Moneda predeterminada de los negocios",
+      "members": "Invitaciones, roles y acceso",
+      "api": "Claves para la API pública"
     }
   },
   "SignupPage": {

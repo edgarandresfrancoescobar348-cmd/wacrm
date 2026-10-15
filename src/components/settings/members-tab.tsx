@@ -275,7 +275,7 @@ export function MembersTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-primary" />
+        <Loader2 className="size-6 animate-spin text-primary-text" />
       </div>
     );
   }
@@ -360,7 +360,7 @@ export function MembersTab() {
                                 alt={member.full_name || t('memberAlt')}
                               />
                             ) : null}
-                            <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
+                            <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary-text">
                               {(member.full_name || member.email || 'U')
                                 .charAt(0)
                                 .toUpperCase()}
@@ -440,7 +440,7 @@ export function MembersTab() {
                       </Select>
                     ) : (
                       <span
-                        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${roleMeta.className}`}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${roleMeta.className}`}
                       >
                         <RoleIcon className="size-3.5" />
                         {tRoles(member.role)}
@@ -460,7 +460,7 @@ export function MembersTab() {
                         size="sm"
                         onClick={() => setRemovingMember(member)}
                         disabled={isBusy}
-                        className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200"
+                        className="border-transparent bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -526,7 +526,7 @@ export function MembersTab() {
                             {inv.label || t('untitledInvite')}
                           </span>
                           <span
-                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inviteRoleMeta.className}`}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${inviteRoleMeta.className}`}
                           >
                             <InviteRoleIcon className="size-3" />
                             {tRoles(inv.role)}
@@ -545,7 +545,7 @@ export function MembersTab() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleRevoke(inv)}
-                        className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200"
+                        className="border-transparent bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
                       >
                         <MailX className="size-4" />
                         {t('revoke')}

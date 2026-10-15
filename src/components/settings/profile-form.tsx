@@ -222,7 +222,7 @@ export function ProfileForm() {
               {currentAvatar ? (
                 <AvatarImage src={currentAvatar} alt={fullName || t('avatarAlt')} />
               ) : null}
-              <AvatarFallback className="bg-primary/10 text-base text-primary">
+              <AvatarFallback className="bg-primary/10 text-base text-primary-text">
                 {initial}
               </AvatarFallback>
             </Avatar>
@@ -292,7 +292,7 @@ export function ProfileForm() {
               required
             />
             {emailChangePending && (
-              <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              <p className="flex items-start gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-700 [html[data-mode=dark]_&]:text-amber-300">
                 <Mail className="mt-0.5 size-3.5 shrink-0" />
                 <span>
                   {t.rich('emailChangeHint', { 
@@ -306,8 +306,8 @@ export function ProfileForm() {
           </div>
 
           {/* Read-only block */}
-          <div className="rounded-lg border border-border bg-muted p-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="rounded-xl bg-hover-surface p-4">
+            <p className="mb-3 text-sm text-muted-foreground">
               {t('accountDetails')}
             </p>
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">

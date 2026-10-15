@@ -498,7 +498,7 @@ export function WhatsAppConfig() {
           description={t("description")}
         />
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-primary" />
+          <Loader2 className="size-6 animate-spin text-primary-text" />
         </div>
       </section>
     );
@@ -550,7 +550,7 @@ export function WhatsAppConfig() {
       <div className="space-y-6">
         {/* Corrupted-token reset banner */}
         {showResetBanner && (
-          <Alert className="bg-amber-950/40 border-amber-600/40">
+          <Alert className="border-transparent bg-amber-500/10">
             <div className="flex items-start gap-3">
               <AlertTriangle className="size-5 text-amber-400 mt-0.5 shrink-0" />
               <div className="flex-1">
@@ -585,7 +585,7 @@ export function WhatsAppConfig() {
 
         {/* Last save failed — why, which field, and what to quote to Meta */}
         {saveFailure && (
-          <Alert className="bg-red-950/30 border-red-700/50">
+          <Alert className="border-transparent bg-destructive/10">
             <div className="flex items-start gap-3">
               <XCircle className="size-5 text-red-400 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
@@ -600,10 +600,10 @@ export function WhatsAppConfig() {
         )}
 
         {/* Connection Status */}
-        <Alert className="bg-card border-border">
+        <Alert className="border-transparent bg-surface">
           <div className="flex items-center gap-2">
             {connectionStatus === 'connected' ? (
-              <CheckCircle2 className="size-4 text-primary" />
+              <CheckCircle2 className="size-4 text-primary-text" />
             ) : (
               <XCircle className="size-4 text-red-500" />
             )}
@@ -645,8 +645,8 @@ export function WhatsAppConfig() {
           <Alert
             className={
               isRegistered
-                ? 'bg-emerald-950/30 border-emerald-700/50'
-                : 'bg-amber-950/30 border-amber-700/50'
+                ? 'border-transparent bg-chip-active text-chip-active-foreground'
+                : 'border-transparent bg-amber-500/10'
             }
           >
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -706,7 +706,7 @@ export function WhatsAppConfig() {
             </AlertDescription>
 
             {registrationProbe && (
-              <div className="mt-3 rounded border border-border bg-card/60 px-3 py-2 space-y-1.5 text-[11px]">
+              <div className="mt-3 rounded-lg bg-bubble-quote px-3 py-2 space-y-1.5 text-[11px]">
                 <p className="font-medium text-foreground">
                   {t('diagnosticLastRun')}
                   <span className={registrationProbe.live ? 'text-emerald-400' : 'text-amber-400'}>
@@ -891,7 +891,7 @@ export function WhatsAppConfig() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div className="flex items-center justify-between gap-4 rounded-xl bg-hover-surface p-3">
                 <div>
                   <p className="text-sm font-medium text-foreground">
                     {t('mirrorInbound')}
@@ -900,7 +900,7 @@ export function WhatsAppConfig() {
                     {t('mirrorInboundDesc')}
                   </p>
                   {!mirrorMedia && (
-                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                    <p className="mt-1 text-xs text-amber-600 [html[data-mode=dark]_&]:text-amber-400">
                       {t('mirrorInboundOffWarning')}
                     </p>
                   )}
@@ -921,7 +921,7 @@ export function WhatsAppConfig() {
           <Button
             onClick={handleSave}
             disabled={saving}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            className="bg-primary hover:bg-primary-hover text-primary-foreground"
           >
             {saving ? (
               <>
@@ -955,7 +955,7 @@ export function WhatsAppConfig() {
               variant="outline"
               onClick={handleReset}
               disabled={resetting}
-              className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
+              className="border-transparent bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
             >
               {resetting ? (
                 <>
@@ -1053,12 +1053,12 @@ export function WhatsAppConfig() {
               </AccordionItem>
             </Accordion>
 
-            <div className="mt-4 pt-4 border-t border-border">
+            <div className="mt-4 pt-4">
               <a
                 href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+                className="inline-flex items-center gap-1.5 text-sm text-primary-text hover:text-primary/80 transition-colors"
               >
                 <ExternalLink className="size-3.5" />
                 {t('metaDocs')}

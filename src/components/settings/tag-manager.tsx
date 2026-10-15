@@ -154,7 +154,7 @@ export function TagManager() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-foreground">
-          <TagIcon className="size-4 text-primary" />
+          <TagIcon className="size-4 text-primary-text" />
           {t('tagsTitle')}
         </CardTitle>
         <CardDescription className="text-muted-foreground">
@@ -164,7 +164,7 @@ export function TagManager() {
       <CardContent className="space-y-4">
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-6 animate-spin text-primary" />
+            <Loader2 className="size-6 animate-spin text-primary-text" />
           </div>
         ) : (
           <>
@@ -189,7 +189,7 @@ export function TagManager() {
                       type="button"
                       onClick={() => confirmDelete(tag)}
                       aria-label={t('deleteAria', { name: tag.name })}
-                      className="ml-0.5 rounded-full p-0.5 opacity-60 transition-opacity hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                      className="ml-0.5 rounded-full p-0.5 opacity-60 transition-opacity hover:bg-black/10 hover:opacity-100 [html[data-mode=dark]_&]:hover:bg-white/10"
                     >
                       <X className="size-3" />
                     </button>

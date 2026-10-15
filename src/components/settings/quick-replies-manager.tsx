@@ -143,7 +143,7 @@ export function QuickRepliesManager() {
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : items.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
+        <p className="rounded-xl bg-bubble-quote py-10 text-center text-sm text-muted-foreground">
           {t("empty")}
         </p>
       ) : (
@@ -151,16 +151,24 @@ export function QuickRepliesManager() {
           {items.map((qr) => (
             <li
               key={qr.id}
-              className="flex items-start gap-3 rounded-lg border border-border bg-card p-3"
+              className="flex min-h-[72px] items-center gap-3 rounded-xl bg-surface px-3 py-2"
             >
-              {qr.kind === "interactive" ? (
-                <Zap className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              ) : (
-                <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
+              <span
+                className={
+                  qr.kind === "interactive"
+                    ? "flex size-10 shrink-0 items-center justify-center rounded-full bg-chip-active text-chip-active-foreground"
+                    : "flex size-10 shrink-0 items-center justify-center rounded-full bg-hover-surface text-muted-foreground"
+                }
+              >
+                {qr.kind === "interactive" ? (
+                  <Zap className="size-5" />
+                ) : (
+                  <MessageSquare className="size-5" />
+                )}
+              </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">{qr.title}</p>
-                <p className="truncate text-xs text-muted-foreground">
+                <p className="truncate text-base text-foreground">{qr.title}</p>
+                <p className="truncate text-sm text-muted-foreground">
                   {qr.kind === "interactive" && qr.interactive_payload
                     ? interactivePayloadPreviewText(qr.interactive_payload)
                     : qr.content_text}
@@ -257,8 +265,8 @@ function KindTab({
       onClick={onClick}
       className={
         active
-          ? "flex-1 rounded-md border border-primary bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary"
-          : "flex-1 rounded-md border border-border bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+          ? "h-9 flex-1 rounded-full border border-transparent bg-chip-active px-3 text-sm font-medium text-chip-active-foreground"
+          : "h-9 flex-1 rounded-full border border-border px-3 text-sm font-medium text-muted-foreground hover:bg-hover-surface hover:text-foreground"
       }
     >
       {label}

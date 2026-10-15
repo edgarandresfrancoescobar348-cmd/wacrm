@@ -129,7 +129,7 @@ export function ApiKeysSettings() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="text-primary size-6 animate-spin" />
+        <Loader2 className="text-primary-text size-6 animate-spin" />
       </div>
     );
   }
@@ -248,7 +248,7 @@ export function ApiKeysSettings() {
                           size="sm"
                           onClick={() => handleRevoke(k)}
                           disabled={revoking === k.id}
-                          className="self-start border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200 sm:self-auto"
+                          className="self-start border-transparent bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive sm:self-auto"
                         >
                           {revoking === k.id ? (
                             <Loader2 className="size-4 animate-spin" />
@@ -421,7 +421,7 @@ function CreateKeyDialog({
 
               <div className="space-y-2">
                 <Label className="text-muted-foreground">{t('scopesLabel')}</Label>
-                <div className="border-border space-y-2 rounded-md border p-3">
+                <div className="space-y-2 rounded-xl bg-hover-surface p-3">
                   {API_SCOPES.map((scope) => (
                     <label
                       key={scope}

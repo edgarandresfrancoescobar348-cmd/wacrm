@@ -3,6 +3,7 @@
 import { Suspense, useMemo, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ArrowLeft } from 'lucide-react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { useTheme } from '@/hooks/use-theme';
@@ -20,8 +21,12 @@ import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
   resolveSection,
+  SECTION_META,
   type SettingsSection,
 } from '@/components/settings/settings-sections';
+import { SettingsTitleInHeaderProvider } from '@/components/settings/settings-panel-head';
+import { FullBleedFrame } from '@/components/dashboard/full-bleed-frame';
+import { WaListLayout, WaPanelHeader } from '@/components/layout/wa-panel';
 
 // `useSearchParams` opts this page out of static prerendering unless it
 // sits under a Suspense boundary. Without one, the production build hits
@@ -83,21 +88,55 @@ function SettingsPageInner() {
     api: <ApiKeysSettings />,
   };
 
-  return (
-    <div>
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          {t('pageTitle')}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('pageDesc')}
-        </p>
-      </div>
+  // Mobile shows one pane: the section list, or the open section. The
+  // bare /settings landing (no ?tab) is the list; an explicit section —
+  // Overview included — opens the main pane.
+  const showMain = searchParams.get('tab') !== null;
+  const meta = SECTION_META[section];
+  const SectionIcon = meta.icon;
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start">
-        <SettingsRail active={section} onSelect={go} hints={hints} />
-        <div className="min-w-0">{panel[section]}</div>
-      </div>
-    </div>
+  const back = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('tab');
+    const qs = params.toString();
+    router.replace(qs ? `/settings?${qs}` : '/settings', { scroll: false });
+  };
+
+  return (
+    <FullBleedFrame>
+      <WaListLayout
+        showMain={showMain}
+        list={<SettingsRail active={section} onSelect={go} hints={hints} />}
+      >
+        <div className="flex h-full min-h-0 flex-col bg-background">
+          <WaPanelHeader
+            leading={
+              <>
+                <button
+                  type="button"
+                  onClick={back}
+                  aria-label={t('back')}
+                  className="-ml-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-hover-surface hover:text-foreground lg:hidden"
+                >
+                  <ArrowLeft className="size-5" />
+                </button>
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-chip-active text-chip-active-foreground">
+                  <SectionIcon className="size-5" />
+                </span>
+              </>
+            }
+            title={t(`sections.${section}`)}
+            subtitle={t(`sectionHints.${section}`)}
+          />
+          {/* Wallpaper tone under the content so surface cards stay
+              raised in light mode (in dark it equals the app bg). */}
+          <div className="min-h-0 flex-1 overflow-y-auto bg-wallpaper">
+            <div className="mx-auto w-full max-w-4xl px-4 py-5 sm:px-8 sm:py-6">
+              <SettingsTitleInHeaderProvider>{panel[section]}</SettingsTitleInHeaderProvider>
+            </div>
+          </div>
+        </div>
+      </WaListLayout>
+    </FullBleedFrame>
   );
 }
