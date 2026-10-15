@@ -637,7 +637,8 @@
         "proposalSent": "Proposta enviada",
         "negotiation": "Negociação",
         "won": "Ganho"
-      }
+      },
+      "moreOptions": "Mais opções"
     },
     "board": {
       "dropDealHere": "Solte um negócio aqui",
@@ -749,7 +750,15 @@
       },
       "errorLoad": "Falha ao carregar os disparos",
       "broadcastInProgress": "Disparo em andamento",
-      "retry": "Tentar novamente"
+      "retry": "Tentar novamente",
+      "searchPlaceholder": "Buscar disparos...",
+      "clearSearch": "Limpar busca",
+      "filterAll": "Todos",
+      "noMatches": "Nenhum disparo encontrado",
+      "rates": "{delivered}% entregues · {read}% lidas",
+      "yesterday": "Ontem",
+      "shortcutTemplates": "Modelos",
+      "shortcutContacts": "Contatos"
     },
     "status": {
       "draft": "Rascunho",
@@ -827,7 +836,8 @@
       "toastNotLinked": "Seu perfil não está vinculado a uma conta.",
       "toastFailedDraft": "Falha ao salvar o rascunho: {error}",
       "toastDraftSaved": "Rascunho salvo",
-      "broadcastFailed": "Falha no disparo"
+      "broadcastFailed": "Falha no disparo",
+      "close": "Fechar"
     },
     "wizard": {
       "next": "Avançar",

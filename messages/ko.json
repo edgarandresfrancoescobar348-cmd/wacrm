@@ -637,7 +637,8 @@
         "proposalSent": "제안서 발송",
         "negotiation": "협상",
         "won": "성사"
-      }
+      },
+      "moreOptions": "추가 옵션"
     },
     "board": {
       "dropDealHere": "여기에 딜을 놓으세요",
@@ -749,7 +750,15 @@
       },
       "errorLoad": "브로드캐스트를 불러오지 못했습니다",
       "broadcastInProgress": "브로드캐스트 진행 중",
-      "retry": "다시 시도"
+      "retry": "다시 시도",
+      "searchPlaceholder": "브로드캐스트 검색...",
+      "clearSearch": "검색 지우기",
+      "filterAll": "전체",
+      "noMatches": "브로드캐스트를 찾을 수 없습니다",
+      "rates": "{delivered}% 전달 · {read}% 읽음",
+      "yesterday": "어제",
+      "shortcutTemplates": "템플릿",
+      "shortcutContacts": "연락처"
     },
     "status": {
       "draft": "초안",
@@ -827,7 +836,8 @@
       "toastNotLinked": "프로필이 계정에 연결되어 있지 않습니다.",
       "toastFailedDraft": "초안 저장 실패: {error}",
       "toastDraftSaved": "초안이 저장되었습니다",
-      "broadcastFailed": "브로드캐스트 실패"
+      "broadcastFailed": "브로드캐스트 실패",
+      "close": "닫기"
     },
     "wizard": {
       "next": "다음",

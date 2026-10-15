@@ -637,7 +637,8 @@
         "proposalSent": "Proposal Sent",
         "negotiation": "Negotiation",
         "won": "Won"
-      }
+      },
+      "moreOptions": "More options"
     },
     "board": {
       "dropDealHere": "Drop a deal here",
@@ -749,7 +750,15 @@
       },
       "errorLoad": "Failed to load broadcasts",
       "broadcastInProgress": "Broadcast in progress",
-      "retry": "Retry"
+      "retry": "Retry",
+      "searchPlaceholder": "Search broadcasts...",
+      "clearSearch": "Clear search",
+      "filterAll": "All",
+      "noMatches": "No broadcasts found",
+      "rates": "{delivered}% delivered · {read}% read",
+      "yesterday": "Yesterday",
+      "shortcutTemplates": "Templates",
+      "shortcutContacts": "Contacts"
     },
     "status": {
       "draft": "Draft",
@@ -827,7 +836,8 @@
       "toastNotLinked": "Your profile is not linked to an account.",
       "toastFailedDraft": "Failed to save draft: {error}",
       "toastDraftSaved": "Draft saved",
-      "broadcastFailed": "Broadcast failed"
+      "broadcastFailed": "Broadcast failed",
+      "close": "Close"
     },
     "wizard": {
       "next": "Next",

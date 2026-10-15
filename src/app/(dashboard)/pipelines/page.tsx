@@ -24,11 +24,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  EllipsisVertical,
+  GitBranch,
+  Plus,
+  Settings,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
-import { GatedButton } from "@/components/ui/gated-button";
+import {
+  WaEmptyState,
+  WaPanelHeader,
+  WaPrimaryAction,
+} from "@/components/layout/wa-panel";
+import { FullBleedFrame } from "@/components/broadcasts/full-bleed-frame";
 import { useTranslations } from "next-intl";
 
 // Pipeline creation is admin-class (settings-tier write under
@@ -300,165 +312,197 @@ export default function PipelinesPage() {
 
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId);
 
+  // WA "+" header action, role-gated like GatedButton: a disabled
+  // button gets no hover events, so the read-only reason lives on a
+  // wrapping span's `title`.
+  const dealGateTitle = canCreateDeals
+    ? undefined
+    : tGate("readOnly", { action: tGate("reasons.createDeals") });
+  const pipelineGateTitle = canEditSettings
+    ? undefined
+    : tGate("readOnly", { action: tGate("reasons.createPipelines") });
+
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-          <div className="h-9 w-28 animate-pulse rounded-lg bg-muted" />
+      <FullBleedFrame>
+        <div className="flex h-full flex-col bg-background">
+          <div className="flex h-16 shrink-0 items-center justify-between px-5">
+            <div className="h-7 w-48 animate-pulse rounded-full bg-hover-surface" />
+            <div className="size-10 animate-pulse rounded-full bg-hover-surface" />
+          </div>
+          <div className="wa-wallpaper flex min-h-0 flex-1 flex-col gap-4 p-4 sm:px-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="h-[68px] animate-pulse rounded-xl bg-surface/70" />
+              ))}
+            </div>
+            <div className="flex gap-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-96 w-72 animate-pulse rounded-2xl bg-surface/50" />
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="flex gap-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-96 w-72 animate-pulse rounded-xl bg-muted/50" />
-          ))}
-        </div>
-      </div>
+      </FullBleedFrame>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          {/* Pipeline selector dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors data-[popup-open]:bg-muted"
-            >
-              <GitBranch className="h-4 w-4 text-primary" />
-              <span className="font-semibold">
-                {selectedPipeline?.name ?? t("selectPipeline")}
+    <FullBleedFrame>
+      <div className="flex h-full min-h-0 flex-col bg-background">
+        <WaPanelHeader
+          large
+          title={
+            <DropdownMenu>
+              {/* The panel title doubles as the pipeline switcher. */}
+              <DropdownMenuTrigger className="inline-flex max-w-full items-center gap-1.5 rounded-xl px-2 py-1 text-left outline-none transition-colors hover:bg-hover-surface focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-hover-surface">
+                <span className="truncate">
+                  {selectedPipeline?.name ?? t("selectPipeline")}
+                </span>
+                <ChevronDown className="size-5 shrink-0 text-muted-foreground" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-72">
+                {pipelines.length === 0 && (
+                  <DropdownMenuItem disabled>{t("noPipelinesYet")}</DropdownMenuItem>
+                )}
+                {pipelines.map((p) => (
+                  <DropdownMenuItem
+                    key={p.id}
+                    onClick={() => setSelectedPipelineId(p.id)}
+                    className={p.id === selectedPipelineId ? "font-medium" : undefined}
+                  >
+                    <GitBranch
+                      className={
+                        p.id === selectedPipelineId
+                          ? "text-primary-text"
+                          : "text-muted-foreground"
+                      }
+                    />
+                    <span className="flex-1 truncate">{p.name}</span>
+                    {p.id === selectedPipelineId && (
+                      <Check className="text-primary-text" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={!canEditSettings}
+                  title={pipelineGateTitle}
+                  onClick={() => setNewPipelineOpen(true)}
+                >
+                  <Plus className="text-muted-foreground" />
+                  {t("addPipeline")}
+                </DropdownMenuItem>
+                {selectedPipeline && (
+                  <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
+                    <Settings className="text-muted-foreground" />
+                    {t("managePipelines")}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          }
+          actions={
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label={t("moreOptions")}
+                  className="inline-flex size-10 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-hover-surface hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-hover-surface"
+                >
+                  <EllipsisVertical className="size-5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuItem
+                    disabled={!canEditSettings}
+                    title={pipelineGateTitle}
+                    onClick={() => setNewPipelineOpen(true)}
+                  >
+                    <Plus className="text-muted-foreground" />
+                    {t("addPipeline")}
+                  </DropdownMenuItem>
+                  {selectedPipeline && (
+                    <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
+                      <Settings className="text-muted-foreground" />
+                      {t("managePipelines")}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <span
+                title={dealGateTitle}
+                className={canCreateDeals ? "inline-flex" : "inline-flex cursor-not-allowed"}
+              >
+                <WaPrimaryAction
+                  icon={Plus}
+                  label={t("addDeal")}
+                  disabled={!canCreateDeals || !selectedPipelineId || stages.length === 0}
+                  onClick={() => handleAddDeal()}
+                />
               </span>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="w-64 border-border bg-popover text-popover-foreground"
-            >
-              {pipelines.length === 0 && (
-                <DropdownMenuItem disabled className="text-muted-foreground">
-                  {t("noPipelinesYet")}
-                </DropdownMenuItem>
-              )}
-              {pipelines.map((p) => (
-                <DropdownMenuItem
-                  key={p.id}
-                  onClick={() => setSelectedPipelineId(p.id)}
-                  className={
-                    p.id === selectedPipelineId
-                      ? "text-primary"
-                      : "text-popover-foreground"
-                  }
-                >
-                  <GitBranch className="mr-2 h-3.5 w-3.5" />
-                  {p.name}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator className="bg-border" />
-              {selectedPipeline && (
-                <DropdownMenuItem
-                  onClick={() => setSettingsOpen(true)}
-                  className="text-popover-foreground"
-                >
-                  <Settings className="mr-2 h-3.5 w-3.5" />
-                  {t("managePipelines")}
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+            </>
+          }
+        />
 
-        <div className="flex items-center gap-2">
-          <GatedButton
-            variant="outline"
-            canAct={canEditSettings}
-            gateReason={tGate("reasons.createPipelines")}
-            onClick={() => setNewPipelineOpen(true)}
-            className="border-border bg-card text-foreground hover:bg-muted"
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            {t("addPipeline")}
-          </GatedButton>
-          <GatedButton
-            canAct={canCreateDeals}
-            gateReason={tGate("reasons.createDeals")}
-            disabled={!selectedPipelineId || stages.length === 0}
-            onClick={() => handleAddDeal()}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            {t("addDeal")}
-          </GatedButton>
-        </div>
+        {pipelines.length === 0 ? (
+          <div className="wa-wallpaper min-h-0 flex-1">
+            <WaEmptyState
+              icon={GitBranch}
+              title={t("noPipelinesYet")}
+              description={t("createToStartTracking")}
+              cta={
+                canEditSettings
+                  ? { label: t("createPipeline"), onClick: () => setNewPipelineOpen(true) }
+                  : undefined
+              }
+            />
+          </div>
+        ) : (
+          // The wallpaper sits on a non-scrolling wrapper so its doodle
+          // covers the whole pane; the inner div does the scrolling.
+          <div className="wa-wallpaper min-h-0 flex-1">
+            <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 pt-4 sm:px-5">
+              <PipelineAnalytics stages={stages} deals={deals} />
+              <PipelineBoard
+                stages={stages}
+                deals={deals}
+                onDealMoved={handleDealMoved}
+                onAddDeal={handleAddDeal}
+                onEditDeal={handleEditDeal}
+              />
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* Board */}
-      {pipelines.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20">
-          <GitBranch className="h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-medium text-foreground">
-            {t("noPipelinesYet")}
-          </h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {t("createToStartTracking")}
-          </p>
-          <GatedButton
-            canAct={canEditSettings}
-            gateReason={tGate("reasons.createPipelines")}
-            onClick={() => setNewPipelineOpen(true)}
-            className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            {t("createPipeline")}
-          </GatedButton>
-        </div>
-      ) : (
-        <>
-          <PipelineAnalytics stages={stages} deals={deals} />
-          <PipelineBoard
-            stages={stages}
-            deals={deals}
-            onDealMoved={handleDealMoved}
-            onAddDeal={handleAddDeal}
-            onEditDeal={handleEditDeal}
-          />
-        </>
-      )}
 
       {/* New Pipeline Dialog */}
       <Dialog open={newPipelineOpen} onOpenChange={setNewPipelineOpen}>
-        <DialogContent className="sm:max-w-sm bg-popover border-border">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-popover-foreground">{t("newPipeline")}</DialogTitle>
+            <div className="flex size-12 items-center justify-center rounded-full bg-chip-active text-chip-active-foreground">
+              <GitBranch className="size-6" strokeWidth={1.75} />
+            </div>
+            <DialogTitle>{t("newPipeline")}</DialogTitle>
           </DialogHeader>
-          <div className="py-2">
+          <div className="grid gap-2">
             <Label className="text-muted-foreground">{t("pipelineName")}</Label>
             <Input
+              autoFocus
               value={newPipelineName}
               onChange={(e) => setNewPipelineName(e.target.value)}
               placeholder={t("pipelineNamePlaceholder")}
-              className="mt-2 bg-muted border-border text-foreground"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleCreatePipeline();
               }}
             />
-            <p className="mt-2 text-xs text-muted-foreground">
-              {t("defaultStagesDesc")}
-            </p>
+            <p className="text-[13px] text-muted-foreground">{t("defaultStagesDesc")}</p>
           </div>
-          <DialogFooter className="bg-popover/50 border-border">
-            <Button
-              variant="outline"
-              onClick={() => setNewPipelineOpen(false)}
-              className="border-border text-muted-foreground hover:bg-muted"
-            >
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewPipelineOpen(false)}>
               {t("cancel")}
             </Button>
             <Button
               onClick={handleCreatePipeline}
               disabled={creating || !newPipelineName.trim()}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {creating ? t("creating") : t("createPipelineBtn")}
             </Button>
@@ -492,6 +536,6 @@ export default function PipelinesPage() {
         defaultStageId={defaultStageId}
         onSaved={refreshDeals}
       />
-    </div>
+    </FullBleedFrame>
   );
 }

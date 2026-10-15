@@ -637,7 +637,8 @@
         "proposalSent": "Propuesta enviada",
         "negotiation": "Negociación",
         "won": "Ganado"
-      }
+      },
+      "moreOptions": "Más opciones"
     },
     "board": {
       "dropDealHere": "Suelta un negocio aquí",
@@ -749,7 +750,15 @@
       },
       "errorLoad": "Error al cargar las difusiones",
       "broadcastInProgress": "Difusión en curso",
-      "retry": "Reintentar"
+      "retry": "Reintentar",
+      "searchPlaceholder": "Buscar difusiones...",
+      "clearSearch": "Borrar búsqueda",
+      "filterAll": "Todas",
+      "noMatches": "No se encontraron difusiones",
+      "rates": "{delivered}% entregados · {read}% leídos",
+      "yesterday": "Ayer",
+      "shortcutTemplates": "Plantillas",
+      "shortcutContacts": "Contactos"
     },
     "status": {
       "draft": "Borrador",
@@ -827,7 +836,8 @@
       "toastNotLinked": "Tu perfil no está vinculado a una cuenta.",
       "toastFailedDraft": "Error al guardar el borrador: {error}",
       "toastDraftSaved": "Borrador guardado",
-      "broadcastFailed": "Falló la difusión"
+      "broadcastFailed": "Falló la difusión",
+      "close": "Cerrar"
     },
     "wizard": {
       "next": "Siguiente",
