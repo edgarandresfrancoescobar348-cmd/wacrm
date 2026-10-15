@@ -38,40 +38,44 @@ export function InteractivePreview({
   const buttonLabel = labels?.button ?? "Button";
   const menuLabel = labels?.menu ?? "Menu";
   return (
+    // WA outgoing bubble: body block, then the reply buttons / list
+    // button as full-width rows split by hairlines (WA renders them in
+    // its link blue). Inside the inbox's own outgoing bubble the bubble
+    // colour matches, so it reads as one message.
     <div
       className={cn(
-        "w-full max-w-[260px] overflow-hidden rounded-lg bg-card text-foreground shadow-sm ring-1 ring-border",
+        "w-full max-w-[260px] overflow-hidden rounded-[7.5px] bg-bubble-out text-foreground shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]",
         className,
       )}
     >
-      <div className="px-3 py-2">
+      <div className="px-2.5 pt-1.5 pb-2">
         {payload.header ? (
-          <p className="mb-1 break-words text-sm font-semibold">
+          <p className="mb-1 break-words text-[14.2px] leading-[19px] font-semibold">
             {payload.header}
           </p>
         ) : null}
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className="whitespace-pre-wrap break-words text-[14.2px] leading-[19px]">
           {payload.body || (
             <span className="text-muted-foreground">{bodyLabel}</span>
           )}
         </p>
         {payload.footer ? (
-          <p className="mt-1 break-words text-[11px] text-muted-foreground">
+          <p className="mt-1 break-words text-[13px] text-muted-foreground">
             {payload.footer}
           </p>
         ) : null}
       </div>
 
       {payload.kind === "buttons" ? (
-        <div className="flex flex-col border-t border-border">
+        <div className="flex flex-col">
           {payload.buttons.map((b, i) => (
             <button
               key={b.id || i}
               type="button"
               disabled
-              className="flex items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary first:border-t-0"
+              className="flex h-10 items-center justify-center gap-1.5 border-t border-foreground/10 px-3 text-sm text-read-ticks"
             >
-              <Reply className="h-3.5 w-3.5" />
+              <Reply className="size-4 shrink-0" />
               <span className="truncate">{b.title || buttonLabel}</span>
             </button>
           ))}
@@ -80,9 +84,9 @@ export function InteractivePreview({
         <button
           type="button"
           disabled
-          className="flex w-full items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary"
+          className="flex h-10 w-full items-center justify-center gap-1.5 border-t border-foreground/10 px-3 text-sm text-read-ticks"
         >
-          <List className="h-3.5 w-3.5" />
+          <List className="size-4 shrink-0" />
           <span className="truncate">{payload.button_label || menuLabel}</span>
         </button>
       )}
