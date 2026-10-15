@@ -33,7 +33,8 @@ const PADDING = { top: 16, right: 16, bottom: 28, left: 40 }
 const INCOMING_COLOR = 'var(--muted-foreground)'
 const OUTGOING_COLOR = 'var(--primary)'
 
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
+import { formatMonthDay, formatWeekdayMonthDay } from '@/lib/locale-format'
 
 export function ConversationsChart({ series, loading, range, onRangeChange }: ConversationsChartProps) {
   const t = useTranslations('Dashboard.conversationsChart')
@@ -108,6 +109,7 @@ function LineSvg({
   ticks: number[]
   t: ReturnType<typeof useTranslations>
 }) {
+  const locale = useLocale()
   // Hover state: both the snapped index AND the tooltip's pixel
   // offset inside the wrapper div. They're stored together so the
   // tooltip positions against the chart's actual rendered pixels,
@@ -235,7 +237,7 @@ function LineSvg({
               textAnchor="middle"
               className="fill-muted-foreground text-[10px]"
             >
-              {shortDayLabel(p.day)}
+              {formatMonthDay(p.day, locale)}
             </text>
           ) : null,
         )}
@@ -285,7 +287,7 @@ function LineSvg({
           className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-lg bg-popover px-3 py-2 text-xs shadow-lg ring-1 ring-foreground/5"
           style={{ left: `${hover.tooltipLeftPx}px` }}
         >
-          <div className="font-medium text-popover-foreground">{longDayLabel(hovered.day)}</div>
+          <div className="font-medium text-popover-foreground">{formatWeekdayMonthDay(hovered.day, locale)}</div>
           <div className="mt-1 flex flex-col gap-0.5">
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <span className="inline-block size-2 rounded-full bg-muted-foreground" />
@@ -309,20 +311,6 @@ function LegendDot({ color, label }: { color: string; label: string }) {
       {label}
     </span>
   )
-}
-
-function shortDayLabel(key: string): string {
-  // key is YYYY-MM-DD; return "Apr 17"-style. Using Date with an
-  // appended time avoids timezone-shift surprises across midnight.
-  const [y, m, d] = key.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-function longDayLabel(key: string): string {
-  const [y, m, d] = key.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 /**

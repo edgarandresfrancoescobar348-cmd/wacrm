@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { BarChart3, Bot, PencilLine } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
@@ -22,8 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/dashboard/skeleton';
 import { BarChart } from '@/components/tremor/bar-chart';
-import { formatCompactNumber } from '@/lib/currency';
-import { format, parseISO } from 'date-fns';
+import { formatCompact, formatMonthDay } from '@/lib/locale-format';
 
 interface UsageResponse {
   window_days: number;
@@ -56,6 +55,7 @@ const WINDOWS = [7, 30, 90] as const;
  */
 export function AiUsageCard() {
   const t = useTranslations('Agents.usage');
+  const locale = useLocale();
   const { accountId, accountRole, profileLoading } = useAuth();
   const canView = accountRole ? canEditSettings(accountRole) : false;
 
@@ -101,7 +101,7 @@ export function AiUsageCard() {
   const tokensLabel = t('tokens');
   const chartData =
     data?.daily.map((d) => ({
-      day: format(parseISO(d.date), 'MMM d'),
+      day: formatMonthDay(d.date.slice(0, 10), locale),
       [tokensLabel]: d.tokens,
     })) ?? [];
   const hasSpend = (data?.totals.total_tokens ?? 0) > 0;
@@ -151,16 +151,16 @@ export function AiUsageCard() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label={t('totalTokens')} value={formatCompactNumber(data.totals.total_tokens)} />
+              <Stat label={t('totalTokens')} value={formatCompact(data.totals.total_tokens, locale)} />
               <Stat label={t('llmCalls')} value={String(data.totals.calls)} />
               <Stat
                 label={t('autoReply')}
-                value={formatCompactNumber(data.by_mode.auto_reply.tokens)}
+                value={formatCompact(data.by_mode.auto_reply.tokens, locale)}
                 icon={Bot}
               />
               <Stat
                 label={t('drafts')}
-                value={formatCompactNumber(data.by_mode.draft.tokens)}
+                value={formatCompact(data.by_mode.draft.tokens, locale)}
                 icon={PencilLine}
               />
             </div>
@@ -174,7 +174,7 @@ export function AiUsageCard() {
                 index="day"
                 categories={[tokensLabel]}
                 colors={['primary']}
-                valueFormatter={(v) => formatCompactNumber(v)}
+                valueFormatter={(v) => formatCompact(v, locale)}
                 showLegend={false}
                 yAxisWidth={48}
                 className="h-[200px]"
@@ -200,7 +200,7 @@ export function AiUsageCard() {
                       </span>
                       <span className="flex-shrink-0 tabular-nums text-muted-foreground">
                         {t('modelCalls', {
-                          tokens: formatCompactNumber(m.tokens),
+                          tokens: formatCompact(m.tokens, locale),
                           count: m.calls,
                         })}
                       </span>

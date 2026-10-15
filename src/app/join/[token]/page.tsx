@@ -26,7 +26,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDateMedium } from '@/lib/locale-format';
 import {
   AlertTriangle,
   CheckCircle,
@@ -74,6 +75,7 @@ export default function JoinPage() {
   const params = useParams<{ token: string }>();
   const token = params?.token;
   const t = useTranslations('JoinPage');
+  const locale = useLocale();
   // Role labels are shared with Settings → Members so the invite page
   // and the member list always agree on what a role is called.
   const tRoles = useTranslations('Settings.roles');
@@ -256,11 +258,7 @@ export default function JoinPage() {
   });
   const inviteDescription = t.rich('joinAs', {
     role: tRoles(peek.role),
-    date: new Date(peek.expires_at).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    }),
+    date: formatDateMedium(peek.expires_at, locale),
     badge: (chunks) => (
       <span className="inline-flex items-center gap-1 text-foreground">
         <ShieldCheck className="size-3.5 text-primary-text" />

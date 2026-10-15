@@ -43,7 +43,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale, useTranslations } from "next-intl";
-import { formatDateOnlyLong } from "@/components/broadcasts/locale-format";
+import { formatDateOnlyLong } from "@/lib/locale-format";
 
 interface DealFormProps {
   open: boolean;

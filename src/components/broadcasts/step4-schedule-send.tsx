@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { StepCard, StepHeading, StepNav } from './wizard-ui';
 import { useLocale, useTranslations } from 'next-intl';
-import { formatNumber } from './locale-format';
+import { formatNumber } from '@/lib/locale-format';
 
 interface Step4Props {
   name: string;

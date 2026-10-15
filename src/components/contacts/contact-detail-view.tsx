@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
-import { formatCurrency } from '@/lib/currency';
+import { formatMoney } from '@/lib/locale-format';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactNote, CustomField, Deal, MessageTemplate } from '@/types';
 import {
@@ -50,7 +50,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 
@@ -83,6 +83,7 @@ export function ContactDetailView({
   canEdit = true,
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
+  const locale = useLocale();
   const tPage = useTranslations('Contacts.page');
   const format = useFormatter();
   const supabase = createClient();
@@ -785,7 +786,7 @@ export function ContactDetailView({
                     <div className="mt-1.5 flex items-center justify-between text-[13px] text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <DollarSign className="size-3.5" />
-                        {formatCurrency(deal.value ?? 0, deal.currency || defaultCurrency)}
+                        {formatMoney(deal.value ?? 0, deal.currency || defaultCurrency, locale)}
                       </span>
                       {deal.status && deal.status !== 'open' && (
                         <span

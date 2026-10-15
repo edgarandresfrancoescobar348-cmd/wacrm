@@ -2,7 +2,7 @@
 
 import { GitBranch } from 'lucide-react'
 import type { PipelineDonutData } from '@/lib/dashboard/types'
-import { formatCurrencyShort } from '@/lib/currency'
+import { formatMoneyCompact } from '@/lib/locale-format'
 import { EmptyState } from './empty-state'
 import { Skeleton } from './skeleton'
 import { DashCard } from './dash-card'
@@ -14,10 +14,11 @@ interface PipelineDonutProps {
   currency: string
 }
 
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 
 export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
   const t = useTranslations('Dashboard.pipelineDonut')
+  const locale = useLocale()
   return (
     <DashCard title={t('title')} subtitle={t('description')}>
       {loading || !data ? (
@@ -44,7 +45,7 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
                   {t('dealCount', { count: s.dealCount })}
                 </span>
                 <span className="w-20 text-right text-muted-foreground tabular-nums">
-                  {formatCurrencyShort(s.totalValue, currency)}
+                  {formatMoneyCompact(s.totalValue, currency, locale)}
                 </span>
               </li>
             ))}
@@ -63,6 +64,7 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
 // ------------------------------------------------------------
 function Donut({ data, currency }: { data: PipelineDonutData; currency: string }) {
   const t = useTranslations('Dashboard.pipelineDonut')
+  const locale = useLocale()
   const size = 200
   const r = 80
   const ringWidth = 18
@@ -120,7 +122,7 @@ function Donut({ data, currency }: { data: PipelineDonutData; currency: string }
           textAnchor="middle"
           className="fill-foreground text-[18px] font-semibold tabular-nums"
         >
-          {formatCurrencyShort(data.totalValue, currency)}
+          {formatMoneyCompact(data.totalValue, currency, locale)}
         </text>
       </svg>
     </div>

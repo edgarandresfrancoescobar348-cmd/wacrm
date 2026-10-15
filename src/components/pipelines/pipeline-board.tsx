@@ -18,7 +18,7 @@ import type { Deal, PipelineStage } from "@/types";
 import { DealCard } from "./deal-card";
 import { Plus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { formatMoney } from "@/components/broadcasts/locale-format";
+import { formatMoney } from "@/lib/locale-format";
 import { useLocale, useTranslations } from "next-intl";
 
 interface PipelineBoardProps {

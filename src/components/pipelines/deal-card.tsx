@@ -3,7 +3,7 @@
 import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { formatDateOnly, formatMoney } from "@/components/broadcasts/locale-format";
+import { formatDateOnly, formatMoney } from "@/lib/locale-format";
 import { WaAvatar } from "@/components/layout/wa-panel";
 
 interface DealCardProps {

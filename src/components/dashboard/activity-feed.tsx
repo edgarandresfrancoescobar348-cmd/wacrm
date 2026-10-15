@@ -43,10 +43,12 @@ const KIND_THEME: Record<ActivityKind, KindTheme> = {
   automation: { icon: Zap, badge: 'bg-hover-surface text-foreground' },
 }
 
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
+import { formatDate } from '@/lib/locale-format'
 
 export function ActivityFeed({ items, loading }: ActivityFeedProps) {
   const t = useTranslations('Dashboard.activityFeed')
+  const locale = useLocale()
   // Start at 5 — a quick scan of the most recent events without
   // dominating vertical real estate. User expands explicitly via the
   // footer control when they want deeper history.
@@ -138,7 +140,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
                   {it.text}
                 </span>
                 <span className="flex-shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {relativeTime(it.at, t)}
+                  {relativeTime(it.at, t, locale)}
                 </span>
               </div>
             )
@@ -160,7 +162,11 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
   )
 }
 
-function relativeTime(iso: string, t: ReturnType<typeof useTranslations>): string {
+function relativeTime(
+  iso: string,
+  t: ReturnType<typeof useTranslations>,
+  locale: string,
+): string {
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return ''
   const diffSec = Math.round((Date.now() - then) / 1000)
@@ -168,5 +174,5 @@ function relativeTime(iso: string, t: ReturnType<typeof useTranslations>): strin
   if (diffSec < 3600) return t('timeM', { min: Math.floor(diffSec / 60) })
   if (diffSec < 86400) return t('timeH', { hr: Math.floor(diffSec / 3600) })
   if (diffSec < 2_592_000) return t('timeD', { day: Math.floor(diffSec / 86400) })
-  return new Date(iso).toLocaleDateString()
+  return formatDate(iso, locale)
 }

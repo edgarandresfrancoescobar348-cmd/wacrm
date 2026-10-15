@@ -14,9 +14,10 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format, formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDateTimeMedium, formatDistanceToNowIn } from "@/lib/locale-format";
 
 import { Button } from "@/components/ui/button";
 import { WaAvatar, WaEmptyState, WaPanelHeader } from "@/components/layout/wa-panel";
@@ -204,14 +205,13 @@ function RunCard({
   onToggle: () => void;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const locale = useLocale();
   const meta = STATUS_META[run.status];
   const StatusIcon = meta.icon;
   const contactLabel =
     run.contact?.name?.trim() || run.contact?.phone || t("unknownContact");
   const duration = run.ended_at
-    ? formatDistanceToNow(new Date(run.ended_at), {
-        addSuffix: false,
-      })
+    ? formatDistanceToNowIn(run.ended_at, locale, { addSuffix: false })
     : null;
   return (
     <div>
@@ -253,7 +253,7 @@ function RunCard({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
-            <span>{t("started", { time: format(new Date(run.started_at), "PP p") })}</span>
+            <span>{t("started", { time: formatDateTimeMedium(run.started_at, locale) })}</span>
             {run.reprompt_count > 0 && (
               <span>· {t("reprompts", { count: run.reprompt_count })}</span>
             )}

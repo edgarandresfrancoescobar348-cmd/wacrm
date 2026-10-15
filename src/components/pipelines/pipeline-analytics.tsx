@@ -19,7 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
-import { formatMoney, formatNumber } from "@/components/broadcasts/locale-format";
+import { formatMoney, formatNumber } from "@/lib/locale-format";
 import { useLocale, useTranslations } from "next-intl";
 
 interface PipelineAnalyticsProps {

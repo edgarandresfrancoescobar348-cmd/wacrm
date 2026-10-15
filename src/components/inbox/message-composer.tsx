@@ -48,7 +48,8 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
 } from "@/lib/storage/upload-media";
 import { ReplyQuote } from "./reply-quote";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDecimal } from "@/lib/locale-format";
 import {
   InteractiveBuilder,
   blankButtonsPayload,
@@ -143,6 +144,7 @@ export function MessageComposer({
   onClearReply,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
+  const locale = useLocale();
   const tGate = useTranslations("GatedButton");
 
   const [text, setText] = useState("");
@@ -393,7 +395,7 @@ export function MessageComposer({
       if (file.size > max) {
         toast.error(
           t("fileTooLarge", {
-            size: (file.size / 1024 / 1024).toFixed(1),
+            size: formatDecimal(file.size / 1024 / 1024, locale),
             kind: t(`mediaKind.${kind}`),
             max: Math.round(max / 1024 / 1024),
           }),
@@ -412,7 +414,7 @@ export function MessageComposer({
         setBusy(false);
       }
     },
-    [removeStaged, t],
+    [removeStaged, t, locale],
   );
 
   const handlePicked = useCallback(

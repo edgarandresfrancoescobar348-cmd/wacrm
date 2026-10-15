@@ -46,7 +46,7 @@ import {
   formatDate,
   formatDateTime,
   formatNumber,
-} from '@/components/broadcasts/locale-format';
+} from '@/lib/locale-format';
 import {
   WaAvatar,
   WaChip,

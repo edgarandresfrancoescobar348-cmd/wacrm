@@ -20,8 +20,9 @@ import {
   WaDrawerPanel,
   WaDrawerSection,
 } from "@/components/layout/wa-panel";
-import { format } from "date-fns";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { DEFAULT_CURRENCY } from "@/lib/currency";
+import { formatDateTimeMedium, formatMoney } from "@/lib/locale-format";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
 
 interface ContactSidebarProps {
@@ -38,6 +39,7 @@ interface ContactSidebarProps {
 export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
+  const locale = useLocale();
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -236,10 +238,7 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
               <div key={deal.id} className="rounded-xl bg-hover-surface px-3.5 py-2.5">
                 <p className="text-[15px] text-foreground">{deal.title}</p>
                 <div className="mt-1 flex items-center justify-between text-[13px] text-muted-foreground">
-                  <span>
-                    {deal.currency ?? "$"}
-                    {deal.value.toLocaleString()}
-                  </span>
+                  <span>{formatMoney(deal.value, deal.currency ?? DEFAULT_CURRENCY, locale)}</span>
                   {deal.stage && (
                     <span
                       className="rounded-full px-2 py-0.5 text-[11px] font-medium"
@@ -291,7 +290,7 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
             <div key={note.id} className="rounded-xl bg-hover-surface px-3.5 py-2.5">
               <p className="whitespace-pre-wrap text-sm text-foreground">{note.note_text}</p>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                {format(new Date(note.created_at), "MMM d, yyyy HH:mm")}
+                {formatDateTimeMedium(note.created_at, locale)}
               </p>
             </div>
           ))}

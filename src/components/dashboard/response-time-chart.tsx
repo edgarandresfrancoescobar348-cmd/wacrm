@@ -20,7 +20,8 @@ interface ResponseTimeChartProps {
   thresholdMinutes?: number
 }
 
-import { useFormatter, useTranslations } from 'next-intl'
+import { useFormatter, useLocale, useTranslations } from 'next-intl'
+import { formatDecimal } from '@/lib/locale-format'
 
 // Single category, single colour — the data is "average minutes
 // per weekday". Tremor expects categories as the second tuple in
@@ -35,6 +36,7 @@ export function ResponseTimeChart({
 }: ResponseTimeChartProps) {
   const t = useTranslations('Dashboard.responseTimeChart')
   const format = useFormatter()
+  const locale = useLocale()
   const category = t('avgMinutes')
   const hasData = data?.buckets.some((b) => b.avgMinutes != null) ?? false
 
@@ -71,12 +73,12 @@ export function ResponseTimeChart({
               <div className="text-muted-foreground">
                 {t('thisWeek')}{' '}
                 <span className="font-medium text-foreground tabular-nums">
-                  {fmt(data.thisWeekAvg)}
+                  {fmt(data.thisWeekAvg, locale)}
                 </span>
               </div>
               <div className="text-muted-foreground">
                 {t('lastWeek')}{' '}
-                <span className="tabular-nums">{fmt(data.lastWeekAvg)}</span>
+                <span className="tabular-nums">{fmt(data.lastWeekAvg, locale)}</span>
               </div>
             </div>
           )}
@@ -98,7 +100,7 @@ export function ResponseTimeChart({
           categories={[category]}
           // 'primary' = the theme accent (WhatsApp green by default).
           colors={['primary']}
-          valueFormatter={(value) => `${value.toFixed(1)}m`}
+          valueFormatter={(value) => `${formatDecimal(value, locale)}m`}
           showLegend={false}
           // Wide enough for "378.0m"-style labels (48 clipped them).
           yAxisWidth={64}
@@ -111,9 +113,9 @@ export function ResponseTimeChart({
   )
 }
 
-function fmt(mins: number | null): string {
+function fmt(mins: number | null, locale: string): string {
   if (mins == null) return '—'
   if (mins < 1) return `${Math.max(1, Math.round(mins * 60))}s`
-  if (mins < 60) return `${mins.toFixed(1)}m`
-  return `${(mins / 60).toFixed(1)}h`
+  if (mins < 60) return `${formatDecimal(mins, locale)}m`
+  return `${formatDecimal(mins / 60, locale)}h`
 }

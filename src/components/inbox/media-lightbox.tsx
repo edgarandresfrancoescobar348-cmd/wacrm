@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { format } from "date-fns";
 import {
   ChevronLeft,
   ChevronRight,
@@ -14,7 +13,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDateTimeMedium } from "@/lib/locale-format";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -59,6 +59,7 @@ export function MediaLightbox({
   contactLabel,
 }: MediaLightboxProps) {
   const t = useTranslations("Inbox.mediaViewer");
+  const locale = useLocale();
 
   const index = galleryIndexOf(items, activeId);
   const item = index >= 0 ? items[index] : null;
@@ -116,7 +117,7 @@ export function MediaLightbox({
   if (!item) return null;
 
   const authorLabel = item.fromCustomer ? contactLabel : t("you");
-  const timestamp = format(new Date(item.createdAt), "MMM d, yyyy HH:mm");
+  const timestamp = formatDateTimeMedium(item.createdAt, locale);
 
   return (
     <Dialog

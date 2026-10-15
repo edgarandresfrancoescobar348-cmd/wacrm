@@ -40,7 +40,8 @@ import {
   SCOPE_DESCRIPTIONS,
   type ApiScope,
 } from '@/lib/api-keys/scopes';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDateMedium } from '@/lib/locale-format';
 import { SettingsPanelHead } from './settings-panel-head';
 
 interface ApiKey {
@@ -54,12 +55,8 @@ interface ApiKey {
   created_at: string;
 }
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+function fmtDate(iso: string, locale: string): string {
+  return formatDateMedium(iso, locale);
 }
 
 function keyStatus(k: ApiKey): 'active' | 'revoked' | 'expired' {
@@ -72,6 +69,7 @@ function keyStatus(k: ApiKey): 'active' | 'revoked' | 'expired' {
 export function ApiKeysSettings() {
   const { canEditSettings } = useAuth();
   const t = useTranslations('Settings.apiKeys');
+  const locale = useLocale();
 
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -230,13 +228,13 @@ export function ApiKeysSettings() {
                         )}
                       </div>
                       <p className="text-muted-foreground mt-1.5 text-xs">
-                        {t('created', { date: fmtDate(k.created_at) })}
+                        {t('created', { date: fmtDate(k.created_at, locale) })}
                         {' · '}
                         {k.last_used_at
-                          ? t('lastUsed', { date: fmtDate(k.last_used_at) })
+                          ? t('lastUsed', { date: fmtDate(k.last_used_at, locale) })
                           : t('neverUsed')}
                         {k.expires_at && status !== 'expired'
-                          ? ` · ${t('expires', { date: fmtDate(k.expires_at) })}`
+                          ? ` · ${t('expires', { date: fmtDate(k.expires_at, locale) })}`
                           : ''}
                       </p>
                     </div>

@@ -30,7 +30,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDecimal } from '@/lib/locale-format';
 import { Card, CardContent } from '@/components/ui/card';
 import { SettingsPanelHead } from './settings-panel-head';
 import {
@@ -132,6 +133,7 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
 
 export function TemplateManager() {
   const t = useTranslations('Settings.templates');
+  const locale = useLocale();
   // Meta's category ids (stored as-is) → display label in the UI language.
   const categoryLabel = (category: string) =>
     t.has(`categoryLabels.${category}`) ? t(`categoryLabels.${category}`) : category;
@@ -503,7 +505,7 @@ export function TemplateManager() {
     if (file.size > maxBytes) {
       toast.error(
         t('toastMediaTooLarge', {
-          size: (file.size / 1024 / 1024).toFixed(1),
+          size: formatDecimal(file.size / 1024 / 1024, locale),
           max: Math.round(maxBytes / 1024 / 1024),
         }),
       );

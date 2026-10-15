@@ -34,7 +34,8 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDecimal } from "@/lib/locale-format";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -898,6 +899,7 @@ function SendMediaForm({
   onUpdateConfig: (patch: Record<string, unknown>) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const locale = useLocale();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -911,7 +913,7 @@ function SendMediaForm({
     async (file: File) => {
       if (file.size > MEDIA_MAX_BYTES) {
         toast.error(
-          t("fileTooLarge", { size: (file.size / 1024 / 1024).toFixed(1) }),
+          t("fileTooLarge", { size: formatDecimal(file.size / 1024 / 1024, locale) }),
         );
         return;
       }
@@ -934,7 +936,7 @@ function SendMediaForm({
         setUploading(false);
       }
     },
-    [onUpdateConfig, t],
+    [onUpdateConfig, t, locale],
   );
 
   const handleClear = () => {
