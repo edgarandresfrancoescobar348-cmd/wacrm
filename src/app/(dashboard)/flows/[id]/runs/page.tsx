@@ -20,7 +20,7 @@ import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
 import { WaAvatar, WaEmptyState, WaPanelHeader } from "@/components/layout/wa-panel";
-import { WaFrame, WaFrameCenter } from "@/components/automations/wa-frame";
+import { WaCenteredState } from "@/components/layout/wa-panel";
 import { WaBackButton, WaIconAvatar, WaStatusPill } from "@/components/automations/wa-kit";
 import { cn } from "@/lib/utils";
 
@@ -132,24 +132,24 @@ export default function FlowRunsPage() {
 
   if (loading) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <Loader2 className="size-6 animate-spin text-primary-text" />
-      </WaFrameCenter>
+      </WaCenteredState>
     );
   }
   if (notFound || !flow) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <p className="text-sm text-muted-foreground">{tEdit("notFound")}</p>
         <Button variant="outline" onClick={() => router.push("/flows")}>
           {tEdit("backToFlows")}
         </Button>
-      </WaFrameCenter>
+      </WaCenteredState>
     );
   }
 
   return (
-    <WaFrame>
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <WaPanelHeader
         leading={
           <>
@@ -187,7 +187,7 @@ export default function FlowRunsPage() {
           )}
         </div>
       </div>
-    </WaFrame>
+    </div>
   );
 }
 

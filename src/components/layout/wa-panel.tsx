@@ -789,3 +789,26 @@ export function WaDrawerSection({
     </section>
   );
 }
+
+/**
+ * Full-pane centered state (spinner, "not found", load error) for pages
+ * that own their frame: fills the main area on the wallpaper colour.
+ */
+export function WaCenteredState({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex h-full min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-wallpaper p-6 text-center",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}

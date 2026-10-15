@@ -10,7 +10,18 @@
  * Phase 2: when a page adopts `WaListLayout` / `WaPage`, add its prefix
  * here in the same change.
  */
-export const FULL_BLEED_ROUTE_PREFIXES: readonly string[] = ["/inbox"];
+export const FULL_BLEED_ROUTE_PREFIXES: readonly string[] = [
+  "/inbox",
+  "/contacts",
+  "/pipelines",
+  "/broadcasts",
+  "/automations",
+  "/flows",
+  "/dashboard",
+  "/agents",
+  "/notifications",
+  "/settings",
+];
 
 function matches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);

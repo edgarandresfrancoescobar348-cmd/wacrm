@@ -33,7 +33,6 @@ import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
-import { FullBleedFrame } from '@/components/dashboard/full-bleed-frame'
 import { WaPage } from '@/components/layout/wa-panel'
 
 import { useTranslations } from 'next-intl'
@@ -124,108 +123,106 @@ export default function DashboardPage() {
   )
 
   return (
-    <FullBleedFrame>
-      <WaPage
-        title={t('title')}
-        subtitle={t('description')}
-        // Wallpaper tone keeps the surface cards raised in light mode.
-        bodyClassName="bg-wallpaper"
-      >
-        <div className="space-y-4">
+    <WaPage
+      title={t('title')}
+      subtitle={t('description')}
+      // Wallpaper tone keeps the surface cards raised in light mode.
+      bodyClassName="bg-wallpaper"
+    >
+      <div className="space-y-4">
 
-          {/* Metric cards */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {metricsLoading || !metrics ? (
-              Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-            ) : (
-              <>
-                <MetricCard
-                  title={t('activeConversations')}
-                  value={metrics.activeConversations.current.toLocaleString()}
-                  icon={MessageSquare}
-                  delta={{
-                    sign: metrics.activeConversations.previous,
-                    label: deltaLabel(
-                      metrics.activeConversations.previous, 
-                      t('newTodayVsYesterday'), 
-                      t('noChange', { suffix: t('newTodayVsYesterday') })
-                    ),
-                  }}
-                />
-                <MetricCard
-                  title={t('newContactsToday')}
-                  value={metrics.newContactsToday.current.toLocaleString()}
-                  icon={UserPlus}
-                  delta={{
-                    sign:
-                      metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                    label: deltaLabel(
-                      metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                      t('vsYesterday'),
-                      t('noChange', { suffix: t('vsYesterday') })
-                    ),
-                  }}
-                />
-                <MetricCard
-                  title={t('openDealsValue')}
-                  value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
-                  icon={DollarSign}
-                  subtitle={t('openDeals', { count: metrics.openDealsCount })}
-                />
-                <MetricCard
-                  title={t('messagesSentToday')}
-                  value={metrics.messagesSentToday.current.toLocaleString()}
-                  icon={Send}
-                  delta={{
-                    sign:
-                      metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                    label: deltaLabel(
-                      metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                      t('vsYesterday'),
-                      t('noChange', { suffix: t('vsYesterday') })
-                    ),
-                  }}
-                />
-              </>
-            )}
-          </div>
-
-          {/* Quick actions */}
-          <QuickActions />
-
-          {/* Charts row */}
-          {/* items-stretch (the grid default) stretches the two columns to
-              match the tallest sibling; adding h-full on each wrapper and
-              on the inner panels makes both cards actually fill that
-              stretched height so their rounded borders line up. Without
-              this, the pipeline card rendered at its natural (shorter)
-              height while the line chart drove the row height. */}
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-            <div className="h-full xl:col-span-3">
-              <ConversationsChart
-                series={series}
-                loading={seriesLoading}
-                range={range}
-                onRangeChange={handleRangeChange}
+        {/* Metric cards */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {metricsLoading || !metrics ? (
+            Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : (
+            <>
+              <MetricCard
+                title={t('activeConversations')}
+                value={metrics.activeConversations.current.toLocaleString()}
+                icon={MessageSquare}
+                delta={{
+                  sign: metrics.activeConversations.previous,
+                  label: deltaLabel(
+                    metrics.activeConversations.previous, 
+                    t('newTodayVsYesterday'), 
+                    t('noChange', { suffix: t('newTodayVsYesterday') })
+                  ),
+                }}
               />
-            </div>
-            <div className="h-full xl:col-span-2">
-              <PipelineDonut
-                data={pipeline}
-                loading={pipelineLoading}
-                currency={defaultCurrency}
+              <MetricCard
+                title={t('newContactsToday')}
+                value={metrics.newContactsToday.current.toLocaleString()}
+                icon={UserPlus}
+                delta={{
+                  sign:
+                    metrics.newContactsToday.current - metrics.newContactsToday.previous,
+                  label: deltaLabel(
+                    metrics.newContactsToday.current - metrics.newContactsToday.previous,
+                    t('vsYesterday'),
+                    t('noChange', { suffix: t('vsYesterday') })
+                  ),
+                }}
               />
-            </div>
-          </div>
-
-          {/* Response time */}
-          <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
-
-          {/* Activity feed */}
-          <ActivityFeed items={activity} loading={activityLoading} />
+              <MetricCard
+                title={t('openDealsValue')}
+                value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
+                icon={DollarSign}
+                subtitle={t('openDeals', { count: metrics.openDealsCount })}
+              />
+              <MetricCard
+                title={t('messagesSentToday')}
+                value={metrics.messagesSentToday.current.toLocaleString()}
+                icon={Send}
+                delta={{
+                  sign:
+                    metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
+                  label: deltaLabel(
+                    metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
+                    t('vsYesterday'),
+                    t('noChange', { suffix: t('vsYesterday') })
+                  ),
+                }}
+              />
+            </>
+          )}
         </div>
-      </WaPage>
-    </FullBleedFrame>
+
+        {/* Quick actions */}
+        <QuickActions />
+
+        {/* Charts row */}
+        {/* items-stretch (the grid default) stretches the two columns to
+            match the tallest sibling; adding h-full on each wrapper and
+            on the inner panels makes both cards actually fill that
+            stretched height so their rounded borders line up. Without
+            this, the pipeline card rendered at its natural (shorter)
+            height while the line chart drove the row height. */}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+          <div className="h-full xl:col-span-3">
+            <ConversationsChart
+              series={series}
+              loading={seriesLoading}
+              range={range}
+              onRangeChange={handleRangeChange}
+            />
+          </div>
+          <div className="h-full xl:col-span-2">
+            <PipelineDonut
+              data={pipeline}
+              loading={pipelineLoading}
+              currency={defaultCurrency}
+            />
+          </div>
+        </div>
+
+        {/* Response time */}
+        <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
+
+        {/* Activity feed */}
+        <ActivityFeed items={activity} loading={activityLoading} />
+      </div>
+    </WaPage>
   )
 }
 

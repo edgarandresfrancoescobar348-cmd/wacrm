@@ -71,7 +71,6 @@ import {
   type StepPath,
 } from "@/lib/automations/builder-tree"
 import { cn } from "@/lib/utils"
-import { WaFrame } from "@/components/automations/wa-frame"
 import { WaBackButton, WaIconAvatar } from "@/components/automations/wa-kit"
 
 // ------------------------------------------------------------
@@ -725,7 +724,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   }
 
   return (
-    <WaFrame>
+    <div className="flex h-full min-h-0 flex-col bg-background">
       {/* Top bar (WA panel header). At sub-sm widths the "Active" label
           is hidden so the name input gets maximum width. */}
       <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border bg-background px-3 sm:gap-3 sm:px-4">
@@ -784,7 +783,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
           </ResourcesProvider>
         </div>
       </div>
-    </WaFrame>
+    </div>
   )
 }
 

@@ -25,7 +25,6 @@ import {
   type SettingsSection,
 } from '@/components/settings/settings-sections';
 import { SettingsTitleInHeaderProvider } from '@/components/settings/settings-panel-head';
-import { FullBleedFrame } from '@/components/dashboard/full-bleed-frame';
 import { WaListLayout, WaPanelHeader } from '@/components/layout/wa-panel';
 
 // `useSearchParams` opts this page out of static prerendering unless it
@@ -103,40 +102,38 @@ function SettingsPageInner() {
   };
 
   return (
-    <FullBleedFrame>
-      <WaListLayout
-        showMain={showMain}
-        list={<SettingsRail active={section} onSelect={go} hints={hints} />}
-      >
-        <div className="flex h-full min-h-0 flex-col bg-background">
-          <WaPanelHeader
-            leading={
-              <>
-                <button
-                  type="button"
-                  onClick={back}
-                  aria-label={t('back')}
-                  className="-ml-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-hover-surface hover:text-foreground lg:hidden"
-                >
-                  <ArrowLeft className="size-5" />
-                </button>
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-chip-active text-chip-active-foreground">
-                  <SectionIcon className="size-5" />
-                </span>
-              </>
-            }
-            title={t(`sections.${section}`)}
-            subtitle={t(`sectionHints.${section}`)}
-          />
-          {/* Wallpaper tone under the content so surface cards stay
-              raised in light mode (in dark it equals the app bg). */}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-wallpaper">
-            <div className="mx-auto w-full max-w-4xl px-4 py-5 sm:px-8 sm:py-6">
-              <SettingsTitleInHeaderProvider>{panel[section]}</SettingsTitleInHeaderProvider>
-            </div>
+    <WaListLayout
+      showMain={showMain}
+      list={<SettingsRail active={section} onSelect={go} hints={hints} />}
+    >
+      <div className="flex h-full min-h-0 flex-col bg-background">
+        <WaPanelHeader
+          leading={
+            <>
+              <button
+                type="button"
+                onClick={back}
+                aria-label={t('back')}
+                className="-ml-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-hover-surface hover:text-foreground lg:hidden"
+              >
+                <ArrowLeft className="size-5" />
+              </button>
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-chip-active text-chip-active-foreground">
+                <SectionIcon className="size-5" />
+              </span>
+            </>
+          }
+          title={t(`sections.${section}`)}
+          subtitle={t(`sectionHints.${section}`)}
+        />
+        {/* Wallpaper tone under the content so surface cards stay
+            raised in light mode (in dark it equals the app bg). */}
+        <div className="min-h-0 flex-1 overflow-y-auto bg-wallpaper">
+          <div className="mx-auto w-full max-w-4xl px-4 py-5 sm:px-8 sm:py-6">
+            <SettingsTitleInHeaderProvider>{panel[section]}</SettingsTitleInHeaderProvider>
           </div>
         </div>
-      </WaListLayout>
-    </FullBleedFrame>
+      </div>
+    </WaListLayout>
   );
 }

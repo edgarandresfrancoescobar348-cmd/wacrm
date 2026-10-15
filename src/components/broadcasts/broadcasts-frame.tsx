@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { WaListLayout } from "@/components/layout/wa-panel";
 import { BroadcastListPanel } from "./broadcast-list-panel";
-import { FullBleedFrame } from "./full-bleed-frame";
 
 /**
  * Broadcasts section frame: the broadcast list on the left, the routed
@@ -16,10 +15,8 @@ export function BroadcastsFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const showMain = pathname !== "/broadcasts";
   return (
-    <FullBleedFrame>
-      <WaListLayout list={<BroadcastListPanel />} showMain={showMain}>
-        {children}
-      </WaListLayout>
-    </FullBleedFrame>
+    <WaListLayout list={<BroadcastListPanel />} showMain={showMain}>
+      {children}
+    </WaListLayout>
   );
 }

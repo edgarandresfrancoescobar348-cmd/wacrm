@@ -45,6 +45,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  WaCenteredState,
   WaChip,
   WaChipRow,
   WaEmptyState,
@@ -55,7 +56,6 @@ import {
   WaPanelHeader,
   WaSearchPill,
 } from "@/components/layout/wa-panel"
-import { WaFrame, WaFrameCenter } from "@/components/automations/wa-frame"
 import {
   WaBackButton,
   WaGatedPrimaryAction,
@@ -196,20 +196,20 @@ export default function AutomationsPage() {
 
   if (error) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <p className="text-sm text-destructive">{error}</p>
         <Button variant="outline" onClick={() => window.location.reload()}>
           {t("retry")}
         </Button>
-      </WaFrameCenter>
+      </WaCenteredState>
     )
   }
 
   if (automations === null) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <Loader2 className="size-6 animate-spin text-primary-text" />
-      </WaFrameCenter>
+      </WaCenteredState>
     )
   }
 
@@ -337,7 +337,7 @@ export default function AutomationsPage() {
   )
 
   return (
-    <WaFrame>
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <WaListLayout list={list} showMain={!!selected}>
         {selected ? (
           <AutomationDetail
@@ -398,7 +398,7 @@ export default function AutomationsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </WaFrame>
+    </div>
   )
 }
 

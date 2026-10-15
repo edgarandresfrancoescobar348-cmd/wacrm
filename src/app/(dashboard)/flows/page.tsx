@@ -43,7 +43,7 @@ import {
   WaPanelHeader,
   WaSearchPill,
 } from "@/components/layout/wa-panel";
-import { WaFrame, WaFrameCenter } from "@/components/automations/wa-frame";
+import { WaCenteredState } from "@/components/layout/wa-panel";
 import {
   WaBackButton,
   WaGatedPrimaryAction,
@@ -226,9 +226,9 @@ export default function FlowsPage() {
 
   if (loading) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <Loader2 className="size-6 animate-spin text-primary-text" />
-      </WaFrameCenter>
+      </WaCenteredState>
     );
   }
 
@@ -328,7 +328,7 @@ export default function FlowsPage() {
   );
 
   return (
-    <WaFrame>
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <WaListLayout list={list} showMain={!!selected}>
         {selected ? (
           <FlowDetail
@@ -440,7 +440,7 @@ export default function FlowsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </WaFrame>
+    </div>
   );
 }
 

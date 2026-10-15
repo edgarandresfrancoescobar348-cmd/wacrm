@@ -40,7 +40,6 @@ import {
   WaPanelHeader,
   WaPrimaryAction,
 } from "@/components/layout/wa-panel";
-import { FullBleedFrame } from "@/components/broadcasts/full-bleed-frame";
 import { useTranslations } from "next-intl";
 
 // Pipeline creation is admin-class (settings-tier write under
@@ -324,31 +323,29 @@ export default function PipelinesPage() {
 
   if (loading) {
     return (
-      <FullBleedFrame>
-        <div className="flex h-full flex-col bg-background">
-          <div className="flex h-16 shrink-0 items-center justify-between px-5">
-            <div className="h-7 w-48 animate-pulse rounded-full bg-hover-surface" />
-            <div className="size-10 animate-pulse rounded-full bg-hover-surface" />
+      <div className="flex h-full flex-col bg-background">
+        <div className="flex h-16 shrink-0 items-center justify-between px-5">
+          <div className="h-7 w-48 animate-pulse rounded-full bg-hover-surface" />
+          <div className="size-10 animate-pulse rounded-full bg-hover-surface" />
+        </div>
+        <div className="wa-wallpaper flex min-h-0 flex-1 flex-col gap-4 p-4 sm:px-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="h-[68px] animate-pulse rounded-xl bg-surface/70" />
+            ))}
           </div>
-          <div className="wa-wallpaper flex min-h-0 flex-1 flex-col gap-4 p-4 sm:px-5">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="h-[68px] animate-pulse rounded-xl bg-surface/70" />
-              ))}
-            </div>
-            <div className="flex gap-3">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="h-96 w-72 animate-pulse rounded-2xl bg-surface/50" />
-              ))}
-            </div>
+          <div className="flex gap-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-96 w-72 animate-pulse rounded-2xl bg-surface/50" />
+            ))}
           </div>
         </div>
-      </FullBleedFrame>
+      </div>
     );
   }
 
   return (
-    <FullBleedFrame>
+    <>
       <div className="flex h-full min-h-0 flex-col bg-background">
         <WaPanelHeader
           large
@@ -536,6 +533,6 @@ export default function PipelinesPage() {
         defaultStageId={defaultStageId}
         onSaved={refreshDeals}
       />
-    </FullBleedFrame>
+    </>
   );
 }

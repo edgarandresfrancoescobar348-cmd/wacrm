@@ -13,7 +13,7 @@ import {
 } from "@/components/automations/automation-builder"
 import type { AutomationTriggerType } from "@/types"
 import { Button } from "@/components/ui/button"
-import { WaFrameCenter } from "@/components/automations/wa-frame"
+import { WaCenteredState } from "@/components/layout/wa-panel"
 
 export default function EditAutomationPage({
   params,
@@ -54,20 +54,20 @@ export default function EditAutomationPage({
 
   if (error) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <p className="text-sm text-destructive">{error}</p>
         <Button variant="outline" onClick={() => router.push("/automations")}>
           {t("back")}
         </Button>
-      </WaFrameCenter>
+      </WaCenteredState>
     )
   }
 
   if (!initial) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <Loader2 className="size-6 animate-spin text-primary-text" />
-      </WaFrameCenter>
+      </WaCenteredState>
     )
   }
 

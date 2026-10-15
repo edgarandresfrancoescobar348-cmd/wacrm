@@ -14,8 +14,12 @@ import type {
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatRelative } from "@/lib/automations/trigger-meta"
-import { WaAvatar, WaEmptyState, WaPanelHeader } from "@/components/layout/wa-panel"
-import { WaFrame, WaFrameCenter } from "@/components/automations/wa-frame"
+import {
+  WaAvatar,
+  WaCenteredState,
+  WaEmptyState,
+  WaPanelHeader,
+} from "@/components/layout/wa-panel"
 import { WaBackButton, WaIconAvatar, WaStatusPill } from "@/components/automations/wa-kit"
 
 export default function AutomationLogsPage({
@@ -63,25 +67,25 @@ export default function AutomationLogsPage({
 
   if (error) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <p className="text-sm text-destructive">{error}</p>
         <Button variant="outline" onClick={() => router.push("/automations")}>
           {t("back")}
         </Button>
-      </WaFrameCenter>
+      </WaCenteredState>
     )
   }
 
   if (!automation || logs === null) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <Loader2 className="size-6 animate-spin text-primary-text" />
-      </WaFrameCenter>
+      </WaCenteredState>
     )
   }
 
   return (
-    <WaFrame>
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <WaPanelHeader
         leading={
           <>
@@ -176,7 +180,7 @@ export default function AutomationLogsPage({
           )}
         </div>
       </div>
-    </WaFrame>
+    </div>
   )
 }
 

@@ -34,7 +34,6 @@ import {
   WaSearchPill,
 } from "@/components/layout/wa-panel";
 import { formatListTime } from "@/components/inbox/wa-format";
-import { FullBleedFrame } from "@/components/dashboard/full-bleed-frame";
 
 // Icon per notification type. Only one type exists today
 // (conversation_assigned) but this keeps future types a one-line add.
@@ -327,25 +326,23 @@ export default function NotificationsPage() {
   );
 
   return (
-    <FullBleedFrame>
-      <WaListLayout list={list}>
-        <div className="h-full bg-wallpaper">
-          <WaEmptyState
-            icon={Bell}
-            title={t("title")}
-            description={t("description")}
-            cta={
-              unreadIds.length > 0
-                ? { label: t("markAllRead"), onClick: markAllRead }
-                : undefined
-            }
-            actions={[
-              { icon: MessageCircle, label: t("openInbox"), href: "/inbox" },
-              { icon: Settings, label: t("alertSettings"), href: "/settings?tab=profile" },
-            ]}
-          />
-        </div>
-      </WaListLayout>
-    </FullBleedFrame>
+    <WaListLayout list={list}>
+      <div className="h-full bg-wallpaper">
+        <WaEmptyState
+          icon={Bell}
+          title={t("title")}
+          description={t("description")}
+          cta={
+            unreadIds.length > 0
+              ? { label: t("markAllRead"), onClick: markAllRead }
+              : undefined
+          }
+          actions={[
+            { icon: MessageCircle, label: t("openInbox"), href: "/inbox" },
+            { icon: Settings, label: t("alertSettings"), href: "/settings?tab=profile" },
+          ]}
+        />
+      </div>
+    </WaListLayout>
   );
 }

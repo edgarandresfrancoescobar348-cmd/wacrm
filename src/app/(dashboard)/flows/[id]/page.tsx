@@ -9,7 +9,7 @@ import { useTranslations } from "next-intl";
 
 import { FlowEditorShell } from "@/components/flows/flow-editor-shell";
 import { Button } from "@/components/ui/button";
-import { WaFrameCenter } from "@/components/automations/wa-frame";
+import { WaCenteredState } from "@/components/layout/wa-panel";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 
 /**
@@ -69,19 +69,19 @@ export default function FlowEditorPage() {
 
   if (loading) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <Loader2 className="size-6 animate-spin text-primary-text" />
-      </WaFrameCenter>
+      </WaCenteredState>
     );
   }
   if (notFound || !flow) {
     return (
-      <WaFrameCenter>
+      <WaCenteredState>
         <p className="text-sm text-muted-foreground">{t("notFound")}</p>
         <Button variant="outline" onClick={() => router.push("/flows")}>
           {t("backToFlows")}
         </Button>
-      </WaFrameCenter>
+      </WaCenteredState>
     );
   }
 

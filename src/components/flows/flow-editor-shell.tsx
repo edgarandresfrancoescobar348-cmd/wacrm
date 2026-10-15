@@ -34,7 +34,6 @@ import { EditorHeader } from "./header";
 import { ValidationPanel } from "./validation-panel";
 import { NODE_META, nodeColors, type NodeType } from "./shared";
 import { WaChip, WaChipRow } from "@/components/layout/wa-panel";
-import { WaFrame } from "@/components/automations/wa-frame";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 import { useTranslations } from "next-intl";
 
@@ -96,7 +95,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
 
   return (
     <FlowEditorProvider initialFlow={initialFlow} initialNodes={initialNodes}>
-      <WaFrame>
+      <div className="flex h-full min-h-0 flex-col bg-background">
         <EditorHeader />
 
         {/* ---- mode row: view toggle + node-type legend ----
@@ -155,7 +154,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
         <div className="shrink-0 border-t border-border bg-background px-3 py-2.5 sm:px-4">
           <ValidationPanel />
         </div>
-      </WaFrame>
+      </div>
     </FlowEditorProvider>
   );
 }

@@ -55,7 +55,6 @@ import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
-import { ContactsFrame } from '@/components/contacts/contacts-frame';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { cn } from '@/lib/utils';
@@ -666,7 +665,7 @@ export default function ContactsPage() {
   );
 
   return (
-    <ContactsFrame>
+    <>
       <WaListLayout list={listPanel} showMain={!!detailContactId}>
         {detailContactId ? (
           <ContactDetailView
@@ -789,6 +788,6 @@ export default function ContactsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ContactsFrame>
+    </>
   );
 }
