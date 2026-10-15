@@ -12,8 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Eye, ImageIcon, Loader2 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCheck,
+  Eye,
+  ImageIcon,
+  Loader2,
+} from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
+import { StepCard, StepHeading, StepNav } from './wizard-ui';
 
 type VariableType = 'static' | 'field' | 'custom_field';
 
@@ -77,6 +86,7 @@ export function Step3Personalize({
   onBack,
 }: Step3Props) {
   const t = useTranslations('Broadcasts.wizard');
+  const locale = useLocale();
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loadingFields, setLoadingFields] = useState(true);
   const [firstContact, setFirstContact] = useState<Contact | null>(null);
@@ -238,25 +248,39 @@ export function Step3Personalize({
     ? firstContact.name || firstContact.phone
     : t('personalize.previewSample');
 
+  // `items` lets the Select trigger show the label, not the raw value.
+  const typeItems = {
+    static: t('personalize.typeStatic'),
+    field: t('personalize.typeContact'),
+    custom_field: t('personalize.typeCustom'),
+  };
+  const contactFieldItems = Object.fromEntries(
+    contactFields.map((f) => [f.value, t(`personalize.fieldMap.${f.labelKey}`)]),
+  );
+  const customFieldItems = Object.fromEntries(
+    customFields.map((f) => [f.id, f.field_name]),
+  );
+
+  const previewTime = new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date());
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">{t('personalize.title')}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('personalize.subtitle')}
-        </p>
-      </div>
+      <StepHeading title={t('personalize.title')} subtitle={t('personalize.subtitle')} />
 
       {mediaHeaderType && (
-        <div className="rounded-xl border border-border bg-card/50 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <ImageIcon className="h-4 w-4 text-primary" />
-            <p className="text-sm font-medium text-foreground">{t('personalize.headerImage')}</p>
-            <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium uppercase text-primary">
+        <StepCard
+          icon={ImageIcon}
+          title={t('personalize.headerImage')}
+          aside={
+            <span className="inline-flex items-center rounded-full bg-chip-active px-2 py-0.5 text-[11px] font-medium uppercase text-chip-active-foreground">
               {mediaHeaderType}
             </span>
-          </div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+          }
+        >
+          <label className="mb-1.5 block text-[13px] text-muted-foreground">
             {t('personalize.imageUrl')}
           </label>
           <Input
@@ -264,9 +288,8 @@ export function Step3Personalize({
             value={headerMediaUrl}
             onChange={(e) => onHeaderMediaUrlChange(e.target.value)}
             placeholder={t('personalize.imageUrlPlaceholder')}
-            className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
           />
-          <p className="mt-1.5 text-xs text-muted-foreground">
+          <p className="mt-1.5 text-[13px] text-muted-foreground">
             {t('personalize.headerImageDesc')}
           </p>
           {mediaHeaderType === 'image' &&
@@ -276,48 +299,48 @@ export function Step3Personalize({
               <img
                 src={headerMediaUrl.trim()}
                 alt={t('personalize.headerPreviewAlt')}
-                className="mt-3 max-h-40 rounded-lg border border-border object-contain"
+                className="mt-3 max-h-40 rounded-xl object-contain"
               />
             )}
           {headerMediaError && (
-            <p className="mt-1.5 text-xs text-amber-300">
+            <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-destructive">
+              <AlertTriangle className="size-3.5" />
               {headerMediaError === 'missing'
                 ? t('personalize.mediaUrlRequired')
                 : t('personalize.mediaUrlInvalid')}
             </p>
           )}
-        </div>
+        </StepCard>
       )}
 
       {placeholders.length === 0 && !mediaHeaderType ? (
-        <div className="rounded-xl border border-border bg-card/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">
+        <div className="flex justify-center">
+          <span className="rounded-lg bg-surface px-3 py-1.5 text-sm text-muted-foreground">
             {t('personalize.noPreview')}
-          </p>
+          </span>
         </div>
       ) : placeholders.length === 0 ? null : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {placeholders.map((placeholder) => {
             const key = placeholder.replace(/^\{\{|\}\}$/g, '');
             const mapping = variables[key] ?? { type: 'static', value: '' };
 
             return (
-              <div
+              <StepCard
                 key={placeholder}
-                className="rounded-xl border border-border bg-card/50 p-4"
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium text-primary">
+                title={
+                  <span className="inline-flex items-center rounded-md bg-bubble-quote px-2 py-0.5 font-mono text-[13px] text-primary-text">
                     {placeholder}
                   </span>
-                </div>
-
+                }
+              >
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    <label className="mb-1.5 block text-[13px] text-muted-foreground">
                       {t('personalize.type')}
                     </label>
                     <Select
+                      items={typeItems}
                       value={mapping.type}
                       onValueChange={(val) =>
                         updateVariable(key, {
@@ -326,10 +349,10 @@ export function Step3Personalize({
                         })
                       }
                     >
-                      <SelectTrigger className="w-full border-border bg-muted text-foreground">
+                      <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="border-border bg-popover">
+                      <SelectContent>
                         <SelectItem value="static">{t('personalize.typeStatic')}</SelectItem>
                         <SelectItem value="field">{t('personalize.typeContact')}</SelectItem>
                         <SelectItem value="custom_field">
@@ -340,7 +363,7 @@ export function Step3Personalize({
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    <label className="mb-1.5 block text-[13px] text-muted-foreground">
                       {mapping.type === 'static' ? t('personalize.staticValue') : t('personalize.contactField')}
                     </label>
                     {mapping.type === 'static' ? (
@@ -350,19 +373,19 @@ export function Step3Personalize({
                           updateVariable(key, { value: e.target.value })
                         }
                         placeholder={t('personalize.enterValue')}
-                        className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
                       />
                     ) : mapping.type === 'field' ? (
                       <Select
+                        items={contactFieldItems}
                         value={mapping.value || undefined}
                         onValueChange={(val) =>
                           updateVariable(key, { value: val || '' })
                         }
                       >
-                        <SelectTrigger className="w-full border-border bg-muted text-foreground">
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder={t('personalize.selectContactField')} />
                         </SelectTrigger>
-                        <SelectContent className="border-border bg-popover">
+                        <SelectContent>
                           {contactFields.map((field) => (
                             <SelectItem key={field.value} value={field.value}>
                               {t(`personalize.fieldMap.${field.labelKey}`)}
@@ -372,12 +395,13 @@ export function Step3Personalize({
                       </Select>
                     ) : (
                       <Select
+                        items={customFieldItems}
                         value={mapping.value || undefined}
                         onValueChange={(val) =>
                           updateVariable(key, { value: val || '' })
                         }
                       >
-                        <SelectTrigger className="w-full border-border bg-muted text-foreground">
+                        <SelectTrigger className="w-full">
                           <SelectValue
                             placeholder={
                               loadingFields
@@ -388,7 +412,7 @@ export function Step3Personalize({
                             }
                           />
                         </SelectTrigger>
-                        <SelectContent className="border-border bg-popover">
+                        <SelectContent>
                           {customFields.map((f) => (
                             <SelectItem key={f.id} value={f.id}>
                               {f.field_name}
@@ -399,59 +423,74 @@ export function Step3Personalize({
                     )}
                   </div>
                 </div>
-              </div>
+              </StepCard>
             );
           })}
         </div>
       )}
 
-      {/* Live Preview — rendered as a WhatsApp-style bubble so the user
-          sees approximately what the recipient will see. */}
-      <div className="rounded-xl border border-border bg-card/50 p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Eye className="h-4 w-4 text-primary" />
-          <p className="text-sm font-medium text-foreground">{t('personalize.preview')}</p>
-          <span className="text-xs text-muted-foreground">({previewLabel})</span>
-          {loadingPreview && (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-          )}
-        </div>
-        <div className="rounded-lg bg-[#0e1a12] p-3">
-          <div className="ml-auto max-w-[85%] rounded-lg bg-primary/30 px-3 py-2 shadow-sm">
-            <p className="whitespace-pre-wrap text-sm text-primary">
+      {/* Live Preview — rendered as a WhatsApp outgoing bubble on the
+          chat wallpaper so the user sees approximately what the
+          recipient will see. */}
+      <StepCard
+        icon={Eye}
+        title={t('personalize.preview')}
+        aside={
+          <>
+            <span className="truncate text-[13px] text-muted-foreground">{previewLabel}</span>
+            {loadingPreview && (
+              <Loader2 className="size-3.5 animate-spin text-primary-text" />
+            )}
+          </>
+        }
+      >
+        <div className="wa-wallpaper overflow-hidden rounded-xl px-4 py-5">
+          <div className="relative ml-auto w-fit max-w-[85%] rounded-[7.5px] rounded-tr-none bg-bubble-out px-2.5 pt-1.5 pb-2 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
+            {/* Outgoing bubble tail (top-right), like the inbox. */}
+            <span
+              aria-hidden
+              className="absolute top-0 -right-2 size-2 bg-bubble-out [clip-path:polygon(0_0,100%_0,0_100%)]"
+            />
+            <p className="text-[14.2px] leading-[19px] whitespace-pre-wrap text-foreground">
               {previewText}
+              <span className="float-right mt-1.5 ml-3 inline-flex items-center gap-0.5 text-[11px] leading-none text-muted-foreground">
+                {previewTime}
+                <CheckCheck className="size-4 text-read-ticks" />
+              </span>
             </p>
           </div>
         </div>
-      </div>
+      </StepCard>
 
       {unmappedKeys.length > 0 && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-          {t.rich('personalize.unmappedWarning', {
-            keys: unmappedKeys.join(', '),
-            mono: (chunks) => <span className="font-mono font-semibold">{chunks}</span>,
-          })}
+        <div className="flex items-start gap-2.5 rounded-xl bg-destructive/10 px-3 py-2.5 text-[13px] text-foreground">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <p>
+            {t.rich('personalize.unmappedWarning', {
+              keys: unmappedKeys.join(', '),
+              mono: (chunks) => <span className="font-mono font-semibold">{chunks}</span>,
+            })}
+          </p>
         </div>
       )}
 
-      <div className="flex items-center justify-between border-t border-border pt-4">
-        <Button
-          variant="outline"
-          onClick={onBack}
-          className="border-border text-muted-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {t('back')}
-        </Button>
-        <Button
-          onClick={onNext}
-          disabled={unmappedKeys.length > 0 || headerMediaError !== null}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {t('next')}
-          <ArrowRight className="h-4 w-4" />
-        </Button>
-      </div>
+      <StepNav
+        back={
+          <Button variant="outline" onClick={onBack}>
+            <ArrowLeft className="size-4" />
+            {t('back')}
+          </Button>
+        }
+        next={
+          <Button
+            onClick={onNext}
+            disabled={unmappedKeys.length > 0 || headerMediaError !== null}
+          >
+            {t('next')}
+            <ArrowRight className="size-4" />
+          </Button>
+        }
+      />
     </div>
   );
 }

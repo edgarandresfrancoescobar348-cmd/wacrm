@@ -14,26 +14,27 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
-  ArrowLeft,
-  Loader2,
-  Users,
-  Send,
-  CheckCheck,
-  Eye,
   AlertCircle,
-  MessageCircle,
-  Filter,
+  ArrowLeft,
+  Check,
+  CheckCheck,
   Download,
-  ChevronDown,
-  Trash2,
+  Loader2,
+  MessageCircle,
   PlayCircle,
+  Radio,
   RotateCcw,
+  Trash2,
+  Users,
+  type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -41,27 +42,47 @@ import {
   getRecipientStatus,
 } from '@/lib/broadcast-status';
 import { useTranslations } from 'next-intl';
+import {
+  WaAvatar,
+  WaChip,
+  WaChipRow,
+  WaEmptyState,
+  WaIconButton,
+  WaPanelHeader,
+} from '@/components/layout/wa-panel';
+import {
+  broadcastStatusStyle,
+  recipientStatusStyle,
+} from '@/components/broadcasts/broadcast-status-style';
+import { cn } from '@/lib/utils';
+
+/** 36px header pill, same shape as the inbox chat header's status pill. */
+const HEADER_PILL =
+  'inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3 text-[13px] font-medium';
 
 interface StatCardProps {
   label: string;
   value: number;
   total: number;
-  icon: React.ReactNode;
-  color: string;
+  icon: LucideIcon;
+  /** Icon disc colours (token classes). */
+  tint: string;
 }
 
-function StatCard({ label, value, total, icon, color }: StatCardProps) {
+function StatCard({ label, value, total, icon: Icon, tint }: StatCardProps) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="rounded-xl bg-surface p-3 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
       <div className="flex items-center justify-between">
-        <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${color}`}>
-          {icon}
-        </div>
-        <span className="text-xs text-muted-foreground">{pct}%</span>
+        <span className={`flex size-9 items-center justify-center rounded-full ${tint}`}>
+          <Icon className="size-[18px]" strokeWidth={1.75} />
+        </span>
+        <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
       </div>
-      <p className="mt-3 text-2xl font-bold text-foreground">{value.toLocaleString()}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-2.5 text-[22px] leading-7 font-medium text-foreground tabular-nums">
+        {value.toLocaleString()}
+      </p>
+      <p className="truncate text-[13px] text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -81,8 +102,8 @@ function FunnelChart({ steps }: { steps: FunnelStep[] }) {
   const t = useTranslations('Broadcasts.detail');
   const max = Math.max(...steps.map((s) => s.value), 1);
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <h3 className="mb-4 text-sm font-medium text-foreground">{t('funnel')}</h3>
+    <div className="rounded-xl bg-surface p-4 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
+      <h3 className="mb-4 text-[15px] text-foreground">{t('funnel')}</h3>
       <div className="space-y-2">
         {steps.map((step) => {
           const pctOfMax = Math.max(5, Math.round((step.value / max) * 100));
@@ -92,17 +113,17 @@ function FunnelChart({ steps }: { steps: FunnelStep[] }) {
               : 0;
           return (
             <div key={step.label} className="flex items-center gap-3">
-              <span className="w-20 shrink-0 text-xs text-muted-foreground">
+              <span className="w-24 shrink-0 text-[13px] text-muted-foreground">
                 {step.label}
               </span>
-              <div className="relative h-7 flex-1 rounded-full bg-muted">
+              <div className="relative h-7 flex-1 overflow-hidden rounded-full bg-hover-surface">
                 <div
                   className={`h-7 rounded-full ${step.color} transition-[width] duration-500`}
                   style={{ width: `${pctOfMax}%` }}
                 />
-                <span className="absolute inset-0 flex items-center px-3 text-xs font-medium text-foreground">
+                <span className="absolute inset-0 flex items-center px-3 text-xs font-medium text-foreground tabular-nums">
                   {step.value.toLocaleString()}
-                  <span className="ml-2 text-muted-foreground/80">
+                  <span className="ml-2 opacity-70">
                     ({pctOfSent}%)
                   </span>
                 </span>
@@ -301,24 +322,27 @@ export default function BroadcastDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      <div className="flex h-full items-center justify-center bg-background">
+        <Loader2 className="size-6 animate-spin text-primary-text" />
       </div>
     );
   }
 
   if (error || !broadcast) {
     return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2">
-        <p className="text-sm text-red-400">{error ?? t('notFound')}</p>
-        <Button variant="outline" onClick={() => router.push('/broadcasts')}>
-          {t('backToBroadcasts')}
-        </Button>
+      <div className="wa-wallpaper h-full">
+        <WaEmptyState
+          icon={AlertCircle}
+          title={error ?? t('notFound')}
+          cta={{ label: t('backToBroadcasts'), href: '/broadcasts' }}
+        />
       </div>
     );
   }
 
   const status = getBroadcastStatus(broadcast.status);
+  const style = broadcastStatusStyle(broadcast.status);
+  const StatusIcon = style.icon;
 
   const pendingCount = recipients.filter((r) => r.status === 'pending').length;
   const retryableCount = recipients.filter((r) => r.status === 'failed').length;
@@ -327,315 +351,335 @@ export default function BroadcastDetailPage() {
   // than leaving a permanently pulsing "sending" badge.
   const isStalled = broadcast.status === 'sending' && pendingCount > 0;
 
+  const recipientCounts = new Map<string, number>();
+  for (const r of recipients) {
+    recipientCounts.set(r.status, (recipientCounts.get(r.status) ?? 0) + 1);
+  }
+
   const funnelSteps: FunnelStep[] = [
     { label: t('stats.sent'), value: broadcast.sent_count, color: 'bg-primary' },
-    { label: t('stats.delivered'), value: broadcast.delivered_count, color: 'bg-teal-500' },
-    { label: t('stats.read'), value: broadcast.read_count, color: 'bg-blue-500' },
-    { label: t('stats.replied'), value: broadcast.replied_count, color: 'bg-indigo-500' },
+    { label: t('stats.delivered'), value: broadcast.delivered_count, color: 'bg-primary/60' },
+    { label: t('stats.read'), value: broadcast.read_count, color: 'bg-read-ticks' },
+    { label: t('stats.replied'), value: broadcast.replied_count, color: 'bg-read-ticks/60' },
   ];
 
+  const deleteTitle =
+    broadcast.status === 'sending' ? t('cannotDeleteSending') : t('deleteHover');
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => router.push('/broadcasts')}
-            className="border-border"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">{broadcast.name}</h1>
-              <span
-                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
-              >
-                {tStatus(status.label)}
-              </span>
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <WaPanelHeader
+        leading={
+          <>
+            <WaIconButton
+              icon={ArrowLeft}
+              label={t('backToBroadcasts')}
+              href="/broadcasts"
+              className="lg:hidden"
+            />
+            <span
+              className={cn(
+                'flex size-10 shrink-0 items-center justify-center rounded-full',
+                style.soft,
+                style.text,
+              )}
+            >
+              <Radio className="size-5" strokeWidth={1.75} />
+            </span>
+          </>
+        }
+        title={broadcast.name}
+        subtitle={`${t('template', { name: broadcast.template_name })} · ${t('createdAt', {
+          date: new Date(broadcast.created_at).toLocaleDateString(),
+        })}`}
+        actions={
+          <>
+            <span className={cn(HEADER_PILL, style.text)}>
+              <StatusIcon className={cn('size-3.5', style.spin && 'animate-spin')} />
+              <span className="hidden sm:inline">{tStatus(status.label)}</span>
+            </span>
+            <WaIconButton
+              icon={Download}
+              label={t('exportCsv')}
+              onClick={handleExport}
+              disabled={recipients.length === 0}
+            />
+            {/* Mid-send broadcasts can't be deleted because orphaning
+                in-flight Meta messages would leave the funnel
+                inconsistent. The span carries the reason as a title
+                since a disabled button gets no hover events. */}
+            <span title={deleteTitle} className="inline-flex">
+              <WaIconButton
+                icon={Trash2}
+                label={t('delete')}
+                disabled={broadcast.status === 'sending'}
+                onClick={() => setConfirmDelete(true)}
+                className="hover:text-destructive"
+              />
+            </span>
+          </>
+        }
+      />
+
+      {/* Wallpaper on a non-scrolling wrapper so the doodle covers the
+          pane; the inner div scrolls. */}
+      <div className="wa-wallpaper min-h-0 flex-1">
+        <div className="h-full overflow-y-auto">
+          <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
+            {/* Resume / retry (issue #472). Only rendered when there is
+                actually something outstanding. */}
+            {(pendingCount > 0 || retryableCount > 0) && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-chip-active p-4 text-chip-active-foreground">
+                <div className="flex min-w-0 flex-[1_1_16rem] items-start gap-3 text-sm">
+                  <RotateCcw className="mt-0.5 size-5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {isStalled ? t('resumeStalledTitle') : t('resumeTitle')}
+                    </p>
+                    <p className="mt-0.5 opacity-80">
+                      {isStalled
+                        ? t('resumeStalledHint', { count: pendingCount })
+                        : t('resumeHint', { count: retryableCount })}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {pendingCount > 0 && (
+                    <Button
+                      size="sm"
+                      onClick={() => handleResume('pending')}
+                      disabled={resumingScope !== null}
+                    >
+                      {resumingScope === 'pending' ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <PlayCircle className="size-3.5" />
+                      )}
+                      {t('resumePending', { count: pendingCount })}
+                    </Button>
+                  )}
+                  {retryableCount > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleResume('failed')}
+                      disabled={resumingScope !== null}
+                      className="border-current/30 text-current hover:bg-background/30"
+                    >
+                      {resumingScope === 'failed' ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="size-3.5" />
+                      )}
+                      {t('retryFailed', { count: retryableCount })}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Stats — 6 tiles: Total / Sent / Delivered / Read / Replied / Failed */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <StatCard
+                label={t('stats.totalRecipients')}
+                value={broadcast.total_recipients}
+                total={broadcast.total_recipients}
+                icon={Users}
+                tint="bg-hover-surface text-muted-foreground"
+              />
+              <StatCard
+                label={t('stats.sent')}
+                value={broadcast.sent_count}
+                total={broadcast.total_recipients}
+                icon={Check}
+                tint="bg-hover-surface text-muted-foreground"
+              />
+              <StatCard
+                label={t('stats.delivered')}
+                value={broadcast.delivered_count}
+                total={broadcast.total_recipients}
+                icon={CheckCheck}
+                tint="bg-hover-surface text-muted-foreground"
+              />
+              <StatCard
+                label={t('stats.read')}
+                value={broadcast.read_count}
+                total={broadcast.total_recipients}
+                icon={CheckCheck}
+                tint="bg-read-ticks/15 text-read-ticks"
+              />
+              <StatCard
+                label={t('stats.replied')}
+                value={broadcast.replied_count}
+                total={broadcast.total_recipients}
+                icon={MessageCircle}
+                tint="bg-chip-active text-chip-active-foreground"
+              />
+              <StatCard
+                label={t('stats.failed')}
+                value={broadcast.failed_count}
+                total={broadcast.total_recipients}
+                icon={AlertCircle}
+                tint="bg-destructive/12 text-destructive"
+              />
             </div>
-            <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-              <span>{t('template', { name: broadcast.template_name })}</span>
-              <span>-</span>
-              <span>
-                {t('createdAt', { date: new Date(broadcast.created_at).toLocaleDateString() })}
-              </span>
+
+            <FunnelChart steps={funnelSteps} />
+
+            {/* Recipients */}
+            <div className="rounded-xl bg-surface shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
+              <div className="space-y-3 px-4 pt-4 pb-3">
+                <h2 className="text-[15px] text-foreground">
+                  {statusFilter !== 'all'
+                    ? t('recipientsHeader', {
+                        filtered: filteredRecipients.length,
+                        total: recipients.length,
+                      })
+                    : t('recipientsHeaderAll', { total: recipients.length })}
+                </h2>
+                <WaChipRow>
+                  <WaChip
+                    active={statusFilter === 'all'}
+                    onClick={() => setStatusFilter('all')}
+                  >
+                    {t('allStatuses')}
+                  </WaChip>
+                  {RECIPIENT_STATUSES.map((s) => (
+                    <WaChip
+                      key={s}
+                      active={statusFilter === s}
+                      count={recipientCounts.get(s)}
+                      onClick={() => setStatusFilter(statusFilter === s ? 'all' : s)}
+                    >
+                      {tStatus(getRecipientStatus(s).label)}
+                    </WaChip>
+                  ))}
+                </WaChipRow>
+              </div>
+
+              {filteredRecipients.length === 0 ? (
+                <div className="flex h-32 items-center justify-center">
+                  <span className="rounded-lg bg-hover-surface px-3 py-1.5 text-sm text-muted-foreground">
+                    {recipients.length === 0
+                      ? t('noRecipients')
+                      : t('noRecipientsFilter')}
+                  </span>
+                </div>
+              ) : (
+                <div className="overflow-x-auto px-2 pb-2">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-0 hover:bg-transparent">
+                        <TableHead className="text-[13px] font-normal text-muted-foreground">{t('table.contact')}</TableHead>
+                        <TableHead className="text-[13px] font-normal text-muted-foreground">{t('table.status')}</TableHead>
+                        <TableHead className="text-[13px] font-normal text-muted-foreground">{t('table.sent')}</TableHead>
+                        <TableHead className="text-[13px] font-normal text-muted-foreground">{t('table.delivered')}</TableHead>
+                        <TableHead className="text-[13px] font-normal text-muted-foreground">{t('table.read')}</TableHead>
+                        <TableHead className="text-[13px] font-normal text-muted-foreground">{t('table.error')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRecipients.map((recipient) => {
+                        const rStatus = getRecipientStatus(recipient.status);
+                        const rStyle = recipientStatusStyle(recipient.status);
+                        const RIcon = rStyle.icon;
+                        const contactName =
+                          recipient.contact?.name ?? t('unknownContact');
+                        return (
+                          <TableRow
+                            key={recipient.id}
+                            className="border-0 hover:bg-hover-surface/60"
+                          >
+                            <TableCell className="rounded-l-lg py-2">
+                              <div className="flex items-center gap-3">
+                                <WaAvatar
+                                  src={recipient.contact?.avatar_url}
+                                  name={recipient.contact?.name || recipient.contact?.phone || '?'}
+                                  size={36}
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm text-foreground">
+                                    {contactName}
+                                  </p>
+                                  <p className="truncate text-xs text-muted-foreground tabular-nums">
+                                    {recipient.contact?.phone ?? '-'}
+                                  </p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+                                  rStyle.soft,
+                                  rStyle.text,
+                                )}
+                              >
+                                <RIcon className="size-3.5" />
+                                {tStatus(rStatus.label)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-[13px] text-muted-foreground">
+                              {recipient.sent_at
+                                ? new Date(recipient.sent_at).toLocaleString()
+                                : '-'}
+                            </TableCell>
+                            <TableCell className="text-[13px] text-muted-foreground">
+                              {recipient.delivered_at
+                                ? new Date(recipient.delivered_at).toLocaleString()
+                                : '-'}
+                            </TableCell>
+                            <TableCell className="text-[13px] text-muted-foreground">
+                              {recipient.read_at
+                                ? new Date(recipient.read_at).toLocaleString()
+                                : '-'}
+                            </TableCell>
+                            <TableCell
+                              title={recipient.error_message ?? undefined}
+                              className="max-w-xs truncate rounded-r-lg text-xs text-destructive"
+                            >
+                              {recipient.error_message ?? '-'}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Delete — inline-confirm pattern matches the pipeline-settings
-            "Delete Pipeline" flow. Mid-send broadcasts can't be deleted
-            because orphaning in-flight Meta messages would leave the
-            funnel inconsistent. */}
-        {confirmDelete ? (
-          <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
-            <span className="text-red-300">{t('deletePrompt')}</span>
+      {/* Delete confirmation (WA modal). */}
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <div className="flex size-12 items-center justify-center rounded-full bg-destructive/12 text-destructive">
+              <Trash2 className="size-6" strokeWidth={1.75} />
+            </div>
+            <DialogTitle>{t('deletePrompt')}</DialogTitle>
+            <DialogDescription>{broadcast.name}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
             <Button
               variant="outline"
-              size="sm"
               onClick={() => setConfirmDelete(false)}
               disabled={deleting}
-              className="h-7 border-border bg-transparent text-muted-foreground hover:bg-muted"
             >
               {t('cancel')}
             </Button>
             <Button
-              size="sm"
               onClick={handleDelete}
               disabled={deleting}
-              className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              className="bg-destructive text-white hover:bg-destructive/90"
             >
               {deleting ? t('deleting') : t('confirm')}
             </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={broadcast.status === 'sending'}
-            onClick={() => setConfirmDelete(true)}
-            title={
-              broadcast.status === 'sending'
-                ? t('cannotDeleteSending')
-                : t('deleteHover')
-            }
-            className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('delete')}
-          </Button>
-        )}
-      </div>
-
-      {/* Resume / retry (issue #472). Only rendered when there is
-          actually something outstanding. */}
-      {(pendingCount > 0 || retryableCount > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
-          <div className="text-sm">
-            <p className="font-medium text-foreground">
-              {isStalled ? t('resumeStalledTitle') : t('resumeTitle')}
-            </p>
-            <p className="mt-0.5 text-muted-foreground">
-              {isStalled
-                ? t('resumeStalledHint', { count: pendingCount })
-                : t('resumeHint', { count: retryableCount })}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {pendingCount > 0 && (
-              <Button
-                size="sm"
-                onClick={() => handleResume('pending')}
-                disabled={resumingScope !== null}
-              >
-                {resumingScope === 'pending' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <PlayCircle className="h-3.5 w-3.5" />
-                )}
-                {t('resumePending', { count: pendingCount })}
-              </Button>
-            )}
-            {retryableCount > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleResume('failed')}
-                disabled={resumingScope !== null}
-                className="border-border text-muted-foreground hover:bg-muted"
-              >
-                {resumingScope === 'failed' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RotateCcw className="h-3.5 w-3.5" />
-                )}
-                {t('retryFailed', { count: retryableCount })}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Stats — 6 cards: Total / Sent / Delivered / Read / Replied / Failed */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard
-          label={t('stats.totalRecipients')}
-          value={broadcast.total_recipients}
-          total={broadcast.total_recipients}
-          icon={<Users className="h-4 w-4" />}
-          color="bg-muted text-muted-foreground"
-        />
-        <StatCard
-          label={t('stats.sent')}
-          value={broadcast.sent_count}
-          total={broadcast.total_recipients}
-          icon={<Send className="h-4 w-4" />}
-          color="bg-primary/10 text-primary"
-        />
-        <StatCard
-          label={t('stats.delivered')}
-          value={broadcast.delivered_count}
-          total={broadcast.total_recipients}
-          icon={<CheckCheck className="h-4 w-4" />}
-          color="bg-teal-500/10 text-teal-400"
-        />
-        <StatCard
-          label={t('stats.read')}
-          value={broadcast.read_count}
-          total={broadcast.total_recipients}
-          icon={<Eye className="h-4 w-4" />}
-          color="bg-blue-500/10 text-blue-400"
-        />
-        <StatCard
-          label={t('stats.replied')}
-          value={broadcast.replied_count}
-          total={broadcast.total_recipients}
-          icon={<MessageCircle className="h-4 w-4" />}
-          color="bg-indigo-500/10 text-indigo-400"
-        />
-        <StatCard
-          label={t('stats.failed')}
-          value={broadcast.failed_count}
-          total={broadcast.total_recipients}
-          icon={<AlertCircle className="h-4 w-4" />}
-          color="bg-red-500/10 text-red-400"
-        />
-      </div>
-
-      <FunnelChart steps={funnelSteps} />
-
-      {/* Recipients Table */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-          <h2 className="text-sm font-medium text-foreground">
-            {statusFilter !== 'all'
-              ? t('recipientsHeader', { filtered: filteredRecipients.length, total: recipients.length })
-              : t('recipientsHeaderAll', { total: recipients.length })}
-          </h2>
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-border text-muted-foreground hover:bg-muted"
-                  />
-                }
-              >
-                <Filter className="h-3.5 w-3.5" />
-                {statusFilter === 'all'
-                  ? t('allStatuses')
-                  : tStatus(getRecipientStatus(statusFilter).label)}
-                <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="border-border bg-popover">
-                <DropdownMenuItem
-                  onClick={() => setStatusFilter('all')}
-                  className={
-                    statusFilter === 'all' ? 'text-primary' : 'text-popover-foreground'
-                  }
-                >
-                  {t('allStatuses')}
-                </DropdownMenuItem>
-                {RECIPIENT_STATUSES.map((s) => (
-                  <DropdownMenuItem
-                    key={s}
-                    onClick={() => setStatusFilter(s)}
-                    className={
-                      statusFilter === s
-                        ? 'text-primary'
-                        : 'text-popover-foreground'
-                    }
-                  >
-                    {tStatus(getRecipientStatus(s).label)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={recipients.length === 0}
-              className="border-border text-muted-foreground hover:bg-muted"
-            >
-              <Download className="h-3.5 w-3.5" />
-              {t('exportCsv')}
-            </Button>
-          </div>
-        </div>
-
-        {filteredRecipients.length === 0 ? (
-          <div className="flex h-32 items-center justify-center">
-            <p className="text-sm text-muted-foreground">
-              {recipients.length === 0
-                ? t('noRecipients')
-                : t('noRecipientsFilter')}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border hover:bg-transparent">
-                  <TableHead className="text-muted-foreground">{t('table.contact')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.phone')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.status')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.sent')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.delivered')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.read')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.error')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRecipients.map((recipient) => {
-                  const rStatus = getRecipientStatus(recipient.status);
-                  return (
-                    <TableRow key={recipient.id} className="border-border">
-                      <TableCell className="font-medium text-foreground">
-                        {recipient.contact?.name ?? t('unknownContact')}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {recipient.contact?.phone ?? '-'}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${rStatus.classes}`}
-                        >
-                          {tStatus(rStatus.label)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {recipient.sent_at
-                          ? new Date(recipient.sent_at).toLocaleString()
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {recipient.delivered_at
-                          ? new Date(recipient.delivered_at).toLocaleString()
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {recipient.read_at
-                          ? new Date(recipient.read_at).toLocaleString()
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate text-xs text-red-400">
-                        {recipient.error_message ?? '-'}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
