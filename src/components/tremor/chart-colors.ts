@@ -14,6 +14,14 @@
 export type ColorUtility = "bg" | "stroke" | "fill" | "text"
 
 export const chartColors = {
+  // Local addition: the theme accent (WhatsApp green by default, follows
+  // the accent picker). Text uses `--primary-text` for light-mode contrast.
+  primary: {
+    bg: "bg-primary",
+    stroke: "stroke-primary",
+    fill: "fill-primary",
+    text: "text-primary-text",
+  },
   blue: {
     bg: "bg-blue-500",
     stroke: "stroke-blue-500",

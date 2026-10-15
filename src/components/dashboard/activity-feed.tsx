@@ -15,6 +15,8 @@ import type { ActivityItem, ActivityKind } from '@/lib/dashboard/types'
 import { cn } from '@/lib/utils'
 import { EmptyState } from './empty-state'
 import { Skeleton } from './skeleton'
+import { DashCard } from './dash-card'
+import { WaChip } from '@/components/layout/wa-panel'
 
 interface ActivityFeedProps {
   items: ActivityItem[] | null
@@ -30,12 +32,15 @@ interface KindTheme {
   badge: string
 }
 
+// WA list-row avatars: a soft round disc per kind. Messages / contacts
+// / deals sit on the green chip tone; the rest stay neutral so the feed
+// reads like a calm chat list rather than a rainbow.
 const KIND_THEME: Record<ActivityKind, KindTheme> = {
-  message: { icon: MessageSquare, badge: 'bg-blue-500/10 text-blue-400' },
-  contact: { icon: UserPlus, badge: 'bg-primary/10 text-primary' },
-  deal: { icon: Briefcase, badge: 'bg-primary/10 text-primary' },
-  broadcast: { icon: Radio, badge: 'bg-amber-500/10 text-amber-400' },
-  automation: { icon: Zap, badge: 'bg-rose-500/10 text-rose-400' },
+  message: { icon: MessageSquare, badge: 'bg-chip-active text-chip-active-foreground' },
+  contact: { icon: UserPlus, badge: 'bg-chip-active text-chip-active-foreground' },
+  deal: { icon: Briefcase, badge: 'bg-hover-surface text-foreground' },
+  broadcast: { icon: Radio, badge: 'bg-hover-surface text-foreground' },
+  automation: { icon: Zap, badge: 'bg-hover-surface text-foreground' },
 }
 
 import { useTranslations } from 'next-intl'
@@ -57,25 +62,55 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
     i === 0 || totalLoaded > PAGE_SIZES[i - 1]
 
   return (
-    <section className="rounded-xl border border-border bg-card">
-      <header className="flex items-center justify-between border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
+    <DashCard
+      title={t('title')}
+      action={
         <Link
           href="/inbox"
-          className="text-xs font-medium text-primary hover:text-primary/80"
+          className="text-sm font-medium text-primary-text hover:underline"
         >
           {t('viewAll')}
         </Link>
-      </header>
-
+      }
+      bodyClassName="px-2 pb-2"
+      footer={
+        items && items.length > 0 ? (
+          <footer className="flex flex-wrap items-center justify-between gap-2 px-5 pb-4 text-[13px]">
+            <span className="text-muted-foreground tabular-nums">
+              {t('showingOf', { visible: visible.length, totalLoaded, plus: totalLoaded === 50 ? '+' : '' })}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="mr-1 text-muted-foreground">{t('show')}</span>
+              {PAGE_SIZES.map((size, i) => {
+                const disabled = !isSizeUseful(size, i)
+                return (
+                  <WaChip
+                    key={size}
+                    active={pageSize === size}
+                    onClick={() => setPageSize(size)}
+                    disabled={disabled}
+                    className={cn(
+                      'h-7 px-2.5 tabular-nums',
+                      disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-muted-foreground',
+                    )}
+                  >
+                    {size}
+                  </WaChip>
+                )
+              })}
+            </div>
+          </footer>
+        ) : null
+      }
+    >
       {loading || !items ? (
-        <div className="space-y-2 p-5">
+        <div className="space-y-2 px-3">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
+            <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="p-5">
+        <div className="px-3 pb-3">
           <EmptyState
             icon={Inbox}
             title={t('noActivity')}
@@ -83,77 +118,45 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
           />
         </div>
       ) : (
-        <>
-          <ul className="divide-y divide-border">
-            {visible.map((it, i) => {
-              const theme = KIND_THEME[it.kind]
-              const Icon = theme.icon
-              // Alternating row background for scanability. bg-muted/40
-              // keeps the stripe visible in both light and dark modes
-              // (bg-card/40 vanishes against a white card surface in light).
-              const stripe = i % 2 === 0 ? 'bg-transparent' : 'bg-muted/40'
-              const row = (
-                <div className="flex items-center gap-3 px-5 py-2.5">
-                  <span
-                    className={cn(
-                      'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full',
-                      theme.badge,
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                    {it.text}
-                  </span>
-                  <span className="flex-shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {relativeTime(it.at, t)}
-                  </span>
-                </div>
-              )
-              return (
-                <li key={it.id} className={cn(stripe, 'transition-colors hover:bg-muted/40')}>
-                  {it.href ? (
-                    <Link href={it.href} className="block">
-                      {row}
-                    </Link>
-                  ) : (
-                    row
+        <ul>
+          {visible.map((it) => {
+            const theme = KIND_THEME[it.kind]
+            const Icon = theme.icon
+            // Chat-row style: round icon avatar, one-line text, time
+            // top-right. No dividers or stripes — hover highlights.
+            const row = (
+              <div className="flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-hover-surface/60">
+                <span
+                  className={cn(
+                    'flex size-10 flex-shrink-0 items-center justify-center rounded-full',
+                    theme.badge,
                   )}
-                </li>
-              )
-            })}
-          </ul>
-          <footer className="flex items-center justify-between border-t border-border px-5 py-3 text-xs">
-            <span className="text-muted-foreground tabular-nums">
-              {t('showingOf', { visible: visible.length, totalLoaded, plus: totalLoaded === 50 ? '+' : '' })}
-            </span>
-            <div className="flex items-center gap-1">
-              <span className="mr-1 text-muted-foreground">{t('show')}</span>
-              {PAGE_SIZES.map((size, i) => {
-                const disabled = !isSizeUseful(size, i)
-                return (
-                  <button
-                    key={size}
-                    type="button"
-                    onClick={() => setPageSize(size)}
-                    disabled={disabled}
-                    className={cn(
-                      'rounded-md px-2 py-1 font-medium tabular-nums transition-colors',
-                      pageSize === size
-                        ? 'bg-secondary text-secondary-foreground'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                      disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-muted-foreground',
-                    )}
-                  >
-                    {size}
-                  </button>
-                )
-              })}
-            </div>
-          </footer>
-        </>
+                >
+                  <Icon className="size-[18px]" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[15px] text-foreground">
+                  {it.text}
+                </span>
+                <span className="flex-shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {relativeTime(it.at, t)}
+                </span>
+              </div>
+            )
+            return (
+              <li key={it.id}>
+                {it.href ? (
+                  <Link href={it.href} className="block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    {row}
+                  </Link>
+                ) : (
+                  row
+                )}
+              </li>
+            )
+          })}
+        </ul>
       )}
-    </section>
+    </DashCard>
   )
 }
 

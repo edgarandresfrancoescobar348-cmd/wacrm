@@ -6,6 +6,7 @@ import type { ResponseTimeSummary } from '@/lib/dashboard/types'
 import { BarChart } from '@/components/tremor/bar-chart'
 import { EmptyState } from './empty-state'
 import { Skeleton } from './skeleton'
+import { DashCard } from './dash-card'
 
 interface ResponseTimeChartProps {
   data: ResponseTimeSummary | null
@@ -55,19 +56,13 @@ export function ResponseTimeChart({
     })) ?? []
 
   return (
-    <section className="rounded-xl border border-border bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">
-            {t('title')}
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('description')}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 text-right text-xs">
+    <DashCard
+      title={t('title')}
+      subtitle={t('description')}
+      action={
+        <div className="flex items-center gap-3 text-right text-[13px]">
           {thresholdMinutes > 0 && (
-            <span className="rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 font-medium text-rose-300 tabular-nums">
+            <span className="rounded-full bg-destructive/10 px-2.5 py-1 font-medium text-destructive tabular-nums">
               {t('target', { minutes: thresholdMinutes })}
             </span>
           )}
@@ -86,35 +81,33 @@ export function ResponseTimeChart({
             </div>
           )}
         </div>
-      </header>
-
-      <div className="p-5">
-        {loading || !data ? (
-          <Skeleton className="h-[260px] w-full" />
-        ) : !hasData ? (
-          <EmptyState
-            icon={Clock}
-            title={t('noReplies')}
-            hint={t('noRepliesHint')}
-          />
-        ) : (
-          <BarChart
-            data={chartData}
-            index="day"
-            categories={[category]}
-            // 'violet' maps to Tailwind's `fill-violet-500` — matches
-            // the brand accent the hand-rolled bars used (#7c3aed).
-            colors={['violet']}
-            valueFormatter={(value) => `${value.toFixed(1)}m`}
-            showLegend={false}
-            yAxisWidth={48}
-            // Compact height so the chart sits well inside the card
-            // without dominating the row alongside the donut + activity feed.
-            className="h-[260px]"
-          />
-        )}
-      </div>
-    </section>
+      }
+    >
+      {loading || !data ? (
+        <Skeleton className="h-[260px] w-full" />
+      ) : !hasData ? (
+        <EmptyState
+          icon={Clock}
+          title={t('noReplies')}
+          hint={t('noRepliesHint')}
+        />
+      ) : (
+        <BarChart
+          data={chartData}
+          index="day"
+          categories={[category]}
+          // 'primary' = the theme accent (WhatsApp green by default).
+          colors={['primary']}
+          valueFormatter={(value) => `${value.toFixed(1)}m`}
+          showLegend={false}
+          // Wide enough for "378.0m"-style labels (48 clipped them).
+          yAxisWidth={64}
+          // Compact height so the chart sits well inside the card
+          // without dominating the row alongside the donut + activity feed.
+          className="h-[260px]"
+        />
+      )}
+    </DashCard>
   )
 }
 

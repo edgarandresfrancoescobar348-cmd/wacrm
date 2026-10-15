@@ -13,20 +13,23 @@ import { useTranslations } from 'next-intl'
 interface Action {
   labelKey: string
   href: string
-  icon: ComponentType<{ className?: string }>
-  tint: string
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>
 }
 
 const ACTIONS: Action[] = [
-  { labelKey: 'newContact', href: '/contacts', icon: UserPlus, tint: 'text-primary' },
-  { labelKey: 'newDeal', href: '/pipelines', icon: Briefcase, tint: 'text-blue-400' },
-  { labelKey: 'newBroadcast', href: '/broadcasts/new', icon: Radio, tint: 'text-amber-400' },
-  { labelKey: 'newAutomation', href: '/automations/new', icon: Zap, tint: 'text-primary' },
+  { labelKey: 'newContact', href: '/contacts', icon: UserPlus },
+  { labelKey: 'newDeal', href: '/pipelines', icon: Briefcase },
+  { labelKey: 'newBroadcast', href: '/broadcasts/new', icon: Radio },
+  { labelKey: 'newAutomation', href: '/automations/new', icon: Zap },
 ]
 
+/**
+ * WA-style shortcut tiles: a round icon button on the raised surface
+ * with its caption, like the action row under the inbox empty pane.
+ */
 export function QuickActions() {
   const t = useTranslations('Dashboard.quickActions')
-  
+
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {ACTIONS.map((a) => {
@@ -35,12 +38,12 @@ export function QuickActions() {
           <Link
             key={a.href}
             href={a.href}
-            className="group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-border hover:bg-muted/60"
+            className="group flex items-center gap-3 rounded-xl bg-surface px-3 py-3 outline-none transition-colors hover:bg-hover-surface focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-muted ${a.tint}`}>
-              <Icon className="h-4 w-4" />
-            </div>
-            <span className="text-sm font-medium text-foreground">{t(a.labelKey as string)}</span>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-hover-surface text-foreground transition-colors group-hover:bg-background">
+              <Icon className="size-5" strokeWidth={1.75} />
+            </span>
+            <span className="truncate text-[15px] text-foreground">{t(a.labelKey as string)}</span>
           </Link>
         )
       })}

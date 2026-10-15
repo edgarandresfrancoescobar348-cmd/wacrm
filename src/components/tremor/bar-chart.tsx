@@ -96,6 +96,8 @@ const renderShape = (
       y={y}
       width={width}
       height={height}
+      // WA-style soft corners on the bars.
+      rx={Math.min(6, width / 4, height / 2)}
       opacity={
         activeBar || (activeLegend && activeLegend !== name)
           ? deepEqual(activeBar, { ...payload, value })
@@ -469,19 +471,18 @@ const ChartTooltip = ({
     return (
       <div
         className={cx(
-          "rounded-md border text-sm shadow-md",
-          "border-border",
+          "rounded-xl text-sm shadow-lg ring-1 ring-foreground/5",
           "bg-popover",
         )}
       >
-        <div className={cx("border-b border-inherit px-4 py-2")}>
+        <div className={cx("px-4 pt-2.5 pb-1")}>
           <p
             className={cx("font-medium", "text-popover-foreground")}
           >
             {label}
           </p>
         </div>
-        <div className={cx("space-y-1 px-4 py-2")}>
+        <div className={cx("space-y-1 px-4 pt-1 pb-2.5")}>
           {payload.map(({ value, category, color }, index) => (
             <div
               key={`id-${index}`}
@@ -786,7 +787,7 @@ const BarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
               wrapperStyle={{ outline: "none" }}
               isAnimationActive={true}
               animationDuration={100}
-              cursor={{ fill: "#d1d5db", opacity: "0.15" }}
+              cursor={{ fill: "var(--hover-surface)", opacity: "0.6" }}
               offset={20}
               position={{
                 y: layout === "horizontal" ? 0 : undefined,
