@@ -150,100 +150,6 @@ export interface StatusScope {
   accountId?: string
 }
 
-/** Statuses a message may advance FROM to reach the key (F6). */
-const STATUS_PREDECESSORS: Record<string, string[]> = {
-  sent: ['sending'],
-  delivered: ['sending', 'sent'],
-  read: ['sending', 'sent', 'delivered'],
-  failed: ['sending', 'sent'],
-}
-
-async function advanceMessageStatus(
-  accountId: string | undefined,
-  providerMessageId: string,
-  update: Record<string, unknown>
-): Promise<{ exists: boolean; error: { message: string } | null }> {
-  const preds = STATUS_PREDECESSORS[String(update.status)]
-  if (!preds) return { exists: true, error: null } // not a message status
-  if (accountId) {
-    const { data: rows, error } = await supabaseAdmin()
-      .from('messages')
-      .select('id, conversations!inner(account_id)')
-      .eq('message_id', providerMessageId)
-      .eq('conversations.account_id', accountId)
-    if (error) return { exists: false, error }
-    const ids = (rows ?? []).map((r: { id: string }) => r.id)
-    if (ids.length === 0) return { exists: false, error: null }
-    const { error: updErr } = await supabaseAdmin()
-      .from('messages')
-      .update(update)
-      .in('id', ids)
-      .in('status', preds)
-      .select('id')
-    return { exists: true, error: updErr }
-  }
-  const { data: updated, error } = await supabaseAdmin()
-    .from('messages')
-    .update(update)
-    .eq('message_id', providerMessageId)
-    .in('status', preds)
-    .select('id')
-  if (error) return { exists: false, error }
-  if (updated && updated.length > 0) return { exists: true, error: null }
-  const { data: any } = await supabaseAdmin()
-    .from('messages')
-    .select('id')
-    .eq('message_id', providerMessageId)
-    .limit(1)
-  return { exists: Boolean(any && any.length > 0), error: null }
-}
-
-/** Ack for a message whose row doesn't exist yet (migration 050). */
-async function recordPendingStatus(
-  accountId: string | null,
-  status: InboundStatusUpdate,
-  throwOnFailure?: boolean
-): Promise<void> {
-  if (!STATUS_PREDECESSORS[status.status]) return
-  const scopeKey = accountId ?? 'global'
-  const rank = (s: string) => ['sent', 'delivered', 'read'].indexOf(s)
-  const { data: existing } = await supabaseAdmin()
-    .from('message_status_pending')
-    .select('status')
-    .eq('scope', scopeKey)
-    .eq('provider_message_id', status.id)
-    .maybeSingle()
-  // Keep the most advanced status seen (failed only over sent).
-  if (existing) {
-    const cur = String(existing.status)
-    const next = status.status
-    const forward = next === 'failed' ? cur === 'sent' : cur !== 'failed' && rank(next) > rank(cur)
-    if (!forward) return
-  }
-  const { error } = await supabaseAdmin()
-    .from('message_status_pending')
-    .upsert(
-      {
-        scope: scopeKey,
-        provider_message_id: status.id,
-        status: status.status,
-        failure: status.failure ?? null,
-        status_at: new Date(parseInt(status.timestamp) * 1000).toISOString(),
-      },
-      { onConflict: 'scope,provider_message_id' }
-    )
-  if (error) {
-    console.error('[webhook] pending status insert failed:', error.message)
-    if (throwOnFailure) throw new IngestFailure('pending status', error)
-  }
-  if (Math.random() < 0.01) {
-    await supabaseAdmin()
-      .from('message_status_pending')
-      .delete()
-      .lt('created_at', new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString())
-  }
-}
-
 async function updateAccountMessages(
   accountId: string,
   providerMessageId: string,
@@ -305,47 +211,10 @@ async function mapReplyToLastMenu(
   return matchNumberedMenuReply(payload, text)
 }
 
-// The happy-path status ladder — pending → sent → delivered → read →
-// replied. Webhook replays must never regress a recipient back down
-// this ladder.
-//
-// `failed` is NOT on this ladder. It's a terminal side branch that is
-// only valid from the early states (pending / sent) — once Meta has
-// delivered or the user has read or replied, a later "failed" status
-// event is a bug in Meta's pipeline or a spoof attempt and must be
-// ignored.
-const RECIPIENT_STATUS_LADDER = [
-  'pending',
-  'sent',
-  'delivered',
-  'read',
-  'replied',
-] as const
-
-function ladderLevel(s: string): number {
-  const idx = (RECIPIENT_STATUS_LADDER as readonly string[]).indexOf(s)
-  return idx < 0 ? -1 : idx
-}
-
-/**
- * Can a recipient transition from `current` to `incoming`?
- *   - Along the ladder, only forward moves are allowed.
- *   - `failed` is accepted only from `pending` or `sent`; it's refused
- *     once the recipient has reached any of the success states.
- */
-function isValidStatusTransition(current: string, incoming: string): boolean {
-  if (incoming === 'failed') {
-    return current === 'pending' || current === 'sent'
-  }
-  if (current === 'failed') {
-    return false // failed is terminal
-  }
-  const ci = ladderLevel(current)
-  const ii = ladderLevel(incoming)
-  if (ii < 0) return false // unknown incoming status
-  if (ci < 0) return true // unknown current — accept anything on the ladder
-  return ii > ci
-}
+// The status ladder (pending → sent → delivered → read → replied, with
+// `failed` only from pending/sending/sent) lives in SQL since migration
+// 052: public._wa_status_advances, used by apply_message_receipt and the
+// row-creation triggers, so every writer applies it atomically.
 
 export async function applyStatusUpdate(
   status: InboundStatusUpdate,
@@ -363,90 +232,37 @@ export async function applyStatusUpdate(
     )
   }
 
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status. No
-  //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
-  //    repeat across numbers), so this updates 0..N rows and must not
-  //    assume a single row.
-  const messageUpdate: Record<string, unknown> = { status: status.status }
-  if (failure) {
-    messageUpdate.error_code = failure.code
-    messageUpdate.error_title = failure.title
-    messageUpdate.error_details = failure.details
+  // 1+2) One atomic, monotonic database operation (migration 052):
+  //    retains the receipt per destination in message_status_pending,
+  //    and advances every matching messages / broadcast_recipients row
+  //    with the pending → sent → delivered → read ladder in the UPDATE
+  //    itself — under an advisory lock shared with the row-creation
+  //    triggers, so a receipt racing the sender's insert, a second
+  //    concurrent receipt, or a recipient stamped later all converge.
+  //    The aggregate trigger on broadcast_recipients re-derives the
+  //    parent broadcast's counts. Scope: the account for OpenWA, global
+  //    for Meta wamids (as before).
+  const { error: receiptErr } = await supabaseAdmin().rpc('apply_message_receipt', {
+    p_account: scope.accountId ?? null,
+    p_provider_message_id: status.id,
+    p_status: status.status,
+    p_failure: failure,
+    p_status_at: new Date(parseInt(status.timestamp) * 1000).toISOString(),
+  })
+  if (receiptErr) {
+    console.error('Error applying message receipt:', receiptErr)
+    if (scope.throwOnFailure) throw new IngestFailure('message receipt', receiptErr)
   }
-  // Monotonic (F6): the row only moves FORWARD — the update is
-  // conditional on the row's current status being a predecessor, in one
-  // statement, so a late `sent` never overwrites `read` (on Meta too).
-  const advanced = await advanceMessageStatus(scope.accountId, status.id, messageUpdate)
-  const msgErr = advanced.error
-
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
-    if (scope.throwOnFailure) throw new IngestFailure('message status', msgErr)
-  }
-
-  // Webhook fan-out for this status change happens at the END of this
-  // handler (after the broadcast mirror below), so a slow subscriber
-  // endpoint can't delay the broadcast_recipients update.
-
-  // 2) Mirror onto broadcast_recipients via whatsapp_message_id
-  //    (added in migration 003). The aggregate trigger on
-  //    broadcast_recipients re-derives the parent broadcast's
-  //    sent/delivered/read/failed counts automatically.
-  const tsIso = new Date(parseInt(status.timestamp) * 1000).toISOString()
-
-  const { data: recipient, error: recFetchErr } = scope.accountId
-    ? await supabaseAdmin()
-        .from('broadcast_recipients')
-        .select('id, status, broadcasts!inner(account_id)')
-        .eq('whatsapp_message_id', status.id)
-        .eq('broadcasts.account_id', scope.accountId)
-        .maybeSingle()
-    : await supabaseAdmin()
-        .from('broadcast_recipients')
-        .select('id, status')
-        .eq('whatsapp_message_id', status.id)
-        .maybeSingle()
-
-  if (recFetchErr) {
-    console.error('Error fetching broadcast recipient:', recFetchErr)
-    if (scope.throwOnFailure) throw new IngestFailure('broadcast recipient lookup', recFetchErr)
-  } else if (
-    recipient &&
-    // Guard transitions — forward-only on the success ladder, and
-    // `failed` only from pre-delivered states.
-    isValidStatusTransition(recipient.status, status.status)
-  ) {
-    const update: Record<string, unknown> = { status: status.status }
-    if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
-    if (status.status === 'delivered') update.delivered_at = tsIso
-    if (status.status === 'read') update.read_at = tsIso
-    // broadcast_recipients already has a free-text error_message column
-    // (migration 001), so the reason is folded into it rather than
-    // adding three more columns there.
-    if (failure) {
-      update.error_message =
-        `[${failure.code}] ${failure.title}` +
-        (failure.details ? `: ${failure.details}` : '')
+  if (Math.random() < 0.01) {
+    // Opportunistic expiry of retained receipts (~3 days). Best-effort.
+    try {
+      await supabaseAdmin()
+        .from('message_status_pending')
+        .delete()
+        .lt('created_at', new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString())
+    } catch (err) {
+      console.warn('[webhook] pending receipt cleanup failed:', err)
     }
-
-    const { error: recUpdateErr } = await supabaseAdmin()
-      .from('broadcast_recipients')
-      .update(update)
-      .eq('id', recipient.id)
-
-    if (recUpdateErr) {
-      console.error('Error updating broadcast recipient status:', recUpdateErr)
-      if (scope.throwOnFailure) throw new IngestFailure('broadcast recipient status', recUpdateErr)
-    }
-  }
-
-  // 2b) Nothing to update yet: the ack beat the sender's own write (the
-  //     provider answers acks asynchronously, sometimes before our send
-  //     call returns). Keep it; migration 050's triggers apply it when
-  //     the message / recipient row appears.
-  if (!msgErr && !advanced.exists && !recFetchErr && !recipient) {
-    await recordPendingStatus(scope.accountId ?? null, status, scope.throwOnFailure)
   }
 
   // 3) Webhook fan-out for messages we store (inbox / API sends).

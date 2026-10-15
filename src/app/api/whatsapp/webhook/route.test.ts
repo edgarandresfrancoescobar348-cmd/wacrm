@@ -940,7 +940,14 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
     ],
   }
 
-  it('persists code, title and details on the messages row in the same update as status', async () => {
+  // Since migration 052 the status lands through ONE atomic, monotonic
+  // database operation (apply_message_receipt) — what it does to the
+  // messages / broadcast_recipients rows is covered against a real
+  // PostgreSQL in src/lib/whatsapp/sql/receipts.pg.test.ts. Here: what
+  // the Meta webhook hands it.
+  const receipts = () => h.state.rpcCalls.filter((c) => c.name === 'apply_message_receipt')
+
+  it('hands the failure reason (code, title, details) with the status, globally scoped', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       await runStatusWebhook(FAILED_STATUS)
@@ -948,12 +955,17 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
       warn.mockRestore()
     }
 
-    expect(h.state.messageUpdates).toHaveLength(1)
-    expect(h.state.messageUpdates[0]).toEqual({
-      status: 'failed',
-      error_code: 131049,
-      error_title: FAILED_STATUS.errors[0].title,
-      error_details: FAILED_STATUS.errors[0].error_data.details,
+    expect(receipts()).toHaveLength(1)
+    expect(receipts()[0].args).toEqual({
+      p_account: null,
+      p_provider_message_id: 'wamid.OUT1',
+      p_status: 'failed',
+      p_failure: {
+        code: 131049,
+        title: FAILED_STATUS.errors[0].title,
+        details: FAILED_STATUS.errors[0].error_data.details,
+      },
+      p_status_at: new Date(parseInt(FAILED_STATUS.timestamp) * 1000).toISOString(),
     })
   })
 
@@ -972,24 +984,7 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
     }
   })
 
-  it('folds the reason into broadcast_recipients.error_message', async () => {
-    h.state.broadcastRecipient = { id: 'rec-1', status: 'sent' }
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      await runStatusWebhook(FAILED_STATUS)
-    } finally {
-      warn.mockRestore()
-    }
-
-    expect(h.state.recipientUpdates).toHaveLength(1)
-    expect(h.state.recipientUpdates[0].status).toBe('failed')
-    const reason = String(h.state.recipientUpdates[0].error_message)
-    expect(reason).toContain('131049')
-    expect(reason).toContain(FAILED_STATUS.errors[0].title)
-    expect(reason).toContain(FAILED_STATUS.errors[0].error_data.details)
-  })
-
-  it('a failed status with no errors array still flips status and stores no reason', async () => {
+  it('a failed status with no errors array still flips status and carries no reason', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       await runStatusWebhook({ ...FAILED_STATUS, errors: undefined })
@@ -997,11 +992,10 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
       warn.mockRestore()
     }
     expect(warn).not.toHaveBeenCalled()
-    expect(h.state.messageUpdates).toEqual([{ status: 'failed' }])
+    expect(receipts()[0].args).toMatchObject({ p_status: 'failed', p_failure: null })
   })
 
-  it('a plain delivered status updates only status — error columns untouched', async () => {
-    h.state.broadcastRecipient = { id: 'rec-1', status: 'sent' }
+  it('a plain delivered status carries no reason', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       await runStatusWebhook({
@@ -1015,10 +1009,7 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
     }
 
     expect(warn).not.toHaveBeenCalled()
-    expect(h.state.messageUpdates).toEqual([{ status: 'delivered' }])
-    expect(h.state.recipientUpdates).toHaveLength(1)
-    expect(h.state.recipientUpdates[0]).not.toHaveProperty('error_message')
-    expect(h.state.recipientUpdates[0]).not.toHaveProperty('error_code')
+    expect(receipts()[0].args).toMatchObject({ p_status: 'delivered', p_failure: null })
   })
 })
 
