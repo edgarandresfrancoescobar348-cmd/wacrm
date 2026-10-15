@@ -28,8 +28,10 @@ export function DashCard({
     <section
       className={cn('flex h-full flex-col rounded-xl bg-surface text-card-foreground', className)}
     >
-      <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
-        <div className="min-w-0">
+      <header className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4 pb-3">
+        {/* basis-48: on narrow cards the action wraps under the title
+            instead of squeezing it into an ellipsis. */}
+        <div className="min-w-0 flex-1 basis-48">
           <h2 className="truncate text-base leading-6 text-foreground">{title}</h2>
           {subtitle ? (
             <p className="text-[13px] leading-5 text-muted-foreground">{subtitle}</p>

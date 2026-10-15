@@ -693,9 +693,13 @@ const BarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
             ) : null}
             <XAxis
               hide={!showXAxis}
+              // Explicit tick text style: the wrapper's `text-xs` doesn't
+              // reach Recharts' <text> nodes, which fell back to 16px.
               tick={{
                 transform:
                   layout !== "vertical" ? "translate(0, 6)" : undefined,
+                fontSize: 12,
+                fill: "var(--muted-foreground)",
               }}
               fill=""
               stroke=""
@@ -753,6 +757,8 @@ const BarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
                   layout !== "vertical"
                     ? "translate(-3, 0)"
                     : "translate(0, 0)",
+                fontSize: 12,
+                fill: "var(--muted-foreground)",
               }}
               {...(layout !== "vertical"
                 ? {
