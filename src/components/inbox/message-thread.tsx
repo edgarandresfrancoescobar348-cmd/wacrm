@@ -28,9 +28,20 @@ import {
   PanelRightOpen,
   PanelRightClose,
 } from "lucide-react";
-import { format, isToday, isYesterday, differenceInHours } from "date-fns";
-import { useTranslations } from "next-intl";
-import { Badge } from "@/components/ui/badge";
+import {
+  format,
+  isToday,
+  isYesterday,
+  differenceInCalendarDays,
+  differenceInHours,
+} from "date-fns";
+import { useLocale, useTranslations } from "next-intl";
+import {
+  WaAvatar,
+  WaEmptyState,
+  WaIconButton,
+  WaPanelHeader,
+} from "@/components/layout/wa-panel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,7 +49,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import { MediaLightbox } from "./media-lightbox";
@@ -108,11 +118,25 @@ interface MessageThreadProps {
   onToggleContactPanel?: () => void;
 }
 
-function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
+function formatDateSeparator(
+  dateStr: string,
+  t: ReturnType<typeof useTranslations>,
+  locale: string,
+): string {
   const date = new Date(dateStr);
   if (isToday(date)) return t("today");
   if (isYesterday(date)) return t("yesterday");
-  return format(date, "MMMM d, yyyy");
+  // WA: weekday name within the last week, otherwise the full date.
+  if (differenceInCalendarDays(new Date(), date) < 7) {
+    const weekday = new Intl.DateTimeFormat(locale, { weekday: "long" }).format(date);
+    return weekday.charAt(0).toUpperCase() + weekday.slice(1);
+  }
+  return new Intl.DateTimeFormat(locale, { dateStyle: "long" }).format(date);
+}
+
+/** Bubbles from agents and bots sit on the outgoing side. */
+function isOutgoing(m: Message): boolean {
+  return m.sender_type === "agent" || m.sender_type === "bot";
 }
 
 function groupMessagesByDate(messages: Message[]) {
@@ -132,23 +156,20 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
-const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+const STATUS_OPTIONS: {
+  label: string;
+  value: ConversationStatus;
+  color: string;
+  dot: string;
+}[] = [
+  { label: "Open", value: "open", color: "text-primary-text", dot: "bg-primary" },
+  { label: "Pending", value: "pending", color: "text-amber-500", dot: "bg-amber-500" },
+  { label: "Closed", value: "closed", color: "text-muted-foreground", dot: "bg-muted-foreground" },
 ];
 
-/**
- * WhatsApp-style doodle background applied to the chat area (both the
- * active thread and the empty state). The SVG tile lives at
- * `/public/inbox-doodle.svg`; the slate-950 colour sits underneath so
- * the doodles read as a subtle pattern rather than a stark grid.
- *
- * Defined once at module scope so the two render paths can't drift —
- * if we ever switch the asset, both spots update together.
- */
-const DOODLE_BG_CLASSES =
-  "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
+/** Pill-shaped header control (status / assignee menus). */
+const HEADER_PILL =
+  "inline-flex h-9 items-center gap-1.5 rounded-full border border-border px-3 text-[13px] font-medium transition-colors outline-none hover:bg-hover-surface focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-hover-surface";
 
 export function MessageThread({
   conversation,
@@ -168,6 +189,7 @@ export function MessageThread({
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
+  const locale = useLocale();
 
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -862,21 +884,16 @@ export function MessageThread({
     [conversation, onAssignChange, t],
   );
 
-  // Empty state — same WhatsApp-style doodle background as the active
-  // thread below, so swapping between empty/selected doesn't change the
-  // pattern under the user's eye.
+  // Nothing selected. The inbox page renders its own <EmptyPane>; this
+  // fallback only shows for callers that mount the thread unconditionally.
   if (!conversation || !contact) {
     return (
-      <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <MessageSquare className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="mt-4 text-sm font-medium text-muted-foreground">
-          {t("selectConversation")}
-        </h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("selectConversationHint")}
-        </p>
+      <div className="wa-wallpaper flex min-w-0 flex-1">
+        <WaEmptyState
+          icon={MessageSquare}
+          title={t("selectConversation")}
+          description={t("selectConversationHint")}
+        />
       </div>
     );
   }
@@ -901,214 +918,200 @@ export function MessageThread({
     // clipped and the hover toolbar overlaps the Tags panel. Letting the
     // root shrink lets the bubbles' break-words / max-w caps apply.
     // Issue #257.
-    <div className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
-      {/* Header — solid card surface sits on top of the doodle so the
-          name/avatar/dropdowns stay legible. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          {/* Back-to-list button — mobile only. Hidden on lg+ where the
-              conversation list is always visible next to the thread. */}
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label={t("backToConversations")}
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-          )}
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-            {displayName.charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">
-              {contactHandle(contact)}
-            </p>
-          </div>
-          {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
+    <div className="wa-wallpaper flex min-w-0 flex-1 flex-col">
+      {/* Chat header (WA): avatar, name, subtitle; clicking the name opens
+          the contact-info panel. Status / assignee stay one click away as
+          pills; refresh and the panel toggle are round icon buttons. */}
+      <WaPanelHeader
+        className="relative z-[2] border-b border-border/60"
+        leading={
+          <>
+            {/* Back-to-list button — mobile only. Hidden on lg+ where the
+                conversation list is always visible next to the thread. */}
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label={t("backToConversations")}
+                className="-ml-2 flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-hover-surface hover:text-foreground lg:hidden"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
             )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Contact-panel toggle — desktop only. The contact sidebar
-              eats a chunk of horizontal width that crowds the thread on
-              smaller laptops; this lets agents reclaim it when they just
-              want to read and reply. Hidden on mobile, where the sidebar
-              never renders as a permanent panel anyway. Issue #258. */}
-          {onToggleContactPanel && (
-            <button
-              type="button"
-              onClick={onToggleContactPanel}
-              aria-label={
-                contactPanelOpen ? t("hideContactPanel") : t("showContactPanel")
-              }
-              title={contactPanelOpen ? t("hideContact") : t("showContact")}
-              aria-pressed={contactPanelOpen}
+            <WaAvatar src={contact.avatar_url} name={displayName} size={40} />
+          </>
+        }
+        title={displayName}
+        subtitle={
+          <>
+            {contactHandle(contact)}
+            {/* 24h session window — red once it has expired. */}
+            <span
               className={cn(
-                "hidden h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground lg:inline-flex",
-                contactPanelOpen ? "text-primary" : "text-muted-foreground",
+                "ml-2 hidden items-center gap-1 sm:inline-flex",
+                sessionInfo.expired ? "text-destructive" : "text-muted-foreground",
               )}
             >
-              {contactPanelOpen ? (
-                <PanelRightClose className="h-4 w-4" />
-              ) : (
-                <PanelRightOpen className="h-4 w-4" />
-              )}
-            </button>
-          )}
-
-          {/* Manual refresh — forces a refetch of the messages + the
-              conversation list (the parent bumps its resyncToken). Useful
-              when realtime missed an event or the agent just wants to be
-              sure nothing's stale. Only rendered when the parent wires
-              up `onRefresh`. */}
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={handleRefreshClick}
-              disabled={isRefreshing}
-              aria-label={t("refreshConversation")}
-              title={t("refresh")}
-              className={cn(
-                "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60",
-              )}
-            >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
-              />
-            </button>
-          )}
-
-          {/* Status dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
-                )}>
-                {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
-                <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="border-border bg-popover"
-            >
-              {STATUS_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => handleStatusChange(opt.value)}
-                  className={cn("text-sm", opt.color)}
-                >
-                  {t(`status${opt.label}`)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Assign dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={cn(
-                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                assignedAgentId ? "text-primary" : "text-muted-foreground"
-              )}
-            >
-              <UserPlus className="h-3 w-3" />
-              <span className="hidden sm:inline">{assignLabel}</span>
-              <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="border-border bg-popover"
-            >
-              {profiles.length === 0 ? (
-                <DropdownMenuItem disabled className="text-sm text-muted-foreground">
-                  {t("noTeammates")}
-                </DropdownMenuItem>
-              ) : (
-                profiles.map((p) => {
-                  const isSelected = p.user_id === assignedAgentId;
-                  const presence = getPresence(p.user_id);
-                  return (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => handleAssignChange(p.user_id)}
-                      className={cn(
-                        "text-sm",
-                        isSelected ? "text-primary" : "text-popover-foreground"
-                      )}
-                    >
-                      <PresenceDot
-                        status={presence}
-                        label={presenceLabel(
-                          presence,
-                          getRow(p.user_id)?.last_seen_at ?? null,
-                          now
-                        )}
-                        className="mr-2"
-                      />
-                      <span className="flex-1">
-                        {p.full_name}
-                        {p.user_id === user?.id ? t("me") : ""}
-                      </span>
-                      {isSelected && <Check className="ml-2 h-3 w-3" />}
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-              {assignedAgentId && (
-                <>
-                  <DropdownMenuSeparator className="bg-border" />
+              <Clock className="size-3" />
+              {sessionInfo.remaining}
+            </span>
+          </>
+        }
+        onTitleClick={onToggleContactPanel}
+        actions={
+          <>
+            {/* Status menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(HEADER_PILL, currentStatus?.color ?? "text-muted-foreground")}
+              >
+                <span className={cn("size-2 rounded-full", currentStatus?.dot ?? "bg-muted-foreground")} />
+                <span className="hidden sm:inline">
+                  {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
+                </span>
+                <ChevronDown className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {STATUS_OPTIONS.map((opt) => (
                   <DropdownMenuItem
-                    onClick={() => handleAssignChange(null)}
-                    className="text-sm text-muted-foreground"
+                    key={opt.value}
+                    onClick={() => handleStatusChange(opt.value)}
+                    className={opt.color}
                   >
-                    {t("unassign")}
+                    <span className={cn("size-2 rounded-full", opt.dot)} />
+                    <span className="flex-1">{t(`status${opt.label}`)}</span>
+                    {opt.value === conversation.status && <Check className="size-4" />}
                   </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-      {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+            {/* Assign menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  HEADER_PILL,
+                  "max-w-48",
+                  assignedAgentId ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {currentAssignee ? (
+                  <WaAvatar
+                    src={currentAssignee.avatar_url}
+                    name={currentAssignee.full_name ?? assignLabel}
+                    size={20}
+                  />
+                ) : (
+                  <UserPlus className="size-4 shrink-0" />
+                )}
+                <span className="hidden truncate md:inline">{assignLabel}</span>
+                <ChevronDown className="size-3.5 shrink-0" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                {profiles.length === 0 ? (
+                  <DropdownMenuItem disabled className="text-muted-foreground">
+                    {t("noTeammates")}
+                  </DropdownMenuItem>
+                ) : (
+                  profiles.map((p) => {
+                    const isSelected = p.user_id === assignedAgentId;
+                    const presence = getPresence(p.user_id);
+                    return (
+                      <DropdownMenuItem
+                        key={p.id}
+                        onClick={() => handleAssignChange(p.user_id)}
+                        className={cn(isSelected && "text-primary-text")}
+                      >
+                        <PresenceDot
+                          status={presence}
+                          label={presenceLabel(
+                            presence,
+                            getRow(p.user_id)?.last_seen_at ?? null,
+                            now
+                          )}
+                        />
+                        <span className="flex-1 truncate">
+                          {p.full_name}
+                          {p.user_id === user?.id ? t("me") : ""}
+                        </span>
+                        {isSelected && <Check className="size-4" />}
+                      </DropdownMenuItem>
+                    );
+                  })
+                )}
+                {assignedAgentId && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => handleAssignChange(null)}
+                      className="text-muted-foreground"
+                    >
+                      {t("unassign")}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Manual refresh — forces a refetch of the messages + the
+                conversation list (the parent bumps its resyncToken). Only
+                rendered when the parent wires up `onRefresh`. */}
+            {onRefresh && (
+              <WaIconButton
+                icon={RefreshCw}
+                label={t("refreshConversation")}
+                onClick={handleRefreshClick}
+                disabled={isRefreshing}
+                className={cn(isRefreshing && "[&_svg]:animate-spin")}
+              />
+            )}
+
+            {/* Contact-info panel toggle — desktop only (#258). */}
+            {onToggleContactPanel && (
+              <WaIconButton
+                icon={contactPanelOpen ? PanelRightClose : PanelRightOpen}
+                label={contactPanelOpen ? t("hideContactPanel") : t("showContactPanel")}
+                onClick={onToggleContactPanel}
+                aria-pressed={contactPanelOpen}
+                active={contactPanelOpen}
+                className="hidden lg:inline-flex"
+              />
+            )}
+          </>
+        }
+      />
+
+      {/* Messages Area — over the chat wallpaper. */}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-[5%] lg:px-[7%]">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
-            <p className="text-xs text-muted-foreground">
-              {t("sendTemplateHint")}
-            </p>
+          <div className="flex justify-center py-12">
+            <div className="rounded-lg bg-surface px-4 py-2.5 text-center shadow-sm">
+              <p className="text-sm text-foreground">{t("noMessagesYet")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("sendTemplateHint")}
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="pb-2">
             {messageGroups.map((group) => (
               <div key={group.date}>
-                {/* Date separator */}
-                <div className="mb-4 flex items-center justify-center">
-                  <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
-                    {formatDateSeparator(group.date, t)}
+                {/* Date separator — WA's centred pill. */}
+                <div className="my-3 flex items-center justify-center">
+                  <span className="rounded-lg bg-surface px-3 py-1.5 text-[12.5px] leading-4 text-muted-foreground shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
+                    {formatDateSeparator(group.date, t, locale)}
                   </span>
                 </div>
-                {/* Messages */}
-                <div className="space-y-2">
-                  {group.messages.map((msg) => {
+                {/* Messages — same-sender runs are grouped: 2px apart, only
+                    the first carries a tail; 12px between runs. */}
+                <div>
+                  {group.messages.map((msg, i) => {
+                    const prev = i > 0 ? group.messages[i - 1] : null;
+                    const firstOfRun = !prev || isOutgoing(prev) !== isOutgoing(msg);
                     const parent = msg.reply_to_message_id
                       ? messagesById.get(msg.reply_to_message_id)
                       : null;
@@ -1116,7 +1119,7 @@ export function MessageThread({
                       ? {
                           authorLabel:
                             parent.sender_type === "agent" || parent.sender_type === "bot"
-                              ? t("me") 
+                              ? t("you")
                               : contact?.name || contact?.phone || t("unknown"),
                           preview: buildReplyPreview(parent, tQuote),
                         }
@@ -1134,23 +1137,31 @@ export function MessageThread({
                       void postReaction(msg.id, next);
                     };
                     return (
-                      <MessageActions
+                      <div
                         key={msg.id}
-                        message={msg}
-                        onReply={() => handleStartReply(msg)}
-                        onReact={(emoji) => {
-                          if (emoji) void postReaction(msg.id, emoji);
-                        }}
+                        className={cn(
+                          firstOfRun ? "mt-3 first:mt-0" : "mt-0.5",
+                          isOutgoing(msg) ? "pr-2" : "pl-2",
+                        )}
                       >
-                        <MessageBubble
+                        <MessageActions
                           message={msg}
-                          reply={reply}
-                          reactions={msgReactions}
-                          currentUserId={user?.id}
-                          onToggleReaction={handlePillToggle}
-                          onOpenMedia={handleMediaChange}
-                        />
-                      </MessageActions>
+                          onReply={() => handleStartReply(msg)}
+                          onReact={(emoji) => {
+                            if (emoji) void postReaction(msg.id, emoji);
+                          }}
+                        >
+                          <MessageBubble
+                            message={msg}
+                            reply={reply}
+                            reactions={msgReactions}
+                            currentUserId={user?.id}
+                            onToggleReaction={handlePillToggle}
+                            onOpenMedia={handleMediaChange}
+                            showTail={firstOfRun}
+                          />
+                        </MessageActions>
+                      </div>
                     );
                   })}
                 </div>

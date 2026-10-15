@@ -75,10 +75,10 @@ export function QuickReplyPicker({
                   <button
                     type="button"
                     onClick={() => onPick(qr)}
-                    className="flex w-full items-start gap-2 rounded-md border border-border bg-muted/40 p-2.5 text-left hover:border-primary/50 hover:bg-muted"
+                    className="flex w-full items-start gap-3 rounded-xl p-3 text-left transition-colors hover:bg-hover-surface"
                   >
                     {qr.kind === "interactive" ? (
-                      <Zap className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <Zap className="mt-0.5 h-4 w-4 shrink-0 text-primary-text" />
                     ) : (
                       <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                     )}

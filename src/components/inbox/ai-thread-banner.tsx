@@ -163,8 +163,8 @@ export function AiThreadBanner({
   return (
     <Banner tone="primary">
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
-        <span className="truncate font-medium text-foreground">
+        <Sparkles className="h-4 w-4 flex-shrink-0" />
+        <span className="truncate font-medium">
           {t("activeText")}
         </span>
       </div>
@@ -183,15 +183,18 @@ function Banner({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className={cn(
-        "flex items-center gap-3 border-b px-3 py-2 text-xs sm:px-4",
-        tone === "primary"
-          ? "border-primary/20 bg-primary/5"
-          : "border-border bg-muted/40",
-      )}
-    >
-      {children}
+    // Floating card over the chat wallpaper, just above the composer.
+    <div className="relative px-4 pb-2 md:px-16">
+      <div
+        className={cn(
+          "flex items-center gap-3 rounded-xl px-4 py-2.5 text-[13px] shadow-sm",
+          tone === "primary"
+            ? "bg-chip-active text-chip-active-foreground"
+            : "bg-surface",
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -212,7 +215,7 @@ function BannerButton({
       type="button"
       onClick={onClick}
       disabled={busy}
-      className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+      className="inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-60"
     >
       {busy ? (
         <Loader2 className="h-3 w-3 animate-spin" />

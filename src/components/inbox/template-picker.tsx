@@ -192,7 +192,7 @@ export function TemplatePicker({
       <DialogContent className="border-border bg-popover sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-popover-foreground">
-            <LayoutTemplate className="h-4 w-4 text-primary" />
+            <LayoutTemplate className="h-5 w-5 text-primary-text" />
             {selected ? selected.name : t("sendTemplate")}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
@@ -209,7 +209,7 @@ export function TemplatePicker({
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
               </div>
             ) : templates.length === 0 ? (
-              <div className="rounded-md border border-border bg-background/50 p-6 text-center">
+              <div className="rounded-xl bg-hover-surface p-6 text-center">
                 <p className="text-sm text-popover-foreground">{t("noApprovedTemplates")}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {t("noApprovedTemplatesHint")}
@@ -221,7 +221,7 @@ export function TemplatePicker({
                   key={t.id}
                   type="button"
                   onClick={() => pickTemplate(t)}
-                  className="w-full rounded-md border border-border bg-background/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-popover"
+                  className="w-full rounded-xl p-3 text-left transition-colors hover:bg-hover-surface"
                 >
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
@@ -229,7 +229,7 @@ export function TemplatePicker({
                         <p className="truncate text-sm font-medium text-popover-foreground">
                           {t.name}
                         </p>
-                        <Badge className="border border-primary/30 bg-primary/20 text-[10px] text-primary">
+                        <Badge className="bg-chip-active text-[10px] text-chip-active-foreground">
                           {t.category}
                         </Badge>
                         {t.language && (
@@ -250,7 +250,7 @@ export function TemplatePicker({
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="rounded-md border border-border bg-background/50 p-3">
+            <div className="rounded-xl bg-hover-surface p-3">
               <p className="mb-1 text-xs text-muted-foreground">{t("preview")}</p>
               <p className="whitespace-pre-wrap text-sm text-popover-foreground">
                 {renderBodyPreview(selected.body_text, params)}
@@ -270,7 +270,7 @@ export function TemplatePicker({
                   value={headerText}
                   onChange={(e) => setHeaderText(e.target.value)}
                   placeholder={t("headerValuePlaceholder")}
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                  className="text-foreground placeholder:text-muted-foreground"
                 />
               </div>
             )}
@@ -285,7 +285,7 @@ export function TemplatePicker({
                     setParams(next);
                   }}
                   placeholder={t("bodyValuePlaceholder", { val: `{{${v}}}` })}
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                  className="text-foreground placeholder:text-muted-foreground"
                 />
               </div>
             ))}
@@ -303,7 +303,7 @@ export function TemplatePicker({
                     }))
                   }
                   placeholder={t("urlSuffixValuePlaceholder")}
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                  className="text-foreground placeholder:text-muted-foreground"
                 />
                 <p className="text-[10px] text-muted-foreground break-all">
                   {t("finalUrl", { url: slot.url.replace(/\{\{1\}\}/g, buttonParams[slot.index] || "{{1}}") })}

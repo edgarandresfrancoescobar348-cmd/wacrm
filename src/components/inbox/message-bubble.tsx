@@ -38,6 +38,11 @@ interface MessageBubbleProps {
    * stays inline and non-clickable.
    */
   onOpenMedia?: (messageId: string) => void;
+  /**
+   * First bubble of a same-sender run: draws the WA tail (top-left for
+   * incoming, top-right for outgoing). Follow-up bubbles have none.
+   */
+  showTail?: boolean;
 }
 
 /**
@@ -81,17 +86,17 @@ function StatusIcon({
 }) {
   switch (status) {
     case "sending":
-      return <Clock className="h-3 w-3 text-muted-foreground" />;
+      return <Clock className="size-3" />;
     case "sent":
-      return <Check className="h-3 w-3 text-muted-foreground" />;
+      return <Check className="size-4" />;
     case "delivered":
-      return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+      return <CheckCheck className="size-4" />;
     case "read":
-      return <CheckCheck className="h-3 w-3 text-blue-400" />;
+      return <CheckCheck className="size-4 text-read-ticks" />;
     case "failed":
       return (
         <span className="inline-flex" title={title ?? undefined}>
-          <XCircle className="h-3 w-3 text-red-400" />
+          <XCircle className="size-3.5 text-destructive" />
         </span>
       );
     default:
@@ -99,17 +104,28 @@ function StatusIcon({
   }
 }
 
+/** Body text: wraps, keeps newlines, and contains the floated meta. */
+const TEXT = "flow-root whitespace-pre-wrap break-words text-[14.2px] leading-[19px]";
+
 function MessageContent({
   message,
   t,
   isAgent,
   onOpenMedia,
+  meta,
+  metaBlock,
+  metaOverlay,
 }: {
   message: Message;
   t: ReturnType<typeof useTranslations>;
-  /** Outbound bubbles sit on the primary fill — badges must invert. */
   isAgent: boolean;
   onOpenMedia?: (messageId: string) => void;
+  /** Time + ticks floated at the end of the last text line. */
+  meta: React.ReactNode;
+  /** Same meta as its own right-aligned row (cards, players). */
+  metaBlock: React.ReactNode;
+  /** Same meta over the bottom-right of a photo / video. */
+  metaOverlay: React.ReactNode;
 }) {
   // Passed to the media bubbles as a no-arg callback; `undefined` when the
   // parent wired up no viewer, which is what makes them non-clickable.
@@ -118,8 +134,9 @@ function MessageContent({
   switch (message.content_type) {
     case "text":
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className={TEXT}>
           {message.content_text}
+          {meta}
         </p>
       );
 
@@ -127,14 +144,22 @@ function MessageContent({
       return (
         <div>
           {message.media_url ? (
-            <MediaImageBubble message={message} onOpen={openMedia} t={t} />
+            <MediaImageBubble
+              message={message}
+              onOpen={openMedia}
+              t={t}
+              overlay={message.content_text ? undefined : metaOverlay}
+            />
           ) : (
             <MediaUnavailable label={t("photo")} t={t} />
           )}
-          {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+          {message.content_text ? (
+            <p className={cn(TEXT, "px-1.5 pt-1.5 pb-1")}>
               {message.content_text}
+              {meta}
             </p>
+          ) : (
+            !message.media_url && <div className="px-1.5 pb-1">{metaBlock}</div>
           )}
         </div>
       );
@@ -147,30 +172,37 @@ function MessageContent({
           ) : (
             <MediaUnavailable label={t("video")} t={t} />
           )}
-          {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+          {message.content_text ? (
+            <p className={cn(TEXT, "px-1.5 pt-1.5 pb-1")}>
               {message.content_text}
+              {meta}
             </p>
+          ) : (
+            <div className="px-1.5 pt-1 pb-0.5">{metaBlock}</div>
           )}
         </div>
       );
 
     case "audio":
-      return (
+      return message.media_url ? (
+        <MediaAudioBubble message={message} t={t} meta={metaBlock} />
+      ) : (
         <div>
-          {message.media_url ? (
-            <MediaAudioBubble message={message} t={t} />
-          ) : (
-            <MediaUnavailable label={t("audio")} t={t} />
-          )}
+          <MediaUnavailable label={t("audio")} t={t} />
+          {metaBlock}
         </div>
       );
 
     case "document":
       if (!message.media_url) {
-        return <MediaUnavailable label={message.content_text || t("document")} t={t} />;
+        return (
+          <div>
+            <MediaUnavailable label={message.content_text || t("document")} t={t} />
+            {metaBlock}
+          </div>
+        );
       }
-      return <MediaDocumentBubble message={message} t={t} />;
+      return <MediaDocumentBubble message={message} t={t} meta={metaBlock} />;
 
     case "template":
       // Templates are almost always outbound, where the bubble fill IS
@@ -184,35 +216,36 @@ function MessageContent({
         <div>
           <span
             className={cn(
-              "mb-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
-              isAgent
-                ? "bg-primary-foreground/20 text-primary-foreground"
-                : "bg-primary/20 text-primary",
+              "mb-1 inline-flex items-center gap-1 rounded-full bg-bubble-quote px-2 py-0.5 text-[11px] font-medium",
+              isAgent ? "text-foreground/80" : "text-primary-text",
             )}
           >
             <LayoutTemplate className="h-3 w-3" />
             {t("template")}
           </span>
           {message.content_text ? (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+            <p className={TEXT}>
               {message.content_text}
+              {meta}
+            </p>
+          ) : message.template_name ? (
+            <p className={cn(TEXT, "italic opacity-80")}>
+              {message.template_name}
+              {meta}
             </p>
           ) : (
-            message.template_name && (
-              <p className="mt-1 break-words text-sm italic opacity-80">
-                {message.template_name}
-              </p>
-            )
+            metaBlock
           )}
         </div>
       );
 
     case "location":
       return (
-        <div className="flex items-center gap-2 text-sm">
-          <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>{message.content_text || t("locationShared")}</span>
-        </div>
+        <p className={TEXT}>
+          <MapPin className="mr-1.5 inline size-4 -translate-y-px text-muted-foreground" />
+          {message.content_text || t("locationShared")}
+          {meta}
+        </p>
       );
 
     case "interactive": {
@@ -226,7 +259,12 @@ function MessageContent({
       //    migration 035 backfilled the column): show the body text plainly —
       //    it is our own message, NOT a customer tap.
       if (message.interactive_payload) {
-        return <LocalizedInteractivePreview payload={message.interactive_payload} />;
+        return (
+          <div>
+            <LocalizedInteractivePreview payload={message.interactive_payload} />
+            {metaBlock}
+          </div>
+        );
       }
       if (message.sender_type === "customer") {
         return (
@@ -235,26 +273,49 @@ function MessageContent({
               <CornerDownLeft className="h-3 w-3" />
               {t("buttonReply")}
             </span>
-            <p className="whitespace-pre-wrap break-words text-sm">
+            <p className={TEXT}>
               {message.content_text || t("interactiveReply")}
+              {meta}
             </p>
           </div>
         );
       }
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className={TEXT}>
           {message.content_text || t("interactiveReply")}
+          {meta}
         </p>
       );
     }
 
     default:
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className={TEXT}>
           {message.content_text || t("unsupported")}
+          {meta}
         </p>
       );
   }
+}
+
+/** Small triangle tail, drawn in the bubble's own colour. */
+function BubbleTail({ side }: { side: "in" | "out" }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 8 13"
+      width="8"
+      height="13"
+      className={cn(
+        "absolute top-0",
+        side === "in"
+          ? "-left-2 text-bubble-in"
+          : "-right-2 -scale-x-100 text-bubble-out",
+      )}
+    >
+      <path d="M8 0H1.6C.3 0-.4 1.5.5 2.5L8 12z" fill="currentColor" />
+    </svg>
+  );
 }
 
 export function MessageBubble({
@@ -264,12 +325,51 @@ export function MessageBubble({
   currentUserId,
   onToggleReaction,
   onOpenMedia,
+  showTail = false,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
   const failure = isAgent ? failureReason(message) : null;
+  const isVisual =
+    (message.content_type === "image" || message.content_type === "video") &&
+    !!message.media_url;
+
+  const metaInner = (
+    <>
+      {/* AI badge — only on replies the auto-reply bot generated, so
+          agents can tell an AI reply from their own / a Flow's. */}
+      {message.ai_generated && (
+        <span
+          className="inline-flex items-center gap-0.5 rounded-full bg-bubble-quote px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide"
+          title={t("aiBadgeTitle")}
+        >
+          <Sparkles className="h-2.5 w-2.5" />
+          {t("aiBadge")}
+        </span>
+      )}
+      <span>{time}</span>
+      {isAgent && <StatusIcon status={message.status} title={failure} />}
+    </>
+  );
+  // WA puts time + ticks inside the bubble, bottom-right. Floated at the
+  // end of the text so short messages stay on one line.
+  const meta = (
+    <span className="relative top-[5px] float-right -mr-0.5 ml-2.5 inline-flex h-[15px] items-center gap-1 text-[11px] leading-[15px] whitespace-nowrap text-foreground/60">
+      {metaInner}
+    </span>
+  );
+  const metaBlock = (
+    <div className="-mr-0.5 -mb-1 flex h-[15px] items-center justify-end gap-1 text-[11px] leading-[15px] whitespace-nowrap text-foreground/60">
+      {metaInner}
+    </div>
+  );
+  const metaOverlay = (
+    <span className="inline-flex items-center gap-1 rounded-full bg-black/35 px-1.5 py-0.5 text-[11px] leading-[15px] text-white [&_.text-read-ticks]:text-read-ticks">
+      {metaInner}
+    </span>
+  );
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
@@ -282,12 +382,13 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2",
-          isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-muted text-foreground",
+          "relative max-w-full rounded-[7.5px] text-foreground shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]",
+          isAgent ? "bg-bubble-out" : "bg-bubble-in",
+          isVisual ? "p-[3px]" : "pt-1.5 pr-[7px] pb-2 pl-[9px]",
+          showTail && (isAgent ? "rounded-tr-none" : "rounded-tl-none"),
         )}
       >
+        {showTail && <BubbleTail side={isAgent ? "out" : "in"} />}
         {reply && (
           <ReplyQuote
             authorLabel={reply.authorLabel}
@@ -300,55 +401,27 @@ export function MessageBubble({
           t={t}
           isAgent={isAgent}
           onOpenMedia={onOpenMedia}
+          meta={meta}
+          metaBlock={metaBlock}
+          metaOverlay={metaOverlay}
         />
-        <div
-          className={cn(
-            "mt-1 flex items-center gap-1",
-            isAgent ? "justify-end" : "justify-start",
-          )}
-        >
-          {/* AI badge — only on replies the auto-reply bot generated
-              (always outbound, so it sits on the primary fill). Lets
-              agents tell an AI reply from their own / a Flow's at a
-              glance. */}
-          {message.ai_generated && (
-            <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
-              title={t("aiBadgeTitle")}
-            >
-              <Sparkles className="h-2.5 w-2.5" />
-              {t("aiBadge")}
-            </span>
-          )}
-          <span
-            className={cn(
-              "text-[10px]",
-              // Outbound bubbles sit on the primary fill, so the
-              // timestamp must read against that (not the neutral
-              // foreground) — otherwise it goes low-contrast in light
-              // mode. Inbound bubbles use the muted surface.
-              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
-            )}
-          >
-            {time}
-          </span>
-          {isAgent && <StatusIcon status={message.status} title={failure} />}
-        </div>
       </div>
       {failure && (
         <p
-          className="mt-0.5 px-1 text-[10px] leading-tight text-muted-foreground"
+          className="mt-0.5 px-1 text-[11px] leading-tight text-destructive"
           title={failure}
         >
           {t("notDelivered")}: {failure}
         </p>
       )}
       {reactions && reactions.length > 0 && onToggleReaction && (
-        <MessageReactions
-          reactions={reactions}
-          currentUserId={currentUserId}
-          onToggle={onToggleReaction}
-        />
+        <div className={cn("relative z-[1] -mt-1.5", isAgent ? "mr-2" : "ml-2")}>
+          <MessageReactions
+            reactions={reactions}
+            currentUserId={currentUserId}
+            onToggle={onToggleReaction}
+          />
+        </div>
       )}
     </div>
   );

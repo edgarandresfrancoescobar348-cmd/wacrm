@@ -52,7 +52,7 @@ export function MessageReactions({
   if (groups.length === 0) return null;
 
   return (
-    <div className="mt-1 flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1">
       {groups.map((g) => (
         <button
           key={g.emoji}
@@ -60,10 +60,8 @@ export function MessageReactions({
           onClick={() => onToggle(g.emoji)}
           aria-pressed={g.byCurrentUser}
           className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] leading-none transition-colors",
-            g.byCurrentUser
-              ? "border-primary/60 bg-primary/15 text-primary hover:bg-primary/25"
-              : "border-border bg-muted/80 text-foreground hover:bg-muted",
+            "inline-flex h-6 items-center gap-1 rounded-full border-2 border-wallpaper bg-surface px-1.5 text-[11px] leading-none text-muted-foreground shadow-sm transition-colors hover:bg-hover-surface",
+            g.byCurrentUser && "bg-chip-active text-chip-active-foreground hover:bg-chip-active/80",
           )}
         >
           <span className="text-sm leading-none">{g.emoji}</span>

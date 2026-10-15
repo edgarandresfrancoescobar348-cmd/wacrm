@@ -30,23 +30,18 @@ export function ReplyQuote({
   const t = useTranslations("Inbox.replyQuote");
   const isChip = !!onDismiss;
   return (
+    // WA quote: tinted block with a 4px accent bar on the left. `onPrimary`
+    // (outgoing bubble) only matters for the composer-vs-bubble surface.
     <div
       className={cn(
-        "flex items-start gap-2 border-l-2 px-2 py-1",
-        onPrimary ? "border-primary-foreground/50" : "border-primary",
-        isChip
-          ? "rounded-md bg-muted/80"
-          : onPrimary
-            ? "mb-1.5 rounded-md bg-primary-foreground/15"
-            : "mb-1.5 rounded-md bg-background/20",
+        "flex items-start gap-2 overflow-hidden rounded-md border-l-4 border-primary-text py-1.5 pr-2 pl-2.5",
+        isChip ? "bg-hover-surface" : "mb-1 bg-bubble-quote",
+        !isChip && onPrimary && "border-primary-text/80",
       )}
     >
       <div className="min-w-0 flex-1 overflow-hidden">
         <div
-          className={cn(
-            "truncate text-[11px] font-medium",
-            onPrimary ? "text-primary-foreground" : "text-primary",
-          )}
+          className="truncate text-[12.8px] leading-4 font-medium text-primary-text"
         >
           {authorLabel}
         </div>
@@ -57,7 +52,7 @@ export function ReplyQuote({
          *  layout wider, shoving the contact sidebar off-screen.
          *  `break-words` also wraps long URLs that have no whitespace
          *  to break on. Issue #165. */}
-        <div className="whitespace-pre-wrap break-words text-xs text-foreground/80">
+        <div className="line-clamp-3 whitespace-pre-wrap break-words text-[13px] leading-[18px] text-foreground/70">
           {preview}
         </div>
       </div>
@@ -66,7 +61,7 @@ export function ReplyQuote({
           type="button"
           onClick={onDismiss}
           aria-label={t("cancelReply")}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background/60 hover:text-foreground"
         >
           <X className="h-3.5 w-3.5" />
         </button>

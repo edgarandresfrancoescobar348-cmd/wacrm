@@ -13,9 +13,10 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
-import { toast } from "sonner";
+import { EmptyPane } from "@/components/inbox/empty-pane";
+import { WaListLayout } from "@/components/layout/wa-panel";
+import Link from "next/link";
 import { WifiOff } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -561,54 +562,48 @@ function InboxPageInner() {
   // before, unchanged.
   const hasActiveConv = !!activeConversation;
 
+  // WhatsApp-style notice card under the list filters (WA shows its
+  // "notifications are off" banner in the same spot).
+  const connectionBanner =
+    whatsappConnected === false ? (
+      <Link
+        href="/settings?tab=whatsapp"
+        className="flex items-start gap-3 rounded-xl bg-chip-active px-4 py-3 text-chip-active-foreground transition-opacity hover:opacity-90"
+      >
+        <WifiOff className="mt-0.5 size-5 shrink-0" />
+        <span className="min-w-0 text-sm leading-5">
+          {t("whatsappNotConnected")}
+          <span className="mt-0.5 block font-medium text-primary-text">
+            {t("connectNow")}
+          </span>
+        </span>
+      </Link>
+    ) : null;
+
+  // List + detail like WhatsApp Web. On mobile (<lg) only one pane shows —
+  // selecting a conversation swaps the thread in; its back button pops it
+  // back to the list. The contact-info drawer is desktop only and follows
+  // the persisted show/hide toggle (#258).
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
-      {/* WhatsApp connection banner — in the flex column, not absolute,
-          so it pushes the panels down instead of overlapping them. */}
-      {whatsappConnected === false && (
-        <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2">
-          <WifiOff className="h-4 w-4 text-amber-400" />
-          <p className="text-xs text-amber-400">
-            {t("whatsappNotConnected")}
-          </p>
-        </div>
-      )}
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left panel: Conversation list.
-            Hidden on mobile when a conversation is selected so the
-            thread can occupy the full width. Always visible on lg+. */}
-        <div
-          className={cn(
-            "flex h-full flex-1 lg:flex-none",
-            hasActiveConv ? "hidden lg:flex" : "flex",
-          )}
-        >
-          <ConversationList
-            activeConversationId={activeConversation?.id ?? null}
-            onSelect={handleSelectConversation}
-            conversations={conversations}
-            onConversationsLoaded={handleConversationsLoaded}
-            resyncToken={resyncToken}
-          />
-        </div>
-
-        {/* Center panel: Message thread.
-            Hidden on mobile when no conversation is selected so the
-            list can occupy the full width. Always visible on lg+
-            (shows its own empty-state if no thread is picked yet).
-
-            `min-w-0` is load-bearing: without it, a single wide piece
-            of content inside the thread (long quote preview, very
-            long URL in a message body) forces the flex child past
-            its share and pushes the contact-sidebar panel off-screen
-            on the right. Issue #165. */}
-        <div
-          className={cn(
-            "flex h-full min-w-0 flex-1 lg:flex",
-            hasActiveConv ? "flex" : "hidden lg:flex",
-          )}
-        >
+    <WaListLayout
+      showMain={hasActiveConv}
+      list={
+        <ConversationList
+          activeConversationId={activeConversation?.id ?? null}
+          onSelect={handleSelectConversation}
+          conversations={conversations}
+          onConversationsLoaded={handleConversationsLoaded}
+          resyncToken={resyncToken}
+          banner={connectionBanner}
+        />
+      }
+    >
+      {/* `min-w-0` is load-bearing: without it, a single wide piece of
+          content inside the thread (long quote preview, very long URL in
+          a message body) forces the flex child past its share and pushes
+          the contact panel off-screen on the right. Issue #165. */}
+      <div className="flex h-full min-w-0 flex-1">
+        {activeConversation && activeContact ? (
           <MessageThread
             conversation={activeConversation}
             contact={activeContact}
@@ -624,18 +619,19 @@ function InboxPageInner() {
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
           />
-        </div>
+        ) : (
+          <EmptyPane whatsappConnected={whatsappConnected} />
+        )}
 
-        {/* Right panel: Contact sidebar — desktop only, and only when the
-            agent hasn't collapsed it via the thread-header toggle (#258).
-            On mobile it's always hidden (the `lg:block` below), so the
-            toggle — which is itself desktop-only — never affects it. */}
-        {contactPanelOpen && (
-          <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
+        {contactPanelOpen && activeContact && (
+          <div className="hidden lg:flex">
+            <ContactSidebar
+              contact={activeContact}
+              onClose={handleToggleContactPanel}
+            />
           </div>
         )}
       </div>
-    </div>
+    </WaListLayout>
   );
 }

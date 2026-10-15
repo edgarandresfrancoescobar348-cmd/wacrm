@@ -127,7 +127,7 @@ export function MediaLightbox({
     >
       <DialogContent className="flex w-auto max-w-[95vw] flex-col gap-3 p-3 sm:max-w-[min(95vw,72rem)]">
         {/* pr-9 keeps the toolbar clear of the dialog's own close button. */}
-        <DialogHeader className="flex-row items-start gap-3 pr-9">
+        <DialogHeader className="flex-row items-start gap-3 pr-12 text-left">
           <div className="min-w-0 flex-1">
             <DialogTitle className="truncate">{authorLabel}</DialogTitle>
             <DialogDescription className="truncate text-xs">
@@ -153,7 +153,7 @@ export function MediaLightbox({
               rel="noopener noreferrer"
               aria-label={t("openOriginal")}
               title={t("openOriginal")}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-hover-surface hover:text-foreground"
             >
               <ExternalLink className="h-4 w-4" />
             </a>
@@ -291,7 +291,7 @@ function ToolbarButton({
       disabled={busy}
       aria-label={label}
       title={label}
-      className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+      className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-hover-surface hover:text-foreground disabled:opacity-60"
     >
       {busy ? (
         <Loader2 className="h-4 w-4 animate-spin" />
