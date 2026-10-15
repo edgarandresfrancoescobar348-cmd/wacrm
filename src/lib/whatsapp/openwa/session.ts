@@ -59,9 +59,16 @@ function sessionName(accountId: string): string {
   return `wacrm-${accountId.slice(0, 8)}-${crypto.randomBytes(3).toString('hex')}`
 }
 
-function sessionPatch(session: OpenWaSession, row: OpenWaConnectionRow | null) {
+/**
+ * Row patch for a session state read live from the gateway. It is the
+ * state as of NOW, so it also advances `status_event_at`: a webhook
+ * event dated before this read (late redelivery, replay) must not
+ * overwrite it (migration 049).
+ */
+export function sessionPatch(session: OpenWaSession, row: OpenWaConnectionRow | null) {
   const now = new Date().toISOString()
   return {
+    status_event_at: now,
     status: session.status,
     phone: session.phone ? normalizePhone(session.phone) || null : null,
     push_name: session.pushName ?? null,
