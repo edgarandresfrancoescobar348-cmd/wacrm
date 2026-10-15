@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
 import { FlowEditorShell } from "@/components/flows/flow-editor-shell";
+import { Button } from "@/components/ui/button";
+import { WaFrameCenter } from "@/components/automations/wa-frame";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 
 /**
@@ -67,23 +69,19 @@ export default function FlowEditorPage() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <WaFrameCenter>
+        <Loader2 className="size-6 animate-spin text-primary-text" />
+      </WaFrameCenter>
     );
   }
   if (notFound || !flow) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
+      <WaFrameCenter>
         <p className="text-sm text-muted-foreground">{t("notFound")}</p>
-        <button
-          type="button"
-          onClick={() => router.push("/flows")}
-          className="text-sm text-primary hover:opacity-80"
-        >
+        <Button variant="outline" onClick={() => router.push("/flows")}>
           {t("backToFlows")}
-        </button>
-      </div>
+        </Button>
+      </WaFrameCenter>
     );
   }
 

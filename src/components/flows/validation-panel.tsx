@@ -28,12 +28,11 @@ export function ValidationPanel() {
   const t = useTranslations("Flows.validation");
 
   if (issues.length === 0) {
-    // Slate-950 base + emerald accents so the panel stays readable when
-    // sticky-positioned over scrolled-behind node cards (a translucent
-    // bg-emerald-500/10 would bleed through ugly).
+    // WA soft-green notice (opaque chip-active token, so it stays
+    // readable over whatever scrolls behind it).
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-emerald-600/50 bg-background p-3 text-sm font-medium text-emerald-300">
-        <CircleCheck className="h-4 w-4 shrink-0" />
+      <div className="flex items-center gap-2.5 rounded-xl bg-chip-active px-3 py-2.5 text-sm text-chip-active-foreground">
+        <CircleCheck className="size-4 shrink-0 text-primary-text" />
         {t("noIssues")}
       </div>
     );
@@ -42,16 +41,13 @@ export function ValidationPanel() {
   const warnings = issues.filter((i) => i.severity === "warning");
   return (
     <div
-      className={cn(
-        "rounded-lg border bg-background p-3",
-        errors.length > 0 ? "border-red-500/40" : "border-amber-500/40",
-      )}
+      className="max-h-[30vh] overflow-y-auto rounded-xl bg-surface px-3 py-2.5 shadow-sm"
     >
-      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="mb-1.5 flex items-center gap-2 text-[13px] text-muted-foreground">
         {errors.length > 0 ? (
-          <CircleAlert className="h-4 w-4 text-red-400" />
+          <CircleAlert className="size-4 text-destructive" />
         ) : (
-          <CircleAlert className="h-4 w-4 text-amber-400" />
+          <CircleAlert className="size-4 text-amber-500" />
         )}
         {t("summary", { errorCount: errors.length, warningCount: warnings.length })}
       </div>
@@ -79,16 +75,15 @@ export function IssueLine({
   onJump?: (key: string) => void;
   t?: ReturnType<typeof useTranslations>;
 }) {
-  const tone =
-    issue.severity === "error" ? "text-red-300" : "text-amber-300";
+  const tone = "text-foreground";
   const iconTone =
-    issue.severity === "error" ? "text-red-400" : "text-amber-400";
+    issue.severity === "error" ? "text-destructive" : "text-amber-500";
   const body = (
     <>
-      <CircleAlert className={cn("mt-0.5 h-3 w-3 shrink-0", iconTone)} />
+      <CircleAlert className={cn("mt-0.5 size-3.5 shrink-0", iconTone)} />
       <span className="min-w-0 flex-1">
         {issue.node_key && (
-          <code className="mr-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+          <code className="mr-1.5 rounded-md bg-bubble-quote px-1.5 py-0.5 text-[11px] text-muted-foreground">
             {issue.node_key}
           </code>
         )}
@@ -106,7 +101,7 @@ export function IssueLine({
         type="button"
         onClick={() => onJump(issue.node_key!)}
         className={cn(
-          "flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-muted/60",
+          "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-hover-surface",
           tone,
         )}
         aria-label={t ? t("jumpToNode", { key: issue.node_key! }) : `Jump to node ${issue.node_key}`}
@@ -118,7 +113,7 @@ export function IssueLine({
   return (
     <div
       className={cn(
-        "flex items-start gap-2 rounded-md px-2 py-1 text-xs",
+        "flex items-start gap-2 rounded-lg px-2 py-1.5 text-[13px]",
         tone,
       )}
     >

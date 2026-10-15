@@ -25,8 +25,6 @@
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
-  ArrowLeft,
-  CircleDot,
   History,
   Loader2,
   PauseCircle,
@@ -37,7 +35,12 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { WaIconButton } from "@/components/layout/wa-panel";
+import {
+  WaBackButton,
+  WaIconAvatar,
+  WaStatusPill,
+} from "@/components/automations/wa-kit";
 import {
   useFlowEditor,
   type BuilderState,
@@ -60,117 +63,108 @@ export function EditorHeader() {
   } = useFlowEditor();
 
   return (
-    <div className="flex flex-col gap-1.5 px-6 pt-5">
-      <div className="flex flex-wrap items-center gap-3">
-        {/* ---- left: back · icon · name · status · edited ---- */}
-        <button
-          type="button"
-          onClick={() => router.push("/flows")}
-          title={t("backToFlows")}
-          aria-label={t("backToFlows")}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
-          <Workflow className="h-[18px] w-[18px]" />
-        </span>
+    <header className="flex min-h-16 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background px-3 py-2 sm:px-4">
+      {/* ---- left: back · avatar · name + description · status · edited ---- */}
+      <WaBackButton label={t("backToFlows")} onClick={() => router.push("/flows")} />
+      <WaIconAvatar
+        icon={Workflow}
+        size={40}
+        tone={state.status === "active" ? "accent" : "muted"}
+        className="hidden sm:inline-flex"
+      />
+      <div className="flex min-w-[160px] flex-1 flex-col">
         <input
           value={state.name}
           onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
           placeholder={t("namePlaceholder")}
           spellCheck={false}
           aria-label={t("namePlaceholder")}
-          className="min-w-[120px] max-w-[340px] rounded-lg border border-transparent bg-transparent px-2 py-1 text-lg font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-muted focus:border-primary focus:bg-transparent focus:shadow-[0_0_0_3px_var(--primary-soft)]"
+          className="h-6 w-full max-w-[420px] rounded-md bg-transparent px-1.5 text-base leading-6 text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:bg-hover-surface/60 focus:bg-hover-surface"
         />
-        <StatusChip status={state.status} />
-        {dirty && (
-          <span
-            className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-amber-300"
-            title={t("unsavedHint")}
-            aria-live="polite"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            {t("edited")}
-          </span>
-        )}
-
-        {/* ---- right: runs · delete · activate · save ---- */}
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push(`/flows/${flow.id}/runs`)}
-          >
-            <History className="h-3.5 w-3.5" />
-            {t("runs")}
-            <span className="ml-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-              {flow.execution_count}
-            </span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void deleteFlow()}
-            className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t("delete")}
-          </Button>
-          {state.status === "active" ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void setStatus("draft")}
-              disabled={activating}
-            >
-              {activating ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <PauseCircle className="h-3.5 w-3.5" />
-              )}
-              {t("pause")}
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void setStatus("active")}
-              disabled={activating || !canActivate}
-              title={
-                !canActivate ? t("fixIssues") : undefined
-              }
-            >
-              {activating ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <PlayCircle className="h-3.5 w-3.5" />
-              )}
-              {t("activate")}
-            </Button>
-          )}
-          <Button onClick={() => void save()} disabled={saving} size="sm">
-            {saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
-            )}
-            {t("save")}
-          </Button>
-        </div>
+        {/* ---- description note (subtitle line, inline-editable) ---- */}
+        <input
+          value={state.description}
+          onChange={(e) =>
+            setState((s) => ({ ...s, description: e.target.value }))
+          }
+          placeholder={t("descriptionPlaceholder")}
+          aria-label={t("descriptionLabel")}
+          className="h-5 w-full max-w-[78ch] rounded-md bg-transparent px-1.5 text-[13px] leading-5 text-muted-foreground outline-none transition-colors placeholder:text-muted-foreground/70 hover:bg-hover-surface/60 focus:bg-hover-surface focus:text-foreground"
+        />
       </div>
+      <StatusChip status={state.status} />
+      {dirty && (
+        <span
+          className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-amber-500"
+          title={t("unsavedHint")}
+          aria-live="polite"
+        >
+          <span className="size-2 rounded-full bg-amber-500" />
+          {t("edited")}
+        </span>
+      )}
 
-      {/* ---- description note (subtle, inline-editable) ---- */}
-      <input
-        value={state.description}
-        onChange={(e) =>
-          setState((s) => ({ ...s, description: e.target.value }))
-        }
-        placeholder={t("descriptionPlaceholder")}
-        aria-label={t("descriptionLabel")}
-        className="w-full max-w-[78ch] rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] text-muted-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-muted/50 focus:border-primary focus:bg-transparent focus:text-foreground"
-      />
-    </div>
+      {/* ---- right: runs · delete · activate · save ---- */}
+      <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push(`/flows/${flow.id}/runs`)}
+        >
+          <History className="size-4" />
+          {t("runs")}
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-hover-surface px-1.5 text-[11px] font-semibold text-muted-foreground">
+            {flow.execution_count}
+          </span>
+        </Button>
+        <WaIconButton
+          icon={Trash2}
+          label={t("delete")}
+          onClick={() => void deleteFlow()}
+          className="hover:text-destructive"
+        />
+        {state.status === "active" ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void setStatus("draft")}
+            disabled={activating}
+          >
+            {activating ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <PauseCircle className="size-4" />
+            )}
+            {t("pause")}
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void setStatus("active")}
+            disabled={activating || !canActivate}
+            title={
+              !canActivate ? t("fixIssues") : undefined
+            }
+          >
+            {activating ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <PlayCircle className="size-4" />
+            )}
+            {t("activate")}
+          </Button>
+        )}
+        <Button onClick={() => void save()} disabled={saving} size="sm">
+          {saving ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Save className="size-4" />
+          )}
+          {t("save")}
+        </Button>
+      </div>
+    </header>
   );
 }
 
@@ -178,31 +172,16 @@ function StatusChip({ status }: { status: BuilderState["status"] }) {
   // Status labels live with the flows list so the chip and the list
   // badge can never drift apart.
   const t = useTranslations("Flows.list");
-  const cfg = {
-    draft: {
-      // Neutral, not amber — amber is reserved for the adjacent
-      // "Edited" dirty signal, so the two don't read as the same alert.
-      cls: "border-border bg-muted text-muted-foreground",
-      label: t("statusDraft"),
-    },
-    active: {
-      cls: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
-      label: t("statusActive"),
-    },
-    archived: {
-      cls: "border-border bg-muted/50 text-muted-foreground",
-      label: t("statusArchived"),
-    },
+  const label = {
+    draft: t("statusDraft"),
+    active: t("statusActive"),
+    archived: t("statusArchived"),
   }[status];
+  // Neutral for draft/archived — amber is reserved for the adjacent
+  // "Edited" dirty signal, so the two don't read as the same alert.
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-medium",
-        cfg.cls,
-      )}
-    >
-      <CircleDot className="h-3 w-3" />
-      {cfg.label}
-    </span>
+    <WaStatusPill tone={status === "active" ? "active" : "neutral"}>
+      {label}
+    </WaStatusPill>
   );
 }

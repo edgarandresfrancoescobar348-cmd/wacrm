@@ -12,6 +12,8 @@ import {
   type ServerStepNode,
 } from "@/components/automations/automation-builder"
 import type { AutomationTriggerType } from "@/types"
+import { Button } from "@/components/ui/button"
+import { WaFrameCenter } from "@/components/automations/wa-frame"
 
 export default function EditAutomationPage({
   params,
@@ -52,23 +54,20 @@ export default function EditAutomationPage({
 
   if (error) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3">
-        <p className="text-sm text-red-400">{error}</p>
-        <button
-          onClick={() => router.push("/automations")}
-          className="text-sm text-primary hover:text-primary/80"
-        >
+      <WaFrameCenter>
+        <p className="text-sm text-destructive">{error}</p>
+        <Button variant="outline" onClick={() => router.push("/automations")}>
           {t("back")}
-        </button>
-      </div>
+        </Button>
+      </WaFrameCenter>
     )
   }
 
   if (!initial) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
+      <WaFrameCenter>
+        <Loader2 className="size-6 animate-spin text-primary-text" />
+      </WaFrameCenter>
     )
   }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -16,6 +16,9 @@ import {
   Users,
   PhoneCall,
   Loader2,
+  Power,
+  History,
+  Activity,
 } from "lucide-react"
 
 import { createClient } from "@/lib/supabase/client"
@@ -23,12 +26,13 @@ import { useCan } from "@/hooks/use-can"
 import { useTranslations } from "next-intl"
 import type { Automation } from "@/types"
 import { Button } from "@/components/ui/button"
-import { GatedButton } from "@/components/ui/gated-button"
 import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -40,9 +44,30 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  WaChip,
+  WaChipRow,
+  WaEmptyState,
+  WaIconButton,
+  WaListLayout,
+  WaListPanel,
+  WaListRow,
+  WaPanelHeader,
+  WaSearchPill,
+} from "@/components/layout/wa-panel"
+import { WaFrame, WaFrameCenter } from "@/components/automations/wa-frame"
+import {
+  WaBackButton,
+  WaGatedPrimaryAction,
+  WaIconAvatar,
+  WaInfoHero,
+  WaInfoRow,
+  WaInfoSection,
+  WaListNotice,
+  WaStatusPill,
+} from "@/components/automations/wa-kit"
 import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
-import { triggerMeta, formatRelative, isKnownTrigger } from "@/lib/automations/trigger-meta"
-import { cn } from "@/lib/utils"
+import { formatRelative, isKnownTrigger } from "@/lib/automations/trigger-meta"
 
 const TEMPLATE_ORDER: TemplateSlug[] = [
   "welcome_message",
@@ -58,15 +83,22 @@ const TEMPLATE_ICON: Record<TemplateSlug, typeof Zap> = {
   follow_up_reminder: PhoneCall,
 }
 
+type StatusFilter = "all" | "active" | "paused"
+
 export default function AutomationsPage() {
   const router = useRouter()
   const canCreate = useCan("send-messages")
   const t = useTranslations("Automations.list")
   const tGate = useTranslations("GatedButton")
+  const tTriggers = useTranslations("Automations.builder.triggers")
+  const tRelative = useTranslations("Automations.relative")
   const [automations, setAutomations] = useState<Automation[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Automation | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [filter, setFilter] = useState<StatusFilter>("all")
 
   async function load() {
     try {
@@ -130,6 +162,7 @@ export default function AutomationsPage() {
       return
     }
     toast.success(t("toasts.deleted"))
+    if (selectedId === pendingDelete.id) setSelectedId(null)
     setPendingDelete(null)
     load()
   }
@@ -138,98 +171,205 @@ export default function AutomationsPage() {
     router.push(`/automations/new?template=${slug}`)
   }
 
+  const triggerLabel = (a: Automation) =>
+    isKnownTrigger(a.trigger_type)
+      ? tTriggers(`${a.trigger_type}.label`)
+      : a.trigger_type
+
+  const runsLabel = (a: Automation) =>
+    a.execution_count === 1
+      ? t("runs", { count: a.execution_count })
+      : t("runsPlural", { count: a.execution_count })
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return (automations ?? []).filter((a) => {
+      if (filter === "active" && !a.is_active) return false
+      if (filter === "paused" && a.is_active) return false
+      if (!q) return true
+      return (
+        a.name.toLowerCase().includes(q) ||
+        (a.description ?? "").toLowerCase().includes(q)
+      )
+    })
+  }, [automations, search, filter])
+
   if (error) {
     return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2">
-        <p className="text-sm text-red-400">{error}</p>
+      <WaFrameCenter>
+        <p className="text-sm text-destructive">{error}</p>
         <Button variant="outline" onClick={() => window.location.reload()}>
           {t("retry")}
         </Button>
-      </div>
+      </WaFrameCenter>
     )
   }
 
   if (automations === null) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
+      <WaFrameCenter>
+        <Loader2 className="size-6 animate-spin text-primary-text" />
+      </WaFrameCenter>
     )
   }
 
-  const showTemplates = automations.length < 3
+  const selected = automations.find((a) => a.id === selectedId) ?? null
+  const activeCount = automations.filter((a) => a.is_active).length
+  const pausedCount = automations.length - activeCount
+
+  const templateActions = TEMPLATE_ORDER.map((slug) => ({
+    icon: TEMPLATE_ICON[slug],
+    label: AUTOMATION_TEMPLATES[slug].name,
+    onClick: () => startFromTemplate(slug),
+  }))
+
+  const list = (
+    <WaListPanel
+      title={t("title")}
+      actions={
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={t("openMenu")}
+                  className="inline-flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-hover-surface hover:text-foreground data-[popup-open]:bg-hover-surface"
+                />
+              }
+            >
+              <MoreVertical className="size-5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-60">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-[13px] font-normal text-muted-foreground">
+                  {t("templatesTitle")}
+                </DropdownMenuLabel>
+                {TEMPLATE_ORDER.map((slug) => {
+                  const Icon = TEMPLATE_ICON[slug]
+                  return (
+                    <DropdownMenuItem
+                      key={slug}
+                      disabled={!canCreate}
+                      onClick={() => startFromTemplate(slug)}
+                    >
+                      <Icon className="size-4" />
+                      {AUTOMATION_TEMPLATES[slug].name}
+                    </DropdownMenuItem>
+                  )
+                })}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <WaGatedPrimaryAction
+            icon={Plus}
+            label={t("create")}
+            canAct={canCreate}
+            gateTitle={tGate("readOnly", { action: tGate("reasons.createAutomations") })}
+            onClick={() => router.push("/automations/new")}
+          />
+        </>
+      }
+      search={
+        <WaSearchPill
+          value={search}
+          onChange={setSearch}
+          placeholder={t("searchPlaceholder")}
+          clearLabel={t("clearSearch")}
+          aria-label={t("searchPlaceholder")}
+        />
+      }
+      filters={
+        <WaChipRow>
+          <WaChip active={filter === "all"} onClick={() => setFilter("all")}>
+            {t("filterAll")}
+          </WaChip>
+          <WaChip
+            active={filter === "active"}
+            count={activeCount}
+            onClick={() => setFilter("active")}
+          >
+            {t("filterActive")}
+          </WaChip>
+          <WaChip
+            active={filter === "paused"}
+            count={pausedCount}
+            onClick={() => setFilter("paused")}
+          >
+            {t("filterPaused")}
+          </WaChip>
+        </WaChipRow>
+      }
+    >
+      {automations.length === 0 ? (
+        <WaListNotice>{t("emptyTitle")}</WaListNotice>
+      ) : visible.length === 0 ? (
+        <WaListNotice>{t("noMatches")}</WaListNotice>
+      ) : (
+        visible.map((a) => (
+          <WaListRow
+            key={a.id}
+            active={a.id === selectedId}
+            onClick={() => setSelectedId(a.id)}
+            avatar={
+              <WaIconAvatar icon={Zap} tone={a.is_active ? "accent" : "muted"} />
+            }
+            title={a.name}
+            meta={formatRelative(a.last_executed_at, tRelative)}
+            metaHighlight={a.is_active && !!a.last_executed_at}
+            subtitle={
+              <span className="truncate">
+                {triggerLabel(a)} · {runsLabel(a)}
+              </span>
+            }
+            trailing={
+              a.is_active ? (
+                <span
+                  className="size-2.5 rounded-full bg-primary"
+                  aria-label={t("activeIndicator")}
+                />
+              ) : null
+            }
+          />
+        ))
+      )}
+    </WaListPanel>
+  )
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("subtitle")}
-          </p>
-        </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason={tGate("reasons.createAutomations")}
-          onClick={() => router.push("/automations/new")}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          {t("create")}
-        </GatedButton>
-      </div>
-
-      {showTemplates && (
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t("templatesTitle")}</h2>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {TEMPLATE_ORDER.map((slug) => {
-              const t = AUTOMATION_TEMPLATES[slug]
-              const Icon = TEMPLATE_ICON[slug]
-              return (
-                <button
-                  key={slug}
-                  onClick={() => startFromTemplate(slug)}
-                  className="group flex flex-col items-start rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-card/80"
-                >
-                  <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/15">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div className="text-sm font-semibold text-foreground">{t.name}</div>
-                  <p className="mt-1 text-xs text-muted-foreground">{t.description}</p>
-                </button>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
-      {automations.length === 0 ? (
-        <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/40">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <Zap className="h-6 w-6 text-primary" />
-          </div>
-          <p className="mt-3 text-sm font-medium text-foreground">{t("emptyTitle")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t("emptyDesc")}
-          </p>
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {automations.map((a) => (
-            <AutomationCard
-              key={a.id}
-              automation={a}
-              onToggle={(next) => toggleActive(a, next)}
-              onEdit={() => router.push(`/automations/${a.id}/edit`)}
-              onDuplicate={() => duplicate(a)}
-              onLogs={() => router.push(`/automations/${a.id}/logs`)}
-              onDelete={() => setPendingDelete(a)}
-              t={t}
+    <WaFrame>
+      <WaListLayout list={list} showMain={!!selected}>
+        {selected ? (
+          <AutomationDetail
+            automation={selected}
+            triggerLabel={triggerLabel(selected)}
+            runsLabel={runsLabel(selected)}
+            lastRun={formatRelative(selected.last_executed_at, tRelative)}
+            onBack={() => setSelectedId(null)}
+            onToggle={(next) => toggleActive(selected, next)}
+            onEdit={() => router.push(`/automations/${selected.id}/edit`)}
+            onDuplicate={() => duplicate(selected)}
+            onLogs={() => router.push(`/automations/${selected.id}/logs`)}
+            onDelete={() => setPendingDelete(selected)}
+          />
+        ) : (
+          <div className="flex h-full min-w-0 flex-1 overflow-y-auto bg-wallpaper">
+            <WaEmptyState
+              icon={Zap}
+              title={automations.length === 0 ? t("emptyTitle") : t("title")}
+              description={
+                automations.length === 0 ? t("emptyPaneDesc") : t("paneHint")
+              }
+              cta={
+                canCreate
+                  ? { label: t("create"), onClick: () => router.push("/automations/new") }
+                  : undefined
+              }
+              actions={canCreate ? templateActions : undefined}
             />
-          ))}
-        </ul>
-      )}
+          </div>
+        )}
+      </WaListLayout>
 
       <Dialog open={!!pendingDelete} onOpenChange={(v) => !v && setPendingDelete(null)}>
         <DialogContent>
@@ -241,7 +381,7 @@ export default function AutomationsPage() {
           </DialogHeader>
           <DialogFooter>
             <Button
-              variant="ghost"
+              variant="outline"
               onClick={() => setPendingDelete(null)}
               disabled={deleting}
             >
@@ -252,123 +392,145 @@ export default function AutomationsPage() {
               onClick={confirmDelete}
               disabled={deleting}
             >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
               {t("delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </WaFrame>
   )
 }
 
-function AutomationCard({
+function AutomationDetail({
   automation,
+  triggerLabel,
+  runsLabel,
+  lastRun,
+  onBack,
   onToggle,
   onEdit,
   onDuplicate,
   onLogs,
   onDelete,
-  t,
 }: {
   automation: Automation
+  triggerLabel: string
+  runsLabel: string
+  lastRun: string
+  onBack: () => void
   onToggle: (next: boolean) => void
   onEdit: () => void
   onDuplicate: () => void
   onLogs: () => void
   onDelete: () => void
-  t: ReturnType<typeof useTranslations>
 }) {
-  const tTriggers = useTranslations("Automations.builder.triggers")
-  const tRelative = useTranslations("Automations.relative")
-  const meta = triggerMeta(automation.trigger_type)
-  const triggerLabel = isKnownTrigger(automation.trigger_type)
-    ? tTriggers(`${automation.trigger_type}.label`)
-    : automation.trigger_type
+  const t = useTranslations("Automations.list")
   return (
-    <li className="rounded-xl border border-border bg-card transition-colors hover:border-border">
-      <div className="flex items-center gap-4 p-4">
-        <div
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10"
-          aria-hidden
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <WaPanelHeader
+        leading={
+          <>
+            <WaBackButton label={t("closeDetail")} onClick={onBack} className="lg:hidden" />
+            <WaIconAvatar
+              icon={Zap}
+              size={40}
+              tone={automation.is_active ? "accent" : "muted"}
+            />
+          </>
+        }
+        title={automation.name}
+        subtitle={triggerLabel}
+        actions={
+          <>
+            <WaIconButton icon={Pencil} label={t("edit")} onClick={onEdit} />
+            <WaIconButton icon={History} label={t("viewLogs")} onClick={onLogs} />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={t("openMenu")}
+                    className="inline-flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-hover-surface hover:text-foreground data-[popup-open]:bg-hover-surface"
+                  />
+                }
+              >
+                <MoreVertical className="size-5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={onEdit}>
+                  <Pencil className="size-4" />
+                  {t("edit")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onDuplicate}>
+                  <Copy className="size-4" />
+                  {t("duplicate")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onLogs}>
+                  <FileText className="size-4" />
+                  {t("viewLogs")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                  <Trash2 className="size-4" />
+                  {t("delete")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+        className="border-b border-border"
+      />
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-rail">
+        <WaInfoHero
+          avatar={
+            <WaIconAvatar
+              icon={Zap}
+              size={120}
+              tone={automation.is_active ? "accent" : "muted"}
+            />
+          }
+          title={automation.name}
+          subtitle={automation.description || undefined}
         >
-          <Zap className="h-5 w-5 text-primary" />
-        </div>
-
-        <button
-          type="button"
-          onClick={onEdit}
-          className="min-w-0 flex-1 text-left"
-        >
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-semibold text-foreground">
-              {automation.name}
-            </span>
-            {automation.is_active && (
-              <span className="relative flex h-2 w-2" aria-label={t("activeIndicator")}>
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-              </span>
-            )}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <WaStatusPill tone={automation.is_active ? "active" : "neutral"}>
+              {automation.is_active ? t("statusActive") : t("statusPaused")}
+            </WaStatusPill>
+            <WaStatusPill tone="neutral">{triggerLabel}</WaStatusPill>
           </div>
-          {automation.description && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{automation.description}</p>
-          )}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                meta.pillClass,
-              )}
-            >
-              {triggerLabel}
-            </span>
-            <span className="tabular-nums">
-              {automation.execution_count === 1
-                ? t("runs", { count: automation.execution_count })
-                : t("runsPlural", { count: automation.execution_count })}
-            </span>
-            <span aria-hidden>·</span>
-            <span>{t("lastRun", { time: formatRelative(automation.last_executed_at, tRelative) })}</span>
-          </div>
-        </button>
+          <Button onClick={onEdit} className="mt-5">
+            <Pencil className="size-4" />
+            {t("edit")}
+          </Button>
+        </WaInfoHero>
 
-        <div className="flex items-center gap-3">
-          <Switch
-            checked={automation.is_active}
-            onCheckedChange={(v) => onToggle(!!v)}
-            aria-label={automation.is_active ? t("deactivate") : t("activate")}
+        <WaInfoSection label={t("sectionStatus")}>
+          <WaInfoRow
+            icon={Power}
+            label={automation.is_active ? t("statusActive") : t("statusPaused")}
+            value={t("statusHint")}
+            trailing={
+              <Switch
+                checked={automation.is_active}
+                onCheckedChange={(v) => onToggle(!!v)}
+                aria-label={automation.is_active ? t("deactivate") : t("activate")}
+              />
+            }
           />
+        </WaInfoSection>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={t("openMenu")}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted"
-            >
-              <MoreVertical className="h-4 w-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="h-4 w-4" />
-                {t("edit")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onDuplicate}>
-                <Copy className="h-4 w-4" />
-                {t("duplicate")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onLogs}>
-                <FileText className="h-4 w-4" />
-                {t("viewLogs")}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <Trash2 className="h-4 w-4" />
-                {t("delete")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <WaInfoSection label={t("sectionActivity")}>
+          <WaInfoRow icon={Zap} label={triggerLabel} value={t("sectionTrigger")} />
+          <WaInfoRow icon={Activity} label={runsLabel} value={t("lastRun", { time: lastRun })} />
+          <WaInfoRow icon={History} label={t("viewLogs")} onClick={onLogs} />
+        </WaInfoSection>
+
+        <WaInfoSection>
+          <WaInfoRow icon={Copy} label={t("duplicate")} onClick={onDuplicate} />
+          <WaInfoRow icon={Trash2} label={t("delete")} onClick={onDelete} destructive />
+        </WaInfoSection>
       </div>
-    </li>
+    </div>
   )
 }

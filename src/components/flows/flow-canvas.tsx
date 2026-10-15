@@ -166,10 +166,10 @@ function FlowNodeCard({ data, selected }: NodeProps) {
         } as React.CSSProperties
       }
       className={cn(
-        'bg-card relative max-w-[260px] min-w-[220px] rounded-xl border px-3.5 py-3 text-left shadow-[0_2px_6px_rgba(0,0,0,0.18)] transition-[box-shadow,border-color]',
+        'bg-surface relative max-w-[260px] min-w-[220px] rounded-xl border px-3.5 py-3 text-left shadow-[0_1px_3px_rgba(11,20,26,0.18)] transition-[box-shadow,border-color]',
         selected
           ? 'border-[var(--nc)]'
-          : 'border-border hover:border-[var(--nc-ring)]',
+          : 'border-transparent hover:border-[var(--nc-ring)]',
         // Flash overrides hover/selected colors briefly. Tailwind's
         // built-in `animate-pulse` is too gentle; a ring with the
         // amber accent matches the list view's flash semantics.
@@ -180,7 +180,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="!bg-card !h-2.5 !w-2.5 !border-2 !border-[var(--nc-ring)]"
+          className="!bg-surface !h-2.5 !w-2.5 !border-2 !border-[var(--nc-ring)]"
         />
       )}
 
@@ -189,25 +189,25 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           type={node.node_type}
           size={24}
           iconSize={14}
-          className="rounded-md"
+          className="rounded-full"
         />
         <span
-          className="truncate text-[10.5px] font-semibold tracking-wider uppercase"
+          className="truncate text-[13px] font-medium"
           style={{ color: c.text }}
         >
           {t(`nodes.${node.node_type}.label`)}
         </span>
         {isEntry && (
-          <span className="border-border text-muted-foreground ml-auto rounded border px-1.5 py-0.5 text-[8.5px] font-bold tracking-[0.1em] uppercase">
+          <span className="bg-chip-active text-chip-active-foreground ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold">
             {t('badgeEntry')}
           </span>
         )}
       </div>
-      <div className="text-muted-foreground mt-2 truncate font-mono text-[11px]">
+      <div className="text-muted-foreground mt-2 truncate font-mono text-[11px] opacity-80">
         {node.node_key}
       </div>
       {summary && (
-        <div className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
+        <div className="text-foreground/80 mt-1 line-clamp-2 text-xs leading-relaxed">
           {summary}
         </div>
       )}
@@ -233,7 +233,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
                 // sits flush with the right edge of the card instead
                 // of floating at vertical center. The negative offset
                 // matches the card's px-3 + the handle's own radius.
-                className="!bg-card !relative !top-auto !right-auto !h-2.5 !w-2.5 !translate-x-[14px] !transform-none !border-2"
+                className="!bg-surface !relative !top-auto !right-auto !h-2.5 !w-2.5 !translate-x-[14px] !transform-none !border-2"
               />
             </div>
           ))}
@@ -246,7 +246,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           id={slots[0].id}
           position={Position.Right}
           style={{ borderColor: c.solid }}
-          className="!bg-card !h-2.5 !w-2.5 !border-2"
+          className="!bg-surface !h-2.5 !w-2.5 !border-2"
         />
       )}
     </div>
@@ -372,10 +372,13 @@ function FlowCanvasInner() {
       label: e.label,
       // Mode-aware via CSS tokens so edge chrome flips with light/dark.
       labelStyle: { fill: 'var(--muted-foreground)', fontSize: 11 },
-      labelBgStyle: { fill: 'var(--card)' },
-      labelBgPadding: [4, 2] as [number, number],
-      labelBgBorderRadius: 4,
-      style: { stroke: 'var(--border)', strokeWidth: 1.5 },
+      labelBgStyle: { fill: 'var(--surface)' },
+      labelBgPadding: [6, 3] as [number, number],
+      labelBgBorderRadius: 8,
+      style: {
+        stroke: 'color-mix(in srgb, var(--muted-foreground) 55%, transparent)',
+        strokeWidth: 1.75,
+      },
     }));
 
     return rfEdges;
@@ -513,7 +516,7 @@ function FlowCanvasInner() {
   if (rfNodes.length === 0) {
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-sm">
-        <p>{t('noNodesYet')}</p>
+        <p className="bg-surface rounded-lg px-3 py-1.5 shadow-sm">{t('noNodesYet')}</p>
         <CanvasAddNodeButton t={t} />
       </div>
     );
@@ -552,10 +555,10 @@ function FlowCanvasInner() {
             variant={BackgroundVariant.Dots}
             gap={22}
             size={1.4}
-            color="var(--border)"
+            color="var(--doodle)"
           />
           <Controls
-            className="!border-border !bg-card [&_button]:!border-border [&_button]:!bg-card [&_button:hover]:!bg-muted [&_button_svg]:!fill-foreground !overflow-hidden !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
+            className="!bg-surface [&_button]:!border-border [&_button]:!bg-surface [&_button:hover]:!bg-hover-surface [&_button_svg]:!fill-foreground !overflow-hidden !rounded-xl !border-0 !shadow-sm"
             showInteractive={false}
           />
           <MiniMap
@@ -566,8 +569,8 @@ function FlowCanvasInner() {
             }
             nodeStrokeWidth={0}
             nodeBorderRadius={3}
-            maskColor="color-mix(in oklch, var(--background) 70%, transparent)"
-            className="!border-border !bg-card !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
+            maskColor="color-mix(in oklch, var(--wallpaper) 70%, transparent)"
+            className="!bg-surface !overflow-hidden !rounded-xl !border-0 !shadow-sm"
           />
           <Panel position="top-left" className="!top-4 !left-4">
             <CanvasAddNodeButton t={t} />
@@ -630,27 +633,36 @@ function NodeEditSheet({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         side="right"
-        className="border-border bg-popover flex w-full flex-col gap-0 border-l p-0 sm:max-w-md"
+        className="bg-background flex w-full flex-col gap-0 border-l border-border p-0 sm:max-w-md"
       >
-        <SheetHeader className="border-border flex-row items-center gap-3 space-y-0 border-b px-5 py-4">
-          <NodeIconChip type={node.node_type} size={36} iconSize={18} />
+        <SheetHeader className="flex-row items-center gap-3 space-y-0 border-b border-border py-3 pr-16 pl-5">
+          <NodeIconChip
+            type={node.node_type}
+            size={40}
+            iconSize={20}
+            className="rounded-full"
+          />
           <div className="min-w-0 flex-1">
-            <SheetTitle className="flex items-center gap-2 text-[11px] font-semibold tracking-wider uppercase">
-              <span style={{ color: c.text }}>{t(`nodes.${node.node_type}.label`)}</span>
+            <SheetTitle className="flex items-center gap-2 text-base font-normal">
+              <span className="truncate" style={{ color: c.text }}>
+                {t(`nodes.${node.node_type}.label`)}
+              </span>
               {isEntry && (
-                <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-emerald-300 uppercase">
+                <span className="bg-chip-active text-chip-active-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold">
                   {t('badgeEntry')}
                 </span>
               )}
             </SheetTitle>
-            <SheetDescription className="text-muted-foreground mt-0.5 text-xs">
+            <SheetDescription className="text-muted-foreground truncate text-[13px]">
               {t(`nodes.${node.node_type}.blurb`)}
             </SheetDescription>
           </div>
-          <code className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px]">
+        </SheetHeader>
+        <div className="border-border flex items-center gap-2 border-b px-5 py-2">
+          <code className="bg-bubble-quote text-muted-foreground truncate rounded-md px-2 py-0.5 font-mono text-[11px]">
             {node.node_key}
           </code>
-        </SheetHeader>
+        </div>
 
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
           <NodeConfigForm
@@ -661,9 +673,9 @@ function NodeEditSheet({
           />
         </div>
 
-        <SheetFooter className="border-border border-t px-5 py-3 sm:flex-row sm:justify-between">
+        <SheetFooter className="border-border flex-row justify-between border-t px-5 py-3">
           {!isEntry ? (
-            <Button variant="ghost" size="sm" onClick={onSetEntry}>
+            <Button variant="outline" size="sm" onClick={onSetEntry}>
               {t('setAsEntry')}
             </Button>
           ) : (
@@ -673,9 +685,9 @@ function NodeEditSheet({
             variant="ghost"
             size="sm"
             onClick={onDelete}
-            className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="size-4" />
             {t('deleteNode')}
           </Button>
         </SheetFooter>
@@ -735,7 +747,7 @@ function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="bg-primary text-primary-foreground hover:bg-primary-hover inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)] transition-colors"
+        className="bg-primary text-primary-foreground hover:bg-primary-hover focus-visible:ring-ring inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-medium shadow-sm transition-colors outline-none focus-visible:ring-2"
         aria-label={t('addNode')}
       >
         <Plus className="h-4 w-4" />
@@ -743,7 +755,7 @@ function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="border-border bg-popover w-[268px] p-1.5"
+        className="w-[280px] p-1.5"
       >
         {groupNodeTypesByCategory(ADD_NODE_TYPES).map((group, i) => (
           // DropdownMenuGroup (base-ui Menu.Group) is REQUIRED: the
@@ -753,7 +765,7 @@ function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
           <Fragment key={group.id}>
             {i > 0 && <DropdownMenuSeparator />}
             <DropdownMenuGroup>
-              <DropdownMenuLabel className="text-muted-foreground px-2 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
+              <DropdownMenuLabel className="text-muted-foreground px-2 py-1.5 text-[13px] font-normal">
                 {t(`categories.${group.id}`)}
               </DropdownMenuLabel>
               {group.types.map((t_type) => {
@@ -766,15 +778,15 @@ function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
                   >
                     <NodeIconChip
                       type={t_type}
-                      size={28}
+                      size={32}
                       iconSize={16}
-                      className="rounded-md"
+                      className="rounded-full"
                     />
                     <span className="flex flex-col">
-                      <span className="text-popover-foreground text-[13px] font-semibold">
+                      <span className="text-popover-foreground text-sm">
                         {t(`nodes.${t_type}.label`)}
                       </span>
-                      <span className="text-muted-foreground text-[11.5px]">
+                      <span className="text-muted-foreground text-xs">
                         {t(`nodes.${t_type}.blurb`)}
                       </span>
                     </span>

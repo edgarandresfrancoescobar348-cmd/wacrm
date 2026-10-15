@@ -999,7 +999,22 @@
         "duplicateError": "Error al duplicar",
         "deleteError": "Error al eliminar"
       },
-      "loadFailed": "No se pudieron cargar las automatizaciones"
+      "loadFailed": "No se pudieron cargar las automatizaciones",
+      "searchPlaceholder": "Buscar automatizaciones",
+      "clearSearch": "Borrar búsqueda",
+      "filterAll": "Todas",
+      "filterActive": "Activas",
+      "filterPaused": "Pausadas",
+      "noMatches": "Ninguna automatización coincide",
+      "paneHint": "Selecciona una automatización para ver sus detalles o empieza con una plantilla abajo.",
+      "closeDetail": "Volver a la lista",
+      "statusActive": "Activa",
+      "statusPaused": "Pausada",
+      "statusHint": "Se ejecuta automáticamente cuando se activa el disparador",
+      "sectionStatus": "Estado",
+      "sectionActivity": "Actividad",
+      "sectionTrigger": "Disparador",
+      "emptyPaneDesc": "Elige una plantilla abajo o crea una desde cero."
     },
     "edit": {
       "loading": "Cargando...",
@@ -1244,7 +1259,21 @@
       "triggerKeyword": "Se activa con: {keywords}",
       "triggerFirstInbound": "Se activa con el primer mensaje entrante de un contacto",
       "triggerManual": "Activación manual",
-      "cloneFailedStatus": "Error al clonar: {status}"
+      "cloneFailedStatus": "Error al clonar: {status}",
+      "searchPlaceholder": "Buscar flujos",
+      "clearSearch": "Borrar búsqueda",
+      "filterAll": "Todos",
+      "filterActive": "Activos",
+      "filterDraft": "Borradores",
+      "filterArchived": "Archivados",
+      "noMatches": "Ningún flujo coincide",
+      "paneHint": "Selecciona un flujo para ver sus detalles o empieza con una plantilla abajo.",
+      "closeDetail": "Volver a la lista",
+      "openEditor": "Abrir editor",
+      "viewRuns": "Ver ejecuciones",
+      "sectionActivity": "Detalles",
+      "sectionStatus": "Estado",
+      "sectionTrigger": "Disparador"
     },
     "edit": {
       "notFound": "Flujo no encontrado.",
