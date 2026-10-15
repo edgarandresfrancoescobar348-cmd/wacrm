@@ -423,7 +423,17 @@
       "toastBulkDeleted": "연락처 {count}개가 삭제되었습니다",
       "filterByTag": "{name}(으)로 필터링",
       "removeTagFilter": "{name} 필터 제거",
-      "selectContact": "{name} 선택"
+      "selectContact": "{name} 선택",
+      "moreOptions": "더 보기",
+      "selectContacts": "연락처 선택",
+      "clearSearch": "검색 지우기",
+      "allChip": "전체",
+      "tagsChip": "태그",
+      "exitSelection": "선택 종료",
+      "selectAllShort": "모두 선택",
+      "prevPage": "이전 페이지",
+      "nextPage": "다음 페이지",
+      "emptyPaneTitle": "내 연락처"
     },
     "form": {
       "addTitle": "연락처 추가",
@@ -523,7 +533,9 @@
       "toastCustomFieldsFailed": "커스텀 필드를 저장하지 못했습니다",
       "toastTemplateSent": "\"{name}\" 템플릿을 보냈습니다",
       "toastTemplateFailed": "템플릿을 보내지 못했습니다: {reason}",
-      "networkError": "네트워크 오류"
+      "networkError": "네트워크 오류",
+      "backToList": "연락처로 돌아가기",
+      "closeDetail": "연락처 정보 닫기"
     },
     "importModal": {
       "title": "연락처 가져오기",

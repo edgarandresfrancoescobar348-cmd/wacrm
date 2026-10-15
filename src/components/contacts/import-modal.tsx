@@ -429,20 +429,20 @@ export function ImportModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-h-[min(90vh,720px)] flex-col gap-0 overflow-hidden border-border/80 bg-popover p-0 text-popover-foreground sm:max-w-2xl">
-        <div className="shrink-0 space-y-4 border-b border-border/80 px-6 pt-6 pb-5">
-          <DialogHeader className="gap-1.5">
-            <DialogTitle className="text-lg text-popover-foreground">
+      <DialogContent className="flex max-h-[min(90vh,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <div className="shrink-0 space-y-5 px-6 pt-6 pb-4">
+          <DialogHeader className="gap-1.5 px-8">
+            <DialogTitle>
               {t('title')}
             </DialogTitle>
-            <DialogDescription className="leading-relaxed text-muted-foreground"
+            <DialogDescription className="leading-relaxed"
               dangerouslySetInnerHTML={{
                 __html: t.markup('desc', {
-                  phoneCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  nameCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  emailCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  companyCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  tagsCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
+                  phoneCode: (chunks) => `<code class="rounded bg-hover-surface px-1 py-0.5 text-[11px] text-foreground">${chunks}</code>`,
+                  nameCode: (chunks) => `<code class="rounded bg-hover-surface px-1 py-0.5 text-[11px] text-foreground">${chunks}</code>`,
+                  emailCode: (chunks) => `<code class="rounded bg-hover-surface px-1 py-0.5 text-[11px] text-foreground">${chunks}</code>`,
+                  companyCode: (chunks) => `<code class="rounded bg-hover-surface px-1 py-0.5 text-[11px] text-foreground">${chunks}</code>`,
+                  tagsCode: (chunks) => `<code class="rounded bg-hover-surface px-1 py-0.5 text-[11px] text-foreground">${chunks}</code>`,
                 })
               }}
             />
@@ -457,33 +457,33 @@ export function ImportModal({
                 fileInputRef.current?.click();
             }}
             className={cn(
-              'group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-5 transition-all',
+              'group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
               file
-                ? 'border-primary/35 bg-primary/[0.04]'
-                : 'hover:border-primary/40 border-border/80 bg-background/40 hover:bg-background/70'
+                ? 'border-transparent bg-chip-active'
+                : 'border-border bg-hover-surface/40 hover:border-primary/50 hover:bg-hover-surface'
             )}
           >
             {file ? (
               <>
-                <div className="bg-primary/15 ring-primary/25 flex size-10 items-center justify-center rounded-lg ring-1">
-                  <FileText className="text-primary size-5" />
+                <div className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <FileText className="size-5" />
                 </div>
                 <p
-                  className="max-w-full truncate px-2 text-sm font-medium text-popover-foreground"
+                  className="max-w-full truncate px-2 text-sm font-medium text-chip-active-foreground"
                   title={file.name}
                 >
                   {truncateFilename(file.name)}
                 </p>
-                <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <span className="rounded-full bg-background/60 px-2.5 py-0.5 text-xs font-medium text-chip-active-foreground">
                   {t('rowsReady', { count: parsedRows.length })}
                 </span>
               </>
             ) : (
               <>
-                <div className="flex size-10 items-center justify-center rounded-lg bg-muted/80 ring-1 ring-border/80 transition-colors group-hover:bg-muted">
-                  <Upload className="size-5 text-muted-foreground group-hover:text-foreground" />
+                <div className="flex size-12 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-sm transition-colors group-hover:text-primary-text">
+                  <Upload className="size-5" />
                 </div>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-foreground">
                   {t('uploadDropzone')}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
@@ -506,24 +506,24 @@ export function ImportModal({
           {preview.length > 0 && !result && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                <p className="text-sm text-muted-foreground">
                   {t('preview', { count: preview.length })}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {tagStats.rowsWithTags > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground">
-                      <Tag className="text-primary/80 size-3" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-hover-surface px-2.5 py-0.5 text-xs text-muted-foreground">
+                      <Tag className="size-3 text-primary-text" />
                       {t('previewTags', { tags: tagStats.unique, contacts: tagStats.rowsWithTags })}
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-border ring-1 ring-border/50">
+              <div className="overflow-hidden rounded-xl bg-hover-surface/50">
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[32rem] text-xs">
                     <thead>
-                      <tr className="border-b border-border bg-background/60">
+                      <tr className="bg-hover-surface">
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
                           {t('columns.phone')}
                         </th>
@@ -545,11 +545,11 @@ export function ImportModal({
                         )}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/70">
+                    <tbody className="divide-y divide-border">
                       {preview.map((row, i) => (
                         <tr
                           key={i}
-                          className="bg-popover/40 transition-colors hover:bg-muted/30"
+                          className="transition-colors hover:bg-hover-surface"
                         >
                           <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
                             <PreviewCell
@@ -602,30 +602,30 @@ export function ImportModal({
           )}
 
           {result && (
-            <div className="rounded-xl border border-border bg-background/50 p-4">
-              <p className="text-sm font-medium text-popover-foreground">{t('importComplete')}</p>
+            <div className="rounded-xl bg-hover-surface p-4">
+              <p className="text-[15px] font-medium text-foreground">{t('importComplete')}</p>
               <div className="mt-3 flex flex-wrap gap-3">
                 {result.imported > 0 && (
-                  <div className="text-primary flex items-center gap-1.5 text-sm">
+                  <div className="flex items-center gap-1.5 text-sm text-primary-text">
                     <CheckCircle className="size-4 shrink-0" />
                     {t('resultImported', { count: result.imported })}
                   </div>
                 )}
                 {result.tagsAssigned > 0 && (
-                  <div className="flex items-center gap-1.5 text-sm text-cyan-400">
+                  <div className="flex items-center gap-1.5 text-sm text-read-ticks">
                     <CheckCircle className="size-4 shrink-0" />
                     {t('resultTags', { count: result.tagsAssigned })}
                   </div>
                 )}
                 {result.skipped > 0 && (
-                  <div className="flex items-center gap-1.5 text-sm text-amber-400">
+                  <div className="flex items-center gap-1.5 text-sm text-amber-500">
                     <AlertTriangle className="size-4 shrink-0" />
                     {t('resultSkipped', { count: result.skipped })}
                   </div>
                 )}
                 {result.invalidPhone > 0 && (
                   <div className="space-y-0.5">
-                    <div className="flex items-center gap-1.5 text-sm text-amber-400">
+                    <div className="flex items-center gap-1.5 text-sm text-amber-500">
                       <AlertTriangle className="size-4 shrink-0" />
                       {t('resultInvalidPhone', { count: result.invalidPhone })}
                     </div>
@@ -635,7 +635,7 @@ export function ImportModal({
                   </div>
                 )}
                 {result.failed > 0 && (
-                  <div className="flex items-center gap-1.5 text-sm text-red-400">
+                  <div className="flex items-center gap-1.5 text-sm text-destructive">
                     <XCircle className="size-4 shrink-0" />
                     {t('resultFailed', { count: result.failed })}
                   </div>
@@ -643,8 +643,8 @@ export function ImportModal({
               </div>
 
               {result.failedDetails.length > 0 && (
-                <div className="mt-3 space-y-1 border-t border-border/80 pt-3">
-                  <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                <div className="mt-3 space-y-1 border-t border-border pt-3">
+                  <p className="text-sm text-muted-foreground">
                     {t('failedRowsHeading')}
                   </p>
                   <ul className="max-h-32 space-y-1 overflow-y-auto text-xs">
@@ -666,12 +666,11 @@ export function ImportModal({
           )}
         </div>
 
-        <DialogFooter className="mt-0 shrink-0 gap-2 border-t border-border/80 bg-background/50 px-6 py-4 sm:justify-end">
+        <DialogFooter className="mt-0 shrink-0 gap-2 px-6 pt-2 pb-6 sm:justify-end">
           <Button
             type="button"
             variant="outline"
             onClick={() => handleOpenChange(false)}
-            className="border-border text-muted-foreground hover:bg-muted"
           >
             {result ? t('close') : t('cancel')}
           </Button>
@@ -680,7 +679,6 @@ export function ImportModal({
               type="button"
               disabled={parsedRows.length === 0 || importing}
               onClick={handleImport}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {importing && <Loader2 className="size-4 animate-spin" />}
               {parsedRows.length > 0 ? t('importBtn', { count: parsedRows.length }) : t('importBtn', { count: 0 })}
