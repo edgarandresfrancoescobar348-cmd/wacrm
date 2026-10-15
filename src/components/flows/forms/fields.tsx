@@ -44,19 +44,17 @@ export function TextRow({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
+      <label className="mb-1.5 block text-[13px] text-muted-foreground">{label}</label>
       {rows > 1 ? (
         <Textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
           rows={rows}
-          className="bg-muted"
         />
       ) : (
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="bg-muted"
         />
       )}
     </div>
@@ -78,7 +76,7 @@ export function NextNodeRow({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
+      <label className="mb-1.5 block text-[13px] text-muted-foreground">{label}</label>
       <NodeKeySelect
         value={value || null}
         nodes={allNodes}
@@ -112,7 +110,7 @@ export function NodeKeySelect({
       value={value ?? "__none__"}
       onValueChange={(v) => onChange(v === "__none__" ? null : v)}
     >
-      <SelectTrigger className={cn("bg-muted", className)}>
+      <SelectTrigger className={cn("w-full", className)}>
         <SelectValue placeholder={placeholder ?? "—"} />
       </SelectTrigger>
       <SelectContent>

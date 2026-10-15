@@ -33,7 +33,8 @@ import { FlowEditorProvider } from "./flow-editor-state";
 import { EditorHeader } from "./header";
 import { ValidationPanel } from "./validation-panel";
 import { NODE_META, nodeColors, type NodeType } from "./shared";
-import { cn } from "@/lib/utils";
+import { WaChip, WaChipRow } from "@/components/layout/wa-panel";
+import { WaFrame } from "@/components/automations/wa-frame";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 import { useTranslations } from "next-intl";
 
@@ -95,7 +96,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
 
   return (
     <FlowEditorProvider initialFlow={initialFlow} initialNodes={initialNodes}>
-      <div className="flex h-full min-h-0 flex-col">
+      <WaFrame>
         <EditorHeader />
 
         {/* ---- mode row: view toggle + node-type legend ----
@@ -103,30 +104,30 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
             the legend is lg-only), so there's no empty band above the
             stage on small screens. */}
         {!isMobile && (
-          <div className="flex items-center gap-4 px-6 py-3.5">
-            <div
-              role="group"
-              aria-label={t("editorView")}
-              className="inline-flex gap-0.5 rounded-lg border border-border bg-muted p-0.5"
-            >
-              <SegButton
-                active={effectiveView === "canvas"}
-                onClick={() => choose("canvas")}
-                icon={<GitFork className="h-3.5 w-3.5" />}
-                label={t("canvasView")}
-              />
-              <SegButton
-                active={effectiveView === "list"}
-                onClick={() => choose("list")}
-                icon={<List className="h-3.5 w-3.5" />}
-                label={t("listView")}
-              />
-            </div>
+          <div className="flex shrink-0 items-center gap-4 bg-background px-4 py-2.5">
+            <WaChipRow>
+              <div role="group" aria-label={t("editorView")} className="flex gap-2">
+                <WaChip
+                  active={effectiveView === "canvas"}
+                  onClick={() => choose("canvas")}
+                >
+                  <GitFork />
+                  {t("canvasView")}
+                </WaChip>
+                <WaChip
+                  active={effectiveView === "list"}
+                  onClick={() => choose("list")}
+                >
+                  <List />
+                  {t("listView")}
+                </WaChip>
+              </div>
+            </WaChipRow>
             <div className="ml-auto hidden flex-wrap items-center gap-x-3.5 gap-y-1.5 lg:flex">
               {LEGEND_TYPES.map((t_type) => (
                 <span
                   key={t_type}
-                  className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground"
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
                 >
                   <span
                     className="h-2.5 w-2.5 rounded-full"
@@ -140,7 +141,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
         )}
 
         {/* ---- stage: the active view, owning its own overflow ---- */}
-        <div className="relative mx-6 min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
+        <div className="wa-wallpaper relative min-h-0 flex-1 overflow-hidden border-t border-border">
           {effectiveView === "canvas" ? (
             <FlowCanvas />
           ) : (
@@ -151,10 +152,10 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
         </div>
 
         {/* ---- validation / activate-readiness bar ---- */}
-        <div className="px-6 pb-5 pt-3">
+        <div className="shrink-0 border-t border-border bg-background px-3 py-2.5 sm:px-4">
           <ValidationPanel />
         </div>
-      </div>
+      </WaFrame>
     </FlowEditorProvider>
   );
 }
@@ -179,33 +180,4 @@ function useMatchMedia(query: string): boolean {
     return () => mql.removeEventListener("change", handler);
   }, [query]);
   return matches;
-}
-
-function SegButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors",
-        active
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
 }

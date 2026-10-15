@@ -155,7 +155,7 @@ export function FlowBuilder() {
   }, [flashKey]);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-7">
+    <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 sm:px-6">
       <TriggerPanel
         state={state}
         setState={setState}
@@ -167,14 +167,14 @@ export function FlowBuilder() {
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-foreground text-sm font-semibold">
+          <h2 className="bg-surface text-muted-foreground rounded-lg px-3 py-1 text-[13px] shadow-sm">
             {t('nodesTitle', { count: state.nodes.length })}
           </h2>
           <AddNodeButton onAdd={addNode} t={t} />
         </div>
 
         {state.nodes.length === 0 ? (
-          <div className="border-border bg-card/50 text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
+          <div className="bg-surface text-muted-foreground rounded-xl p-8 text-center text-sm shadow-sm">
             {t.rich('nodesEmpty', { strong: (chunks) => <strong>{chunks}</strong> })}
           </div>
         ) : (
@@ -273,11 +273,11 @@ function TriggerPanel({
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
-    <section className="border-border bg-card rounded-lg border p-4">
-      <h2 className="text-foreground mb-3 text-sm font-semibold">{t('triggerTitle')}</h2>
+    <section className="bg-surface rounded-xl p-4 shadow-sm">
+      <h2 className="text-primary-text mb-3 text-sm font-medium">{t('triggerTitle')}</h2>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label className="text-muted-foreground mb-1 block text-xs">
+          <label className="text-muted-foreground mb-1.5 block text-[13px]">
             {t('whenLabel')}
           </label>
           <Select
@@ -291,8 +291,14 @@ function TriggerPanel({
               }))
             }
           >
-            <SelectTrigger className="bg-muted">
-              <SelectValue />
+            <SelectTrigger className="w-full">
+              <SelectValue>
+                {state.trigger_type === 'keyword'
+                  ? t('triggerKeywordTitle')
+                  : state.trigger_type === 'first_inbound_message'
+                    ? t('triggerFirstInboundTitle')
+                    : t('triggerManualTitle')}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="keyword">
@@ -309,7 +315,7 @@ function TriggerPanel({
         </div>
         {state.trigger_type === 'keyword' && (
           <div>
-            <label className="text-muted-foreground mb-1 block text-xs">
+            <label className="text-muted-foreground mb-1.5 block text-[13px]">
               {t('keywordsLabel')}
             </label>
             <KeywordsInput
@@ -355,9 +361,9 @@ function EntryPicker({
 }) {
   if (state.nodes.length === 0) return null;
   return (
-    <section className="border-border bg-card flex items-center gap-3 rounded-lg border p-3">
-      <CornerDownRight className="text-primary h-4 w-4 shrink-0" />
-      <span className="text-muted-foreground text-xs">{t('entryNodeTitle')}</span>
+    <section className="bg-surface flex items-center gap-3 rounded-xl px-4 py-3 shadow-sm">
+      <CornerDownRight className="text-primary-text size-5 shrink-0" />
+      <span className="text-muted-foreground text-[13px]">{t('entryNodeTitle')}</span>
       <NodeKeySelect
         value={state.entry_node_id}
         nodes={state.nodes}
@@ -411,12 +417,12 @@ function NodeCard({
     <div
       ref={cardRef}
       className={cn(
-        'bg-card relative overflow-hidden rounded-xl border transition-shadow duration-500',
+        'bg-surface relative overflow-hidden rounded-xl border shadow-sm transition-shadow duration-500',
         hasError
-          ? 'border-red-500/40'
+          ? 'border-destructive/50'
           : isEntry
-            ? 'border-primary/50'
-            : 'border-border',
+            ? 'border-primary/60'
+            : 'border-transparent',
         isFlashed && 'ring-primary ring-offset-background ring-2 ring-offset-2'
       )}
     >
@@ -428,37 +434,39 @@ function NodeCard({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-3 px-4 py-3 pl-5 text-left"
+        className="flex min-h-[64px] w-full items-center gap-3 px-4 py-2.5 pl-5 text-left"
       >
-        <NodeIconChip type={node.node_type} size={32} iconSize={16} />
+        <NodeIconChip
+          type={node.node_type}
+          size={40}
+          iconSize={20}
+          className="rounded-full"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className="truncate text-[11px] font-semibold tracking-wider uppercase"
+              className="truncate text-[15px] leading-5"
               style={{ color: c.text }}
             >
               {t(`nodes.${node.node_type}.label`)}
             </span>
-            <code className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[10px]">
+            <code className="bg-bubble-quote text-muted-foreground truncate rounded-md px-1.5 py-0.5 text-[11px]">
               {node.node_key}
             </code>
             {isEntry && (
-              <Badge
-                variant="outline"
-                className="border-primary/40 bg-primary/10 text-primary text-[10px]"
-              >
+              <Badge className="bg-chip-active text-chip-active-foreground shrink-0 text-[10px]">
                 {t('badgeEntry')}
               </Badge>
             )}
           </div>
           {!expanded && preview && (
-            <p className="text-muted-foreground mt-0.5 truncate text-xs">
+            <p className="text-muted-foreground mt-0.5 truncate text-[13px]">
               {preview}
             </p>
           )}
         </div>
         {hasError && (
-          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-red-400" />
+          <CircleAlert className="text-destructive size-4 shrink-0" />
         )}
         {expanded ? (
           <ChevronUp className="text-muted-foreground h-4 w-4" />
@@ -478,7 +486,7 @@ function NodeCard({
           <div className="border-border mt-4 flex items-center justify-between border-t pt-3">
             <div className="flex items-center gap-2">
               {!isEntry && (
-                <Button variant="ghost" size="sm" onClick={onSetEntry}>
+                <Button variant="outline" size="sm" onClick={onSetEntry}>
                   {t('setAsEntry')}
                 </Button>
               )}
@@ -487,14 +495,14 @@ function NodeCard({
               variant="ghost"
               size="sm"
               onClick={onRemove}
-              className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="size-4" />
               {t('removeNode')}
             </Button>
           </div>
           {issues.length > 0 && (
-            <div className="mt-3 flex flex-col gap-1 rounded-md bg-red-500/5 p-2">
+            <div className="bg-destructive/5 mt-3 flex flex-col gap-1 rounded-lg p-2">
               {issues.map((i, ix) => (
                 <IssueLine key={ix} issue={i} />
               ))}
@@ -540,7 +548,7 @@ function NodeConfigWithAdvanced({
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
+          className="text-primary-text inline-flex items-center gap-1 text-[13px] hover:opacity-80"
         >
           {showAdvanced ? (
             <ChevronUp className="h-3 w-3" />
@@ -552,7 +560,7 @@ function NodeConfigWithAdvanced({
         {showAdvanced && (
           <div className="mt-3 flex flex-col gap-3">
             <div>
-              <label className="text-muted-foreground mb-1 block text-xs">
+              <label className="text-muted-foreground mb-1.5 block text-[13px]">
                 {t('nodeKeyLabel')}
               </label>
               <Input
@@ -560,11 +568,11 @@ function NodeConfigWithAdvanced({
                 onChange={(e) =>
                   onUpdate({ node_key: slugify(e.target.value, node.node_key) })
                 }
-                className="bg-muted font-mono text-xs"
+                className="font-mono text-xs"
               />
             </div>
             {hasReplyIds && (
-              <p className="text-muted-foreground text-[10px]">
+              <p className="text-muted-foreground text-xs">
                 {t('replyIdsHint')}
               </p>
             )}
@@ -595,13 +603,13 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="border-border bg-card text-foreground hover:bg-muted inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors"
+        className="bg-primary text-primary-foreground hover:bg-primary-hover focus-visible:ring-ring inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-sm font-medium shadow-sm transition-colors outline-none focus-visible:ring-2"
         aria-label={t('addNode')}
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="size-4" />
         {t('addNode')}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="border-border bg-popover">
+      <DropdownMenuContent align="end" className="min-w-60">
         {groupNodeTypesByCategory(types).map((group, i) => (
           // A DropdownMenuGroup (base-ui Menu.Group) is REQUIRED here:
           // DropdownMenuLabel is base-ui's Menu.GroupLabel, which throws
@@ -610,14 +618,18 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
           <Fragment key={group.id}>
             {i > 0 && <DropdownMenuSeparator />}
             <DropdownMenuGroup>
-              <DropdownMenuLabel className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+              <DropdownMenuLabel className="text-muted-foreground text-[13px] font-normal">
                 {t(`categories.${group.id}`)}
               </DropdownMenuLabel>
               {group.types.map((t_type) => {
-                const meta = NODE_META[t_type];
                 return (
                   <DropdownMenuItem key={t_type} onClick={() => onAdd(t_type)}>
-                    <meta.icon className={cn('h-3.5 w-3.5', meta.color)} />
+                    <NodeIconChip
+                      type={t_type}
+                      size={28}
+                      iconSize={14}
+                      className="rounded-full"
+                    />
                     {t(`nodes.${t_type}.label`)}
                   </DropdownMenuItem>
                 );

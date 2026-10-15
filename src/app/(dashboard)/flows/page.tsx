@@ -16,12 +16,13 @@ import {
   HelpCircle,
   UserPlus,
   FileText,
+  History,
+  Zap,
 } from "lucide-react";
 
 import { useTranslations } from "next-intl";
 import { useCan } from "@/hooks/use-can";
 import { Button } from "@/components/ui/button";
-import { GatedButton } from "@/components/ui/gated-button";
 import {
   Dialog,
   DialogContent,
@@ -31,8 +32,28 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import {
+  WaChip,
+  WaChipRow,
+  WaEmptyState,
+  WaIconButton,
+  WaListLayout,
+  WaListPanel,
+  WaListRow,
+  WaPanelHeader,
+  WaSearchPill,
+} from "@/components/layout/wa-panel";
+import { WaFrame, WaFrameCenter } from "@/components/automations/wa-frame";
+import {
+  WaBackButton,
+  WaGatedPrimaryAction,
+  WaIconAvatar,
+  WaInfoHero,
+  WaInfoRow,
+  WaInfoSection,
+  WaListNotice,
+  WaStatusPill,
+} from "@/components/automations/wa-kit";
 
 /**
  * Flows list page.
@@ -61,12 +82,6 @@ const STATUS_LABELS = (t: ReturnType<typeof useTranslations>): Record<FlowRow["s
   archived: t("statusArchived"),
 });
 
-const STATUS_COLORS: Record<FlowRow["status"], string> = {
-  draft: "border-border bg-muted text-muted-foreground",
-  active: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
-  archived: "border-border bg-muted/50 text-muted-foreground",
-};
-
 interface TemplateSummary {
   slug: string;
   name: string;
@@ -93,6 +108,9 @@ export default function FlowsPage() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | FlowRow["status"]>("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -185,6 +203,7 @@ export default function FlowsPage() {
       const res = await fetch(`/api/flows/${flow.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
       setFlows((prev) => prev.filter((f) => f.id !== flow.id));
+      setSelectedId((id) => (id === flow.id ? null : id));
       toast.success(t("deleteSuccess"));
     } catch (err) {
       console.error(err);
@@ -192,77 +211,179 @@ export default function FlowsPage() {
     }
   }
 
+  const visible = flows.filter((f) => {
+    if (filter !== "all" && f.status !== filter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      f.name.toLowerCase().includes(q) ||
+      (f.description ?? "").toLowerCase().includes(q)
+    );
+  });
+  const selected = flows.find((f) => f.id === selectedId) ?? null;
+  const countOf = (status: FlowRow["status"]) =>
+    flows.filter((f) => f.status === status).length;
+
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <WaFrameCenter>
+        <Loader2 className="size-6 animate-spin text-primary-text" />
+      </WaFrameCenter>
     );
   }
 
-  return (
-    <div className="space-y-6 p-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-foreground">{t("title")}</h1>
-            <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-              {t("beta")}
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("description")}
-          </p>
-        </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason={tGate("reasons.createFlows")}
-          onClick={() => setCreateOpen(true)}
-        >
-          <Plus className="h-4 w-4" />
-          {t("newFlow")}
-        </GatedButton>
-      </header>
+  const gateTitle = tGate("readOnly", { action: tGate("reasons.createFlows") });
 
-      {flows.length === 0 ? (
-        <EmptyState
-          onCreate={() => setCreateOpen(true)}
-          canCreate={canCreate}
-          t={t}
+  const list = (
+    <WaListPanel
+      title={
+        <span className="inline-flex items-center gap-2">
+          {t("title")}
+          <span className="inline-flex h-5 items-center rounded-full bg-chip-active px-2 text-[11px] font-semibold text-chip-active-foreground">
+            {t("beta")}
+          </span>
+        </span>
+      }
+      actions={
+        <WaGatedPrimaryAction
+          icon={Plus}
+          label={t("newFlow")}
+          canAct={canCreate}
+          gateTitle={gateTitle}
+          onClick={() => setCreateOpen(true)}
         />
+      }
+      search={
+        <WaSearchPill
+          value={search}
+          onChange={setSearch}
+          placeholder={t("searchPlaceholder")}
+          clearLabel={t("clearSearch")}
+          aria-label={t("searchPlaceholder")}
+        />
+      }
+      filters={
+        <WaChipRow>
+          <WaChip active={filter === "all"} onClick={() => setFilter("all")}>
+            {t("filterAll")}
+          </WaChip>
+          <WaChip
+            active={filter === "active"}
+            count={countOf("active")}
+            onClick={() => setFilter("active")}
+          >
+            {t("filterActive")}
+          </WaChip>
+          <WaChip
+            active={filter === "draft"}
+            count={countOf("draft")}
+            onClick={() => setFilter("draft")}
+          >
+            {t("filterDraft")}
+          </WaChip>
+          <WaChip
+            active={filter === "archived"}
+            count={countOf("archived")}
+            onClick={() => setFilter("archived")}
+          >
+            {t("filterArchived")}
+          </WaChip>
+        </WaChipRow>
+      }
+    >
+      {flows.length === 0 ? (
+        <WaListNotice>{t("emptyTitle")}</WaListNotice>
+      ) : visible.length === 0 ? (
+        <WaListNotice>{t("noMatches")}</WaListNotice>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {flows.map((flow) => (
-            <FlowCard
-              key={flow.id}
-              flow={flow}
-              onEdit={() => router.push(`/flows/${flow.id}`)}
-              onDelete={() => handleDelete(flow)}
-              t={t}
-            />
-          ))}
-        </div>
+        visible.map((flow) => (
+          <WaListRow
+            key={flow.id}
+            active={flow.id === selectedId}
+            onClick={() => setSelectedId(flow.id)}
+            avatar={
+              <WaIconAvatar
+                icon={Workflow}
+                tone={flow.status === "active" ? "accent" : "muted"}
+              />
+            }
+            title={flow.name}
+            meta={STATUS_LABELS(t)[flow.status]}
+            metaHighlight={flow.status === "active"}
+            subtitle={
+              <span className="truncate">
+                {flow.description || describeTrigger(flow, t)}
+              </span>
+            }
+            trailing={
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <MessageSquare className="size-3.5" />
+                {flow.execution_count}
+              </span>
+            }
+          />
+        ))
       )}
+    </WaListPanel>
+  );
+
+  return (
+    <WaFrame>
+      <WaListLayout list={list} showMain={!!selected}>
+        {selected ? (
+          <FlowDetail
+            flow={selected}
+            onBack={() => setSelectedId(null)}
+            onEdit={() => router.push(`/flows/${selected.id}`)}
+            onRuns={() => router.push(`/flows/${selected.id}/runs`)}
+            onDelete={() => handleDelete(selected)}
+            t={t}
+          />
+        ) : (
+          <div className="flex h-full min-w-0 flex-1 overflow-y-auto bg-wallpaper">
+            <WaEmptyState
+              icon={Workflow}
+              title={flows.length === 0 ? t("emptyTitle") : t("title")}
+              description={flows.length === 0 ? t("emptyDesc") : t("paneHint")}
+              cta={
+                canCreate
+                  ? {
+                      label: flows.length === 0 ? t("createFirst") : t("newFlow"),
+                      onClick: () => setCreateOpen(true),
+                    }
+                  : undefined
+              }
+              actions={
+                canCreate
+                  ? templates.map((template) => ({
+                      icon: TEMPLATE_ICONS[template.icon] ?? FileText,
+                      label: template.name,
+                      onClick: () => void handleUseTemplate(template.slug),
+                    }))
+                  : undefined
+              }
+            />
+          </div>
+        )}
+      </WaListLayout>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        {/* `sm:max-w-4xl` not `max-w-4xl` — shadcn's DialogContent has
+        {/* `sm:max-w-3xl` not `max-w-3xl` — shadcn's DialogContent has
             `sm:max-w-sm` baked into its default classes. Without the
             sm: prefix our override applies at base only and the
             sm-scoped 384px wins at every real desktop breakpoint. */}
-        <DialogContent className="sm:max-w-4xl bg-popover text-popover-foreground">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t("createTitle")}</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {t("createDesc")}
-            </DialogDescription>
+            <DialogDescription>{t("createDesc")}</DialogDescription>
           </DialogHeader>
 
           {templates.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            <div className="space-y-2 text-left">
+              <p className="px-1 text-sm text-muted-foreground">
                 {t("startTemplate")}
               </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {templates.map((template) => {
                   const Icon = TEMPLATE_ICONS[template.icon] ?? FileText;
                   return (
@@ -271,16 +392,16 @@ export default function FlowsPage() {
                       type="button"
                       onClick={() => handleUseTemplate(template.slug)}
                       disabled={creating}
-                      className="flex flex-col gap-2.5 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted disabled:opacity-50"
+                      className="flex flex-col gap-2 rounded-xl bg-hover-surface p-4 text-left transition-colors outline-none hover:bg-chip-active focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                     >
-                      <Icon className="h-5 w-5 text-primary" />
-                      <span className="text-sm font-semibold text-popover-foreground">
+                      <WaIconAvatar icon={Icon} size={40} />
+                      <span className="text-[15px] font-medium text-foreground">
                         {template.name}
                       </span>
-                      <span className="text-xs leading-relaxed text-muted-foreground">
+                      <span className="text-[13px] leading-snug text-muted-foreground">
                         {template.description}
                       </span>
-                      <span className="mt-auto border-t border-border pt-2 text-[11px] text-muted-foreground">
+                      <span className="mt-auto pt-1 text-xs text-muted-foreground">
                         {t("nodeCount", { count: template.node_count })}
                       </span>
                     </button>
@@ -290,15 +411,14 @@ export default function FlowsPage() {
             </div>
           )}
 
-          <div className="space-y-2 border-t border-border pt-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          <div className="space-y-2 pt-2 text-left">
+            <p className="px-1 text-sm text-muted-foreground">
               {t("startBlank")}
             </p>
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder={t("placeholderName")}
-              className="bg-muted"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleCreate();
               }}
@@ -307,121 +427,107 @@ export default function FlowsPage() {
 
           <DialogFooter>
             <Button
-              variant="ghost"
+              variant="outline"
               onClick={() => setCreateOpen(false)}
               disabled={creating}
             >
               {t("cancel")}
             </Button>
             <Button onClick={handleCreate} disabled={!newName.trim() || creating}>
-              {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+              {creating && <Loader2 className="size-4 animate-spin" />}
               {t("createBlank")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </WaFrame>
   );
 }
 
-function EmptyState({
-  onCreate,
-  canCreate,
-  t,
-}: {
-  onCreate: () => void;
-  canCreate: boolean;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const tGate = useTranslations("GatedButton");
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 px-6 py-16 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-        <Workflow className="h-6 w-6 text-muted-foreground" />
-      </div>
-      <h2 className="mt-4 text-base font-medium text-foreground">
-        {t("emptyTitle")}
-      </h2>
-      <p className="mt-1 max-w-md text-sm text-muted-foreground">
-        {t("emptyDesc")}
-      </p>
-      <GatedButton
-        canAct={canCreate}
-        gateReason={tGate("reasons.createFlows")}
-        onClick={onCreate}
-        className="mt-5"
-      >
-        <Plus className="h-4 w-4" />
-        {t("createFirst")}
-      </GatedButton>
-    </div>
-  );
-}
-
-function FlowCard({
+function FlowDetail({
   flow,
+  onBack,
   onEdit,
+  onRuns,
   onDelete,
   t,
 }: {
   flow: FlowRow;
+  onBack: () => void;
   onEdit: () => void;
+  onRuns: () => void;
   onDelete: () => void;
   t: ReturnType<typeof useTranslations>;
 }) {
-  const triggerSummary = describeTrigger(flow, t);
   const StatusIcon =
     flow.status === "active"
       ? PlayCircle
       : flow.status === "archived"
         ? Archive
         : PauseCircle;
+  const statusLabel = STATUS_LABELS(t)[flow.status];
+  const trigger = describeTrigger(flow, t);
   return (
-    <div className="flex flex-col rounded-lg border border-border bg-card p-4 transition-colors hover:border-border">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Workflow className="h-4 w-4 shrink-0 text-primary" />
-          <h3 className="truncate text-sm font-semibold text-foreground">
-            {flow.name}
-          </h3>
-        </div>
-        <Badge
-          variant="outline"
-          className={cn(
-            "shrink-0 gap-1 text-[10px]",
-            STATUS_COLORS[flow.status],
-          )}
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <WaPanelHeader
+        leading={
+          <>
+            <WaBackButton label={t("closeDetail")} onClick={onBack} className="lg:hidden" />
+            <WaIconAvatar
+              icon={Workflow}
+              size={40}
+              tone={flow.status === "active" ? "accent" : "muted"}
+            />
+          </>
+        }
+        title={flow.name}
+        subtitle={statusLabel}
+        actions={
+          <>
+            <WaIconButton icon={Pencil} label={t("edit")} onClick={onEdit} />
+            <WaIconButton icon={History} label={t("viewRuns")} onClick={onRuns} />
+            <WaIconButton icon={Trash2} label={t("delete")} onClick={onDelete} />
+          </>
+        }
+        className="border-b border-border"
+      />
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-rail">
+        <WaInfoHero
+          avatar={
+            <WaIconAvatar
+              icon={Workflow}
+              size={120}
+              tone={flow.status === "active" ? "accent" : "muted"}
+            />
+          }
+          title={flow.name}
+          subtitle={flow.description || undefined}
         >
-          <StatusIcon className="h-3 w-3" />
-          {STATUS_LABELS(t)[flow.status]}
-        </Badge>
-      </div>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <WaStatusPill tone={flow.status === "active" ? "active" : "neutral"}>
+              {statusLabel}
+            </WaStatusPill>
+          </div>
+          <Button onClick={onEdit} className="mt-5">
+            <Pencil className="size-4" />
+            {t("openEditor")}
+          </Button>
+        </WaInfoHero>
 
-      <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-        {flow.description || triggerSummary}
-      </p>
+        <WaInfoSection label={t("sectionActivity")}>
+          <WaInfoRow icon={StatusIcon} label={statusLabel} value={t("sectionStatus")} />
+          <WaInfoRow icon={Zap} label={trigger} value={t("sectionTrigger")} />
+          <WaInfoRow
+            icon={MessageSquare}
+            label={t("runCount", { count: flow.execution_count })}
+            value={t("viewRuns")}
+            onClick={onRuns}
+          />
+        </WaInfoSection>
 
-      <div className="mt-4 flex items-center gap-3 text-[11px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <MessageSquare className="h-3 w-3" />
-          {t("runCount", { count: flow.execution_count })}
-        </span>
-      </div>
-
-      <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-3">
-        <Button variant="ghost" size="sm" onClick={onEdit}>
-          <Pencil className="h-3.5 w-3.5" />
-          {t("edit")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onDelete}
-          className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          {t("delete")}
-        </Button>
+        <WaInfoSection>
+          <WaInfoRow icon={Trash2} label={t("delete")} onClick={onDelete} destructive />
+        </WaInfoSection>
       </div>
     </div>
   );
