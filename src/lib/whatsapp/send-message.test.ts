@@ -196,6 +196,8 @@ vi.mock('@/lib/flows/admin-client', () => ({
 interface CapturedWrites {
   message?: Record<string, unknown>;
   conversation?: Record<string, unknown>;
+  /** Patch merged into an existing row (the provider's echo won). */
+  messageMerge?: Record<string, unknown>;
 }
 
 /**
@@ -207,7 +209,8 @@ interface CapturedWrites {
 function sendPathDb(
   templateRows: unknown[],
   captured: CapturedWrites,
-  contact: Record<string, unknown> = { id: 'ct-1', phone: '+15551234567' }
+  contact: Record<string, unknown> = { id: 'ct-1', phone: '+15551234567' },
+  opts: { echoWon?: boolean } = {}
 ): SupabaseClient {
   const conversation = {
     id: 'cv-1',
@@ -221,15 +224,19 @@ function sendPathDb(
 
   return {
     from(table: string) {
+      let lastOp = 'select';
       const builder: Record<string, unknown> = {
         select: () => builder,
         eq: () => builder,
         insert: (row: Record<string, unknown>) => {
+          lastOp = 'insert';
           if (table === 'messages') captured.message = row;
           return builder;
         },
         update: (row: Record<string, unknown>) => {
+          lastOp = 'update';
           if (table === 'conversations') captured.conversation = row;
+          if (table === 'messages') captured.messageMerge = row;
           return builder;
         },
         maybeSingle: async () => ({ data: null, error: null }),
@@ -239,6 +246,13 @@ function sendPathDb(
           }
           if (table === 'whatsapp_config') return { data: config, error: null };
           if (table === 'messages') {
+            // The provider's echo (QR mode) inserted this message first.
+            if (opts.echoWon && lastOp === 'insert') {
+              return { data: null, error: { code: '23505', message: 'duplicate key' } };
+            }
+            if (opts.echoWon && lastOp === 'update') {
+              return { data: { id: 'msg-echo' }, error: null };
+            }
             return { data: { id: 'msg-1' }, error: null };
           }
           return { data: null, error: null };
@@ -443,5 +457,23 @@ describe('sendMessageToConversation — BSUID recipients (#519)', () => {
         { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
       )
     ).rejects.toThrow(/no phone number or WhatsApp user ID/);
+  });
+});
+
+// F5 (review): on a QR connection the gateway's echo of this very send
+// (`message.sent`) can be persisted first. The send must not fail; the
+// sender's metadata is merged into that row instead (status excluded —
+// acks may already have advanced it).
+describe('sendMessageToConversation — echo already persisted (F5)', () => {
+  it('merges into the echo row instead of failing with db_error', async () => {
+    const captured: CapturedWrites = {};
+    const result = await sendMessageToConversation(
+      sendPathDb([], captured, undefined, { echoWon: true }),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'Olá' }
+    );
+    expect(result.messageId).toBe('msg-echo');
+    expect(captured.messageMerge).toMatchObject({ sender_type: 'agent', content_text: 'Olá' });
+    expect(captured.messageMerge).not.toHaveProperty('status');
   });
 });

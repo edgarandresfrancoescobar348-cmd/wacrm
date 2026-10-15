@@ -35,6 +35,7 @@ import {
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { persistOutboundMessage } from '@/lib/whatsapp/outbound-persist';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import type { MessageTemplate } from '@/types';
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
@@ -423,9 +424,11 @@ export async function sendMessageToConversation(
           )
         : (contentText ?? null);
 
-  const { data: messageRecord, error: msgError } = await db
-    .from('messages')
-    .insert({
+  // Race-safe against the provider's own echo of this send (QR mode):
+  // see persistOutboundMessage.
+  let messageRecord: { id: string };
+  try {
+    messageRecord = await persistOutboundMessage<{ id: string }>(db, {
       conversation_id: conversationId,
       sender_type: 'agent',
       content_type: messageType,
@@ -437,15 +440,13 @@ export async function sendMessageToConversation(
       message_id: waMessageId,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
-    })
-    .select()
-    .single();
-
-  if (msgError) {
+    });
+  } catch (msgError) {
+    const message = msgError instanceof Error ? msgError.message : String(msgError);
     console.error('[send-message] error inserting sent message:', msgError);
     throw new SendMessageError(
       'db_error',
-      `Message sent to Meta but failed to save to DB: ${msgError.message}`,
+      `Message sent to Meta but failed to save to DB: ${message}`,
       500
     );
   }

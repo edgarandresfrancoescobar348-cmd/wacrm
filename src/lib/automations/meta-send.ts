@@ -9,6 +9,7 @@ import {
   templateContentText,
 } from '@/lib/whatsapp/template-body'
 import { supabaseAdmin } from './admin-client'
+import { persistOutboundMessage } from '@/lib/whatsapp/outbound-persist'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('LibErrors')
@@ -153,16 +154,19 @@ async function sendViaTransport(input: SendInput): Promise<{ whatsapp_message_id
       : templateContentText(templateRow, input.params ?? [])
   const template_name = input.kind === 'template' ? input.templateName : null
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: input.conversationId,
-    sender_type: 'bot',
-    content_type,
-    content_text,
-    template_name,
-    message_id: waMessageId,
-    status: 'sent',
-  })
-  if (msgErr) {
+  // Race-safe against the provider's echo of this send (QR mode).
+  try {
+    await persistOutboundMessage(db, {
+      conversation_id: input.conversationId,
+      sender_type: 'bot',
+      content_type,
+      content_text,
+      template_name,
+      message_id: waMessageId,
+      status: 'sent',
+    })
+  } catch (persistErr) {
+    const msgErr = { message: persistErr instanceof Error ? persistErr.message : String(persistErr) }
     // The provider already has the message; record the DB error but don't pretend
     // the send failed. The engine wraps this in a log line.
     throw new Error(t('send.dbInsertFailed', { message: msgErr.message }))

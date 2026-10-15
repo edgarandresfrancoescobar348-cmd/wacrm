@@ -13,6 +13,7 @@ import {
   type WhatsAppTransport,
 } from '@/lib/whatsapp/transport'
 import { supabaseAdmin } from './admin-client'
+import { persistOutboundMessage } from '@/lib/whatsapp/outbound-persist'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('LibErrors')
@@ -178,16 +179,19 @@ export async function engineSendText(
     (await transport.sendText({ to, text: args.text })).messageId,
   )
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: 'text',
-    content_text: args.text,
-    message_id: waMessageId,
-    status: 'sent',
-    ai_generated: args.aiGenerated ?? false,
-  })
-  if (msgErr) {
+  // Race-safe against the provider's echo of this send (QR mode).
+  try {
+    await persistOutboundMessage(db, {
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: 'text',
+      content_text: args.text,
+      message_id: waMessageId,
+      status: 'sent',
+      ai_generated: args.aiGenerated ?? false,
+    })
+  } catch (persistErr) {
+    const msgErr = { message: persistErr instanceof Error ? persistErr.message : String(persistErr) }
     throw new Error(t('send.dbInsertFailed', { message: msgErr.message }))
   }
 
@@ -247,15 +251,18 @@ export async function engineSendMedia(
   // content_text carries the caption (or empty) so the conversation
   // list preview shows something meaningful when the user glances at it.
   const preview = args.caption?.trim() || `[${args.kind}]`
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: args.kind,
-    content_text: args.caption ?? null,
-    message_id: waMessageId,
-    status: 'sent',
-  })
-  if (msgErr) {
+  // Race-safe against the provider's echo of this send (QR mode).
+  try {
+    await persistOutboundMessage(db, {
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: args.kind,
+      content_text: args.caption ?? null,
+      message_id: waMessageId,
+      status: 'sent',
+    })
+  } catch (persistErr) {
+    const msgErr = { message: persistErr instanceof Error ? persistErr.message : String(persistErr) }
     throw new Error(t('send.dbInsertFailed', { message: msgErr.message }))
   }
 
@@ -367,16 +374,19 @@ async function sendInteractiveViaTransport(
     (await transport.sendInteractive({ to, payload: interactivePayload })).messageId,
   )
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: input.conversationId,
-    sender_type: 'bot',
-    content_type: 'interactive',
-    content_text: input.bodyText,
-    interactive_payload: interactivePayload,
-    message_id: waMessageId,
-    status: 'sent',
-  })
-  if (msgErr) {
+  // Race-safe against the provider's echo of this send (QR mode).
+  try {
+    await persistOutboundMessage(db, {
+      conversation_id: input.conversationId,
+      sender_type: 'bot',
+      content_type: 'interactive',
+      content_text: input.bodyText,
+      interactive_payload: interactivePayload,
+      message_id: waMessageId,
+      status: 'sent',
+    })
+  } catch (persistErr) {
+    const msgErr = { message: persistErr instanceof Error ? persistErr.message : String(persistErr) }
     throw new Error(t('send.dbInsertFailed', { message: msgErr.message }))
   }
 

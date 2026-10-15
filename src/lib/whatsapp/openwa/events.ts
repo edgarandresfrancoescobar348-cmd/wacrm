@@ -367,10 +367,11 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       const chatId = msg.chatId ?? msg.to ?? ''
       const phone = await resolveChatPhone(ctx, chatId)
       if (!phone) return 'ignored_no_phone'
-      // Our own API sends echo back here too, usually before the send
-      // call has even returned. Give the sending path time to persist
-      // its row so this becomes a no-op instead of a duplicate.
-      await new Promise((r) => setTimeout(r, ECHO_SETTLE_MS))
+      // Our own API sends echo back here too, often before the send call
+      // has returned. Whichever writes first wins the unique
+      // (conversation_id, message_id); the sender then merges its own
+      // metadata into the row (persistOutboundMessage) — no timing
+      // assumption, and the sender never fails because of the echo.
       await recordOutboundEcho(
         {
           provider: 'openwa',
@@ -485,8 +486,6 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       return 'ignored'
   }
 }
-
-export const ECHO_SETTLE_MS = 4000
 
 /** Session lifecycle → `whatsapp_openwa_config` (+ whatsapp_config.status). */
 async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promise<void> {

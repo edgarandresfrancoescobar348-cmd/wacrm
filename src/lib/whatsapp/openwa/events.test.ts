@@ -26,7 +26,6 @@ vi.mock('@/lib/whatsapp/mirror-inbound-media', () => ({
 }))
 
 import {
-  ECHO_SETTLE_MS,
   handleOpenWaEvent,
   isIgnorableChat,
   phoneFromChatId,
@@ -272,24 +271,18 @@ describe('session events', () => {
 })
 
 describe('message.sent (phone echo)', () => {
-  it('waits for the API send path, then records the echo', async () => {
-    vi.useFakeTimers()
-    try {
-      const p = handleOpenWaEvent(
-        env('message.sent', { id: 'true_5511988887777@c.us_AB', chatId: '5511988887777@c.us', to: '5511988887777@c.us', body: 'enviado do celular', type: 'text', fromMe: true }),
-        ctx(),
-      )
-      await vi.advanceTimersByTimeAsync(ECHO_SETTLE_MS)
-      expect(await p).toBe('echo')
-      expect(h.recordOutboundEcho).toHaveBeenCalledWith(
-        expect.objectContaining({ messageId: 'true_5511988887777@c.us_AB', identity: expect.objectContaining({ phone: '5511988887777', name: '' }) }),
-        'acct-1',
-        'user-1',
-        { throwOnFailure: true },
-      )
-    } finally {
-      vi.useRealTimers()
-    }
+  it('records the echo straight away (no fixed settle delay)', async () => {
+    const outcome = await handleOpenWaEvent(
+      env('message.sent', { id: 'true_5511988887777@c.us_AB', chatId: '5511988887777@c.us', to: '5511988887777@c.us', body: 'enviado do celular', type: 'text', fromMe: true }),
+      ctx(),
+    )
+    expect(outcome).toBe('echo')
+    expect(h.recordOutboundEcho).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'true_5511988887777@c.us_AB', identity: expect.objectContaining({ phone: '5511988887777', name: '' }) }),
+      'acct-1',
+      'user-1',
+      { throwOnFailure: true },
+    )
   })
 })
 

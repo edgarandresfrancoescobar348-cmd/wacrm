@@ -95,7 +95,9 @@ vi.mock('@/lib/flows/admin-client', () => ({
   supabaseAdmin: () => ({ from: (n: string) => table(n), rpc: async () => ({ error: null }) }),
 }))
 
-import { IngestFailure, ingestInboundMessage, type InboundMessage } from './ingest'
+import { IngestFailure, ingestInboundMessage, recordOutboundEcho, type InboundMessage } from './ingest'
+import { persistOutboundMessage } from '@/lib/whatsapp/outbound-persist'
+import { supabaseAdmin } from '@/lib/flows/admin-client'
 
 const ACCOUNT = 'acct-1'
 const PHONE = '5511999999999'
@@ -154,5 +156,61 @@ describe('F3 — failures propagate so the provider redelivers', () => {
     expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
     await deferred[0]()
     expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
+  })
+})
+
+// F5 (review): the provider's echo of our own send (message.sent) and the
+// sender's persistence race for the same (conversation_id, message_id).
+describe('F5 — echo vs sender reconcile, the sender never fails', () => {
+  const MENU = { kind: 'buttons', body: 'Escolha', buttons: [{ id: 'a', title: 'A' }] }
+  const sender = {
+    conversation_id: 'conv-1',
+    message_id: 'true_5511999999999@c.us_X1',
+    sender_type: 'bot' as const,
+    content_type: 'interactive',
+    content_text: 'Escolha',
+    interactive_payload: MENU,
+    status: 'sent',
+    ai_generated: false,
+  }
+  const echo = () =>
+    recordOutboundEcho(
+      {
+        provider: 'openwa',
+        messageId: sender.message_id,
+        timestamp: '1792100000',
+        type: 'text',
+        identity: { phone: PHONE, name: '', waUserId: null, waParentUserId: null, waUsername: null },
+        text: 'Escolha\n\n1. A',
+        resolveContent: async () => ({ contentText: 'Escolha\n\n1. A', mediaUrl: null, mediaType: null, interactiveReplyId: null }),
+      },
+      ACCOUNT,
+      'owner',
+      { throwOnFailure: true },
+    )
+
+  it('the race is real: a plain insert after the echo hits the unique index', async () => {
+    await echo()
+    const { error } = await supabaseAdmin().from('messages').insert(sender).select().single()
+    expect(error).toMatchObject({ code: '23505' })
+  })
+
+  it('echo first, then the sender: one row carrying the sender metadata', async () => {
+    expect(await echo()).toBe('recorded')
+    // an ack already moved it on
+    h.tables.messages[0].status = 'read'
+    await expect(persistOutboundMessage(supabaseAdmin(), sender)).resolves.toBeTruthy()
+    const rows = h.tables.messages.filter((m) => m.message_id === sender.message_id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ sender_type: 'bot', content_type: 'interactive', interactive_payload: MENU })
+    expect(rows[0].status).toBe('read')
+  })
+
+  it('sender first, then the echo: the echo is a no-op', async () => {
+    await persistOutboundMessage(supabaseAdmin(), sender)
+    expect(await echo()).toBe('duplicate')
+    const rows = h.tables.messages.filter((m) => m.message_id === sender.message_id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ sender_type: 'bot', content_type: 'interactive' })
   })
 })
