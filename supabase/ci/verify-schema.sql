@@ -133,6 +133,23 @@ BEGIN
       'idx_automation_pending_awaiting_reply is missing — migration 045 did not apply';
   END IF;
 
+  -- 047: the OpenWA connection. A typo'd table name would apply cleanly
+  -- and leave QR-code mode with nowhere to keep its session; a missing
+  -- RLS flag would expose the encrypted gateway key to PostgREST.
+  IF to_regclass('public.whatsapp_openwa_config') IS NULL THEN
+    RAISE EXCEPTION 'whatsapp_openwa_config is missing — migration 047 did not apply';
+  END IF;
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.whatsapp_openwa_config'::regclass) THEN
+    RAISE EXCEPTION 'whatsapp_openwa_config must have RLS enabled — migration 047';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'whatsapp_config'
+      AND column_name = 'provider'
+  ) THEN
+    RAISE EXCEPTION 'whatsapp_config.provider is missing — migration 047 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;
