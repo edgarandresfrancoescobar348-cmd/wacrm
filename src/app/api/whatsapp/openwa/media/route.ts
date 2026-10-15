@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { untrustedMediaHeaders } from '@/lib/media/safe-inline'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { downloadOpenWaMedia, OpenWaError } from '@/lib/whatsapp/openwa/client'
 import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
@@ -47,13 +48,11 @@ export async function GET(request: Request) {
       chatId,
       messageId,
     )
+    // The gateway is tenant-chosen: only inert types render inline;
+    // anything else downloads, sandboxed (see untrustedMediaHeaders).
     return new Response(new Uint8Array(bytes), {
       status: 200,
-      headers: {
-        'Content-Type': mimeType || owned.media_type || 'application/octet-stream',
-        'Cache-Control': 'private, max-age=3600',
-        'X-Content-Type-Options': 'nosniff',
-      },
+      headers: untrustedMediaHeaders(owned.media_type || mimeType, 'whatsapp-media'),
     })
   } catch (err) {
     if (err instanceof OpenWaError) {
