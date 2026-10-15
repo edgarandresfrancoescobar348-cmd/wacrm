@@ -9,6 +9,46 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+Second WhatsApp connection mode: **QR Code** through a self-hosted OpenWA
+gateway, next to the official Meta Cloud API.
+
+> **Migration required:** apply `supabase/migrations/047_whatsapp_openwa.sql`
+> (adds `whatsapp_config.provider`, the service-role-only
+> `whatsapp_openwa_config` + `openwa_webhook_deliveries` tables,
+> `messages.revoked_at/edited_at` and `message_templates.origin`; additive,
+> existing rows keep working as official-API accounts).
+
+### Added
+
+- **Settings → WhatsApp: two modes.** "API oficial" (unchanged) or "QR Code":
+  gateway URL + API key with "Testar conexão", "Conectar" (session + signed
+  webhook + live QR that refreshes until scanned), pairing code, connected
+  state with "Desconectar" / "Reiniciar sessão", restriction and reconnect
+  states, broadcast pacing and a ban-risk notice. One mode is active per
+  account; switching keeps contacts and conversations. See `docs/openwa.md`.
+- **Every feature on both modes** through one transport boundary: inbox
+  (text, media, voice notes, quoted replies, reactions, typing/read),
+  broadcasts (wizard, API, resume — paced on QR), templates (local and sent
+  as text on QR), automations, flows (buttons/lists as numbered menus mapped
+  back to the option id), AI auto-reply, the public API and the MCP server.
+- **Inbound on QR** through the same ingestion path as Meta: media mirrored
+  to storage, ticks from `message.ack`, failures, reactions, deleted/edited
+  labels, messages typed on the phone; groups and status are ignored.
+- Optional `openwa` compose profile; `OPENWA_ALLOWED_HOSTS`,
+  `OPENWA_WEBHOOK_BASE_URL`, `OPENWA_URL`, `OPENWA_API_KEY` env vars.
+
+### Security
+
+- `POST /api/whatsapp/openwa/webhook` fails closed: unknown session, missing
+  secret or a bad `X-OpenWA-Signature` (HMAC-SHA256, constant-time) is 401;
+  deliveries are de-duplicated on their idempotency key.
+- The gateway URL is SSRF-guarded (operator allow-list for private hosts),
+  redirects are never followed, the API key and webhook secret are encrypted
+  and never sent to the browser, and every new route is admin-only and
+  rate-limited.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

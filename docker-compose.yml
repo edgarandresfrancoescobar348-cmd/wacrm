@@ -38,3 +38,38 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # ----------------------------------------------------------------
+  # Optional: OpenWA gateway for the "QR Code" connection mode
+  # (Settings → WhatsApp). Off by default — start it with
+  #   docker compose --profile openwa up -d
+  # Its admin API key is generated on first boot:
+  #   docker compose exec openwa cat /app/data/.api-key
+  # In Settings → WhatsApp → QR Code use URL http://openwa:2785 and that
+  # key, and set in .env.local:
+  #   OPENWA_ALLOWED_HOSTS=openwa             (private host allow-list)
+  #   OPENWA_WEBHOOK_BASE_URL=http://app:3000 (where OpenWA posts events)
+  # See docs/openwa.md. Pin a release instead of `latest` in production.
+  # ----------------------------------------------------------------
+  openwa:
+    image: ghcr.io/rmyndharis/openwa:${OPENWA_VERSION:-latest}
+    profiles: ['openwa']
+    restart: unless-stopped
+    stop_grace_period: 75s
+    environment:
+      NODE_ENV: production
+      PORT: 2785
+      # whatsapp-web.js (default, lower ban risk) or baileys. Changing it
+      # requires re-scanning the QR code.
+      ENGINE_TYPE: ${OPENWA_ENGINE_TYPE:-whatsapp-web.js}
+      # Lets OpenWA deliver webhooks to the wacrm container on the
+      # private compose network.
+      SSRF_ALLOWED_HOSTS: app
+    volumes:
+      - openwa-data:/app/data
+    # Loopback only: the dashboard + API are an admin surface.
+    ports:
+      - '127.0.0.1:${OPENWA_HOST_PORT:-2785}:2785'
+
+volumes:
+  openwa-data:

@@ -14,7 +14,11 @@ import { handle, jsonResult } from './shared.js';
 
 const templateSchema = z
   .object({
-    name: z.string().describe('Meta-approved template name.'),
+    name: z
+      .string()
+      .describe(
+        'Template name — Meta-approved on the official API; on a QR-code (OpenWA) connection a local template, rendered and sent as text.',
+      ),
     language: z.string().describe('Template language code, e.g. "en_US".'),
     params: z
       .array(z.string())
@@ -29,7 +33,7 @@ export function registerWriteTools(server: McpServer, client: WacrmClient): void
     {
       title: 'Send WhatsApp message',
       description:
-        'Send a WhatsApp message to a phone number (E.164, e.g. +14155550123). The contact and conversation are found-or-created automatically. Use type "text" for a free-form message (only valid inside the 24-hour customer-service window), or "template" to send an approved template (required to open a new conversation). Media types (image/video/document/audio) require a media_url. This sends a real message to a real person — confirm the recipient and content with the user before calling.',
+        'Send a WhatsApp message to a phone number (E.164, e.g. +14155550123). The contact and conversation are found-or-created automatically. Use type "text" for a free-form message (on the official API only valid inside the 24-hour customer-service window; a QR-code connection has no window), or "template" to send a template (on the official API required to open a new conversation). Media types (image/video/document/audio) require a media_url. This sends a real message to a real person — confirm the recipient and content with the user before calling.',
       inputSchema: {
         to: z.string().describe('Recipient phone number in E.164 format, e.g. +14155550123.'),
         type: z
