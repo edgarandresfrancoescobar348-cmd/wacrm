@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ComponentProps, ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { Search, User, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -469,7 +469,8 @@ function initialsOf(name: string): string {
 }
 
 /**
- * Round avatar: photo when `src` is set, otherwise tinted initials.
+ * Round avatar: photo when `src` is set and loads, otherwise tinted
+ * initials (also when the image fails — no broken-image glyph).
  * Sizes used by WA: 49 (list rows), 40 (chat header), 32 (rail),
  * 200 (contact info).
  */
@@ -484,14 +485,23 @@ export function WaAvatar({
   size?: number;
   className?: string;
 }) {
+  // Remember which URL failed (not just "failed") so a new `src` gets a
+  // fresh attempt without a reset effect.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const style = { width: size, height: size, fontSize: Math.round(size * 0.38) };
-  if (src) {
+  if (src && src !== failedSrc) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
         alt=""
         style={style}
+        onError={() => setFailedSrc(src)}
+        // An image that already failed before hydration never fires
+        // onError again; catch it when the element mounts.
+        ref={(el) => {
+          if (el && el.complete && el.naturalWidth === 0) setFailedSrc(src);
+        }}
         className={cn("shrink-0 rounded-full bg-hover-surface object-cover", className)}
       />
     );
