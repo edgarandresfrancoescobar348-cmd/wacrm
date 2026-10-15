@@ -87,6 +87,12 @@ export interface IngestOptions {
   runBots?: boolean
   /** Map typed replies to the last numbered menu we sent (QR mode). */
   mapNumberedMenuReplies?: boolean
+  /**
+   * Called once when this delivery created the contact — lets a
+   * provider enrich it (OpenWA: profile picture). Best-effort; errors
+   * are logged, never thrown.
+   */
+  onContactCreated?: (contact: { id: string }) => Promise<void>
 }
 
 /** Why an outbound message failed, provider-neutral. */
@@ -483,6 +489,13 @@ export async function ingestInboundMessage(
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
+  if (contactOutcome.wasCreated && options.onContactCreated) {
+    try {
+      await options.onContactCreated(contactRecord)
+    } catch (err) {
+      console.warn('[webhook] onContactCreated hook failed:', err)
+    }
+  }
 
   // Find or create conversation
   const convResult = await findOrCreateConversation(
@@ -825,6 +838,111 @@ export async function ingestInboundMessage(
     content_type: contentType,
     text: contentText,
   })
+}
+
+/**
+ * A message the business sent from outside wacrm (typed on the paired
+ * phone itself — OpenWA's `message.sent`). Recorded as an agent message
+ * so the CRM timeline matches the phone. Our own API sends come back
+ * through the same event; the (conversation_id, message_id) unique
+ * index turns those into no-ops. Never runs bots, never bumps unread.
+ */
+export async function recordOutboundEcho(
+  echo: Omit<InboundMessage, 'reaction'>,
+  accountId: string,
+  configOwnerUserId: string
+): Promise<'recorded' | 'duplicate' | 'skipped'> {
+  if (!hasUsableIdentity(echo.identity)) return 'skipped'
+  const contactOutcome = await findOrCreateContact(
+    accountId,
+    configOwnerUserId,
+    // The recipient's profile name is not in an outbound echo — never
+    // let it rename the contact.
+    { ...echo.identity, name: '' }
+  )
+  if (!contactOutcome) return 'skipped'
+  const convResult = await findOrCreateConversation(
+    accountId,
+    configOwnerUserId,
+    contactOutcome.contact.id
+  )
+  if (!convResult) return 'skipped'
+  const conversationId = convResult.conversation.id
+
+  const { data: existing } = await supabaseAdmin()
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('message_id', echo.messageId)
+    .maybeSingle()
+  if (existing) return 'duplicate'
+
+  const { contentText, mediaUrl, mediaType } = await echo.resolveContent({ accountId })
+  const ALLOWED = new Set(['text', 'image', 'document', 'audio', 'video', 'location'])
+  const contentType = ALLOWED.has(echo.type)
+    ? echo.type
+    : echo.type === 'sticker'
+      ? 'image'
+      : 'text'
+
+  let replyTo: string | null = null
+  if (echo.contextMessageId) {
+    replyTo = await lookupInternalIdByProviderId(echo.contextMessageId, conversationId)
+  }
+
+  const { data: inserted, error } = await supabaseAdmin()
+    .from('messages')
+    .upsert(
+      {
+        conversation_id: conversationId,
+        sender_type: 'agent',
+        content_type: contentType,
+        content_text: contentText,
+        media_url: mediaUrl,
+        media_type: mediaType,
+        message_id: echo.messageId,
+        status: 'sent',
+        created_at: new Date(parseInt(echo.timestamp) * 1000).toISOString(),
+        reply_to_message_id: replyTo,
+      },
+      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
+    )
+    .select('id')
+  if (error) {
+    console.error('[webhook] outbound echo insert failed:', error.message)
+    return 'skipped'
+  }
+  if (!inserted || inserted.length === 0) return 'duplicate'
+
+  await supabaseAdmin()
+    .from('conversations')
+    .update({
+      last_message_text: contentText || `[${echo.type}]`,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId)
+    .eq('account_id', accountId)
+  return 'recorded'
+}
+
+/**
+ * Mark one of the account's messages as deleted-for-everyone or edited
+ * by the customer. Account-scoped; the original text is kept on revoke.
+ */
+export async function applyMessageMutation(
+  accountId: string,
+  providerMessageId: string,
+  mutation: { kind: 'revoked'; at: string } | { kind: 'edited'; at: string; text: string }
+): Promise<void> {
+  const update: Record<string, unknown> =
+    mutation.kind === 'revoked'
+      ? { revoked_at: mutation.at }
+      : { edited_at: mutation.at, content_text: mutation.text }
+  const { error } = await updateAccountMessages(accountId, providerMessageId, update)
+  if (error) {
+    console.error(`[webhook] message ${mutation.kind} update failed:`, error.message)
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

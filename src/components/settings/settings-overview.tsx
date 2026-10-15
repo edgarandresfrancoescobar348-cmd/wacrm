@@ -27,6 +27,7 @@ interface OverviewCounts {
 interface WhatsAppStatus {
   configured: boolean;
   connected: boolean;
+  provider: 'meta' | 'openwa';
 }
 
 export function SettingsOverview({
@@ -122,15 +123,19 @@ export function SettingsOverview({
       const [row, health] = await Promise.allSettled([
         supabase
           .from('whatsapp_config')
-          .select('phone_number_id')
+          .select('phone_number_id, provider')
           .eq('account_id', acctId)
           .maybeSingle(),
         fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
       ]);
       if (cancelled) return;
+      const cfg = row.status === 'fulfilled' ? row.value.data : null;
+      // Either connection mode counts (migration 047): a QR-code account
+      // has no Meta phone_number_id.
       setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
+        configured: !!cfg && (cfg.provider === 'openwa' || !!cfg.phone_number_id),
         connected: health.status === 'fulfilled' && !!health.value?.connected,
+        provider: cfg?.provider === 'openwa' ? 'openwa' : 'meta',
       });
       setWhatsappLoading(false);
     })();
@@ -164,7 +169,8 @@ export function SettingsOverview({
         t('notSetup')
       ) : whatsapp.connected ? (
         <>
-          <StatusDot tone="ok" /> {t('connected')}
+          <StatusDot tone="ok" /> {t('connected')} ·{' '}
+          {whatsapp.provider === 'openwa' ? t('viaQrCode') : t('viaOfficialApi')}
         </>
       ) : (
         <>

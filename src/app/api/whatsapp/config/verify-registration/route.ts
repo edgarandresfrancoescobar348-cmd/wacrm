@@ -64,7 +64,8 @@ export async function GET() {
     .eq('account_id', accountId)
     .maybeSingle()
 
-  if (!config) {
+  // A QR-code-only account (migration 047) has no Meta number to probe.
+  if (!config || !config.access_token || !config.phone_number_id) {
     return NextResponse.json({
       live: false,
       checks: { config_exists: false },

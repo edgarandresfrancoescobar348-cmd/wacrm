@@ -99,7 +99,7 @@ function metaFailure(err: unknown, step: MetaConnectStep, ctx: MetaErrorContext)
  *   { connected: false, reason: 'meta_api_error',   message: '...',
  *     meta: { code, subcode, fbtrace_id, step, field, message } }
  */
-export async function GET() {
+export async function GET(request?: Request) {
   try {
     const supabase = await createClient()
 
@@ -126,7 +126,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, waba_id, access_token, status')
+      .select('phone_number_id, waba_id, access_token, status, provider')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -151,6 +151,30 @@ export async function GET() {
 
     // Try to decrypt the stored token with the current ENCRYPTION_KEY.
     // If this fails, the key changed (or was never consistent across envs).
+    // QR-code mode (migration 047): the connection's health is the
+    // OpenWA session state the webhook / settings page keep mirrored into
+    // `status`. The Meta checks below don't apply.
+    // `?mode=meta` (the Meta settings panel) always checks the Meta
+    // credentials, even while QR mode is the active connection.
+    const forceMeta =
+      request ? new URL(request.url).searchParams.get('mode') === 'meta' : false
+    if (config.provider === 'openwa' && !forceMeta) {
+      return NextResponse.json({
+        connected: config.status === 'connected',
+        provider: 'openwa',
+        ...(config.status === 'connected'
+          ? {}
+          : { reason: 'openwa_disconnected', message: t('whatsappConfig.openwaDisconnected') }),
+      })
+    }
+
+    if (!config.access_token || !config.phone_number_id) {
+      return NextResponse.json(
+        { connected: false, reason: 'no_config', message: t('whatsappConfig.noConfig') },
+        { status: 200 }
+      )
+    }
+
     let accessToken: string
     try {
       accessToken = decrypt(config.access_token)
@@ -225,6 +249,7 @@ export async function GET() {
 
     return NextResponse.json({
       connected: true,
+      provider: 'meta',
       phone_info: phoneInfo,
       waba_subscription: wabaSubscription,
     })
@@ -504,6 +529,9 @@ export async function POST(request: Request) {
     // store the credentials and the error so the UI can guide the
     // user through a retry.
     const baseRow = {
+      // Saving Meta credentials makes the official API the active
+      // connection (migration 047); QR-code settings stay saved.
+      provider: 'meta',
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
@@ -611,10 +639,32 @@ export async function DELETE() {
       )
     }
 
-    const { error: deleteError } = await supabase
+    // In QR-code mode the row is the active connection's record — reset
+    // only the Meta half of it instead of dropping the row.
+    const { data: current } = await supabase
       .from('whatsapp_config')
-      .delete()
+      .select('provider')
       .eq('account_id', accountId)
+      .maybeSingle()
+
+    const { error: deleteError } =
+      current?.provider === 'openwa'
+        ? await supabase
+            .from('whatsapp_config')
+            .update({
+              phone_number_id: null,
+              waba_id: null,
+              access_token: null,
+              verify_token: null,
+              registered_at: null,
+              subscribed_apps_at: null,
+              last_registration_error: null,
+            })
+            .eq('account_id', accountId)
+        : await supabase
+            .from('whatsapp_config')
+            .delete()
+            .eq('account_id', accountId)
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)

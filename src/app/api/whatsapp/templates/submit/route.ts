@@ -16,6 +16,7 @@ import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import { getT } from '@/lib/i18n/translate'
+import { loadAccountProvider } from '@/lib/whatsapp/transport'
 
 const t = getT('Api')
 
@@ -32,6 +33,8 @@ function buildUpsertRow(
     status: 'DRAFT' | string
     metaTemplateId: string | null
     submissionError: string | null
+    /** 'local' on a QR-code connection (migration 047). */
+    origin?: 'meta' | 'local'
   },
 ) {
   return {
@@ -61,6 +64,7 @@ function buildUpsertRow(
     // webhook will set it again if Meta still rejects.
     rejection_reason: extras.submissionError ? null : null,
     last_submitted_at: new Date().toISOString(),
+    origin: extras.origin ?? 'meta',
   }
 }
 
@@ -128,6 +132,28 @@ export async function POST(request: Request) {
         { error: e instanceof Error ? e.message : t('templates.validationFailed') },
         { status: 400 },
       )
+    }
+
+    // QR-code connection (OpenWA): Meta approval doesn't exist there.
+    // The template is saved locally, ready to use at once — sends render
+    // it and deliver it as text (transport/openwa.ts).
+    if ((await loadAccountProvider(supabase, accountId)) === 'openwa') {
+      const { data: row, error: upsertErr } = await upsertTemplateRow(
+        supabase,
+        buildUpsertRow(accountId, userId, payload, {
+          status: 'APPROVED',
+          metaTemplateId: null,
+          submissionError: null,
+          origin: 'local',
+        }),
+      )
+      if (upsertErr) {
+        return NextResponse.json(
+          { error: t('templates.localSaveFailed', { message: upsertErr.message }) },
+          { status: 500 },
+        )
+      }
+      return NextResponse.json({ success: true, template: row, local: true })
     }
 
     const dryRun =

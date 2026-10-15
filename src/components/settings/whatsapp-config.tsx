@@ -61,7 +61,18 @@ type WabaSubscription = {
   error?: string;
 };
 
-export function WhatsAppConfig() {
+export function WhatsAppConfig({
+  embedded = false,
+  active = true,
+  onActivated,
+}: {
+  /** Rendered inside WhatsAppSettings, which owns the panel head. */
+  embedded?: boolean;
+  /** Is the official API the account's ACTIVE connection? */
+  active?: boolean;
+  /** Called after this panel made the official API active. */
+  onActivated?: () => void;
+} = {}) {
   const t = useTranslations('Settings.whatsapp');
   const locale = useLocale();
   const supabase = createClient();
@@ -193,7 +204,7 @@ export function WhatsAppConfig() {
       // Then verify health via the API (decrypts token + pings Meta)
       if (data) {
         try {
-          const res = await fetch('/api/whatsapp/config', { method: 'GET' });
+          const res = await fetch('/api/whatsapp/config?mode=meta', { method: 'GET' });
           const payload = await res.json();
 
           if (payload.connected) {
@@ -265,6 +276,30 @@ export function WhatsAppConfig() {
       toast.error(t('mirrorInboundSaveFailed'));
     } finally {
       setSavingMirror(false);
+    }
+  }
+
+  const [activating, setActivating] = useState(false);
+  async function handleActivate() {
+    setActivating(true);
+    try {
+      const res = await fetch('/api/whatsapp/provider', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'meta' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || t('modeSwitchFailed'));
+        return;
+      }
+      toast.success(t('modeSwitchedMeta'));
+      onActivated?.();
+      if (accountId) await fetchConfig(accountId);
+    } catch {
+      toast.error(t('modeSwitchFailed'));
+    } finally {
+      setActivating(false);
     }
   }
 
@@ -382,6 +417,8 @@ export function WhatsAppConfig() {
       }
 
       if (accountId) await fetchConfig(accountId);
+      // Saving Meta credentials makes the official API the active mode.
+      onActivated?.();
     } catch (err) {
       console.error('Save error:', err);
       toast.error(t('saveFailed'));
@@ -393,7 +430,7 @@ export function WhatsAppConfig() {
   async function handleTestConnection() {
     try {
       setTesting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'GET' });
+      const res = await fetch('/api/whatsapp/config?mode=meta', { method: 'GET' });
       const payload = await res.json();
 
       if (payload.connected) {
@@ -543,13 +580,35 @@ export function WhatsAppConfig() {
 
   return (
     <section className="animate-in fade-in-50 duration-200">
-      <SettingsPanelHead
-        title={t("title")}
-        description={t("description")}
-      />
+      {!embedded && (
+        <SettingsPanelHead
+          title={t("title")}
+          description={t("description")}
+        />
+      )}
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">
+        {/* Saved but not the active connection (QR code is) */}
+        {!active && (
+          <Alert className="border-transparent bg-hover-surface">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <AlertTitle className="mb-1 text-foreground">{t('inactiveTitle')}</AlertTitle>
+                <AlertDescription className="text-muted-foreground text-sm">
+                  {config?.phone_number_id ? t('inactiveDesc') : t('inactiveEmptyDesc')}
+                </AlertDescription>
+              </div>
+              {config?.phone_number_id && canEditSettings && (
+                <Button size="sm" onClick={handleActivate} disabled={activating}>
+                  {activating && <Loader2 className="size-4 animate-spin" />}
+                  {t('useThisMode')}
+                </Button>
+              )}
+            </div>
+          </Alert>
+        )}
+
         {/* Corrupted-token reset banner */}
         {showResetBanner && (
           <Alert className="border-transparent bg-amber-500/10">

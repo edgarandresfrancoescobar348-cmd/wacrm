@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import { StepCard, StepHeading, StepNav } from './wizard-ui';
 import { useLocale, useTranslations } from 'next-intl';
+import { ShieldAlert } from 'lucide-react';
+import { useWhatsAppConnection } from '@/hooks/use-whatsapp-connection';
 import { formatNumber } from '@/lib/locale-format';
 
 interface Step4Props {
@@ -58,6 +60,9 @@ export function Step4ScheduleSend({
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
+  const connection = useWhatsAppConnection();
+  const qrMode = connection.provider === 'openwa';
+  const delaySeconds = Math.round((connection.broadcastDelayMs ?? 8000) / 1000);
 
   useEffect(() => {
     async function calculateReach() {
@@ -122,6 +127,32 @@ export function Step4ScheduleSend({
           />
         </div>
       </StepCard>
+
+      {/* QR-code connection: mandatory pacing + ban-risk warning */}
+      {qrMode && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-2xl bg-amber-500/10 p-4 text-sm"
+          data-testid="broadcast-ban-warning"
+        >
+          <ShieldAlert className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-300" />
+          <div className="min-w-0 space-y-1">
+            <p className="font-medium text-amber-700 dark:text-amber-300">
+              {t('scheduleSend.qrWarningTitle')}
+            </p>
+            <p className="text-muted-foreground">
+              {t('scheduleSend.qrWarningBody', { seconds: delaySeconds })}
+            </p>
+            {!loadingReach && estimatedReach > 0 && (
+              <p className="text-muted-foreground">
+                {t('scheduleSend.qrEstimate', {
+                  minutes: Math.max(1, Math.ceil((estimatedReach * delaySeconds) / 60)),
+                })}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Processing overlay */}
       {isProcessing && (

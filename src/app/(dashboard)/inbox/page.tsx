@@ -49,6 +49,9 @@ function InboxPageInner() {
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Meta's 24h window applies unless the account is on a QR-code
+  // (OpenWA) connection.
+  const [serviceWindow, setServiceWindow] = useState(true);
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
@@ -203,11 +206,14 @@ function InboxPageInner() {
 
       const { data } = await supabase
         .from("whatsapp_config")
-        .select("status")
+        .select("status, provider")
         .eq("account_id", accountId)
         .maybeSingle();
 
+      // `status` is the ACTIVE connection's health in both modes (Meta
+      // Cloud API or QR code / OpenWA — migration 047).
       setWhatsappConnected(data?.status === "connected");
+      setServiceWindow(data?.provider !== "openwa");
     };
 
     checkConnection();
@@ -618,6 +624,7 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            serviceWindow={serviceWindow}
           />
         ) : (
           <EmptyPane whatsappConnected={whatsappConnected} />

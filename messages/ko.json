@@ -291,7 +291,10 @@
       "play": "재생",
       "pause": "일시정지",
       "seek": "위치 이동",
-      "playbackFailed": "오디오를 재생할 수 없습니다"
+      "playbackFailed": "오디오를 재생할 수 없습니다",
+      "revoked": "삭제됨",
+      "revokedTitle": "연락처가 모든 사람에게서 이 메시지를 삭제했습니다",
+      "edited": "수정됨"
     },
     "mediaViewer": {
       "counter": "{total}개 중 {index}번째",
@@ -949,7 +952,10 @@
         "estimatedReach": "예상 도달 수",
         "language": "언어",
         "confirmTitle": "브로드캐스트 확인",
-        "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다."
+        "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다.",
+        "qrWarningTitle": "QR 코드 연결: 차단 위험",
+        "qrWarningBody": "메시지는 최소 {seconds}초 간격으로 하나씩 발송됩니다. 대화한 적이 있는 사람에게만 보내세요. 낯선 사람에게 대량 발송하면 신고가 접수되어 번호가 차단될 수 있습니다.",
+        "qrEstimate": "예상 소요 시간: 약 {minutes}분"
       }
     },
     "sending": {
@@ -1512,7 +1518,9 @@
       "fieldsCount": "커스텀 필드 {count}개",
       "appearance": "{mode} 모드 · {theme} 색상",
       "yourAccount": "내 계정",
-      "loading": "불러오는 중…"
+      "loading": "불러오는 중…",
+      "viaQrCode": "QR 코드 사용",
+      "viaOfficialApi": "공식 API 사용"
     },
     "members": {
       "title": "팀원",
@@ -1731,7 +1739,13 @@
         "Marketing": "마케팅",
         "Utility": "유틸리티",
         "Authentication": "인증"
-      }
+      },
+      "toastLocalSaved": "템플릿이 저장되었으며 바로 사용할 수 있습니다.",
+      "localModeNotice": "QR 코드 모드: 템플릿은 로컬로 관리됩니다. Meta 승인이 없으며 저장하는 즉시 사용할 수 있고 텍스트로 발송됩니다(헤더 미디어가 있으면 함께 발송).",
+      "readyToUse": "사용 가능",
+      "localOrigin": "로컬",
+      "localOriginTitle": "QR 코드 모드에서 만들어졌으며 Meta에 승인 요청을 제출한 적이 없습니다.",
+      "saveLocal": "템플릿 저장"
     },
     "roles": {
       "admin": "관리자",
@@ -1846,7 +1860,115 @@
       "phoneNumberIdNotNumeric": "전화번호 ID는 숫자만 포함해야 합니다. 전화번호가 아닌, Meta → WhatsApp → API 설정에 표시된 숫자 ID를 복사하세요.",
       "wabaIdNotNumeric": "WhatsApp 비즈니스 계정 ID는 숫자만 포함해야 합니다. Meta → WhatsApp → API 설정에서 복사하세요.",
       "wabaSubscribed": "WhatsApp 비즈니스 계정이 이 앱에 구독되어 있어 수신 웹훅을 받을 수 있습니다.",
-      "wabaNotSubscribed": "WhatsApp 비즈니스 계정이 이 앱에 구독되어 있지 않아 Meta가 수신 웹훅을 전달하지 않습니다. 액세스 토큰을 다시 입력하고 저장해 구독하세요."
+      "wabaNotSubscribed": "WhatsApp 비즈니스 계정이 이 앱에 구독되어 있지 않아 Meta가 수신 웹훅을 전달하지 않습니다. 액세스 토큰을 다시 입력하고 저장해 구독하세요.",
+      "inactiveTitle": "공식 API가 저장되어 있지만 활성 상태가 아닙니다",
+      "inactiveDesc": "이 계정은 QR 코드를 사용 중입니다. Meta 자격 증명은 저장된 상태로 유지되니 언제든지 다시 전환하세요.",
+      "inactiveEmptyDesc": "이 계정은 QR 코드를 사용 중입니다. 공식 API로 전환하려면 아래에 Meta 자격 증명을 저장하세요.",
+      "useThisMode": "이 모드 사용",
+      "modeSwitchFailed": "연결 모드를 전환하지 못했습니다.",
+      "modeSwitchedMeta": "공식 API가 활성화되었습니다.",
+      "modes": {
+        "label": "연결 모드",
+        "description": "이 계정이 WhatsApp에 연결되는 방식을 선택하세요. 한 번에 하나의 모드만 활성화되며, 전환해도 연락처와 대화는 유지됩니다.",
+        "active": "활성",
+        "meta": {
+          "title": "공식 API",
+          "tagline": "Meta의 Cloud API: 승인된 템플릿, 24시간 창, 인증된 번호를 지원합니다."
+        },
+        "openwa": {
+          "title": "QR 코드",
+          "tagline": "OpenWA 게이트웨이를 통해 QR 코드로 연결하는 일반 WhatsApp 번호입니다."
+        }
+      },
+      "openwa": {
+        "loading": "로딩 중…",
+        "inactiveTitle": "QR 코드가 설정되어 있지만 활성 상태가 아닙니다",
+        "inactiveDesc": "이 계정은 공식 API를 사용 중입니다. QR 코드 세션은 저장된 상태로 유지됩니다.",
+        "useThisMode": "이 모드 사용",
+        "activated": "QR 코드가 활성화되었습니다.",
+        "connectionTitle": "연결",
+        "statusNotConfigured": "설정되지 않음",
+        "notConfiguredDesc": "아래에 OpenWA URL과 API 키를 입력한 다음 연결을 클릭하세요.",
+        "statusReady": "연결됨",
+        "statusQr": "QR 코드 스캔을 기다리는 중",
+        "statusInitializing": "세션을 시작하는 중…",
+        "statusAuthenticating": "인증하는 중…",
+        "statusDisconnected": "연결 끊김",
+        "statusFailed": "세션 실패",
+        "statusActionRequired": "게이트웨이에서 조치가 필요합니다",
+        "waitDesc": "몇 초 정도 걸립니다. 페이지는 자동으로 업데이트됩니다.",
+        "disconnectedDesc": "연결을 클릭하면 새 QR 코드를 받을 수 있습니다.",
+        "lastError": "마지막 오류",
+        "reconnectLoop": "게이트웨이가 계속 재연결을 시도하고 있습니다({attempts}회 시도). 계속되면 세션을 다시 시작하세요.",
+        "phone": "번호",
+        "pushName": "WhatsApp 이름",
+        "since": "연결 시작 시각",
+        "connect": "연결",
+        "restart": "세션 다시 시작",
+        "disconnect": "연결 해제",
+        "logoutConfirm": "이 번호의 연결을 해제하시겠습니까? 기기 연결이 해제되며 QR 코드를 다시 스캔해야 합니다.",
+        "loggedOut": "번호 연결이 해제되었습니다.",
+        "restarted": "세션이 다시 시작되었습니다.",
+        "actionFailed": "작업에 실패했습니다.",
+        "qrAlt": "WhatsApp 연결용 QR 코드",
+        "scanStep1": "사용할 번호의 휴대폰에서 WhatsApp을 엽니다.",
+        "scanStep2": "더보기 옵션 또는 설정 › 연결된 기기 › 기기 연결을 탭합니다.",
+        "scanStep3": "카메라를 이 QR 코드에 맞춥니다.",
+        "qrRefreshing": "QR 코드가 {time}에 업데이트되었습니다. 스캔할 때까지 계속 바뀝니다.",
+        "qrWaiting": "QR 코드를 생성하는 중…",
+        "usePairing": "페어링 코드 사용",
+        "pairingDesc": "카메라가 없나요? 국가 코드를 포함한 번호를 입력하고 휴대폰에 코드를 입력하세요.",
+        "pairingPhone": "페어링할 번호",
+        "pairingRequest": "코드 받기",
+        "pairingCodeLabel": "페어링 코드",
+        "pairingHowTo": "휴대폰에서: 연결된 기기 › 기기 연결 › 전화번호로 연결을 선택하세요.",
+        "pairingWarning": "이미 다른 곳에 연결된 번호의 코드를 요청하면 해당 기기의 연결이 해제될 수 있습니다.",
+        "pairingFailed": "페어링 코드를 받지 못했습니다.",
+        "gatewayTitle": "OpenWA 게이트웨이",
+        "gatewayDesc": "OpenWA는 직접 호스팅하는 서비스입니다. wacrm은 여기에 자체 세션을 만들고 서명된 웹훅으로 이벤트를 받습니다.",
+        "urlLabel": "OpenWA URL",
+        "keyLabel": "API 키",
+        "keyPlaceholder": "API 키를 붙여넣으세요(operator 또는 admin 역할)",
+        "keyFromEnv": "비워 두면 서버의 OPENWA_API_KEY를 사용합니다",
+        "keyHint": "암호화되어 저장되며 브라우저로 전송되지 않습니다.",
+        "showKey": "키 표시",
+        "hideKey": "키 숨기기",
+        "delayLabel": "캠페인 발송 간격(초)",
+        "delayHint": "캠페인 메시지 사이의 최소 대기 시간입니다(3–120초). 약간의 무작위 편차가 적용됩니다.",
+        "delayInvalid": "간격은 3초에서 120초 사이여야 합니다.",
+        "urlRequired": "OpenWA URL을 입력하세요.",
+        "testConnection": "연결 테스트",
+        "testFailed": "OpenWA에 연결할 수 없습니다.",
+        "testOk": "연결 성공 — OpenWA {version}, 엔진 {engine}, 키 역할 {role}.",
+        "roleTooLow": "이 키는 읽기 전용입니다. 세션, QR 코드, 웹훅에는 operator 또는 admin 역할이 필요합니다.",
+        "save": "저장",
+        "saved": "OpenWA 설정이 저장되었습니다.",
+        "saveFailed": "OpenWA 설정을 저장하지 못했습니다.",
+        "engineTitle": "WhatsApp 엔진",
+        "engineDesc": "OpenWA가 WhatsApp과 통신할 때 사용하는 엔진입니다.",
+        "engineWwebjs": "whatsapp-web.js (권장)",
+        "engineWwebjsHint": "실제 WhatsApp Web을 구동하므로 차단 위험이 낮습니다.",
+        "engineBaileys": "Baileys",
+        "engineBaileysHint": "직접 프로토콜 방식으로 더 가볍지만 위험이 다소 높습니다.",
+        "engineDetected": "사용 중",
+        "engineSwitchHint": "엔진은 게이트웨이 전체에 적용됩니다. 전환하려면 OpenWA에서 ENGINE_TYPE을 설정하고 다시 시작하세요. 그런 다음 다시 연결하세요(QR 코드를 다시 스캔해야 합니다).",
+        "mirrorTitle": "받은 미디어 사본 보관",
+        "mirrorDesc": "받은 사진, 오디오, 문서를 wacrm 저장소에 복사합니다. 끄면 열 때 게이트웨이에서 가져옵니다.",
+        "mirrorSaveFailed": "이 옵션을 저장하지 못했습니다.",
+        "restrictionTitle": "WhatsApp이 이 번호를 제한했습니다",
+        "restrictionDesc": "제한이 적용 중입니다({kind}). 제한이 해제될 때까지 대량 발송을 중단하고 답장만 하세요.",
+        "restrictionUntil": "{date}에 종료됩니다.",
+        "banTitle": "차단 위험",
+        "banDedicated": "개인 번호가 아닌 고객 응대 전용 번호를 사용하세요.",
+        "banNoCold": "먼저 연락한 적 없는 사람에게 대량으로 보내지 마세요. 신고가 접수되면 차단될 수 있습니다.",
+        "banPacing": "캠페인은 설정한 간격에 따라 하나씩 발송됩니다. 적은 수의 연락처부터 시작하세요.",
+        "banUnofficial": "비공식 연결이므로 WhatsApp이 언제든지 번호를 차단할 수 있습니다.",
+        "howTitle": "QR 코드 모드의 작동 방식",
+        "howTemplates": "템플릿은 로컬로 관리됩니다. Meta 승인이 필요 없으며 텍스트로 발송됩니다.",
+        "howMenus": "버튼과 목록은 번호가 매겨진 메뉴로 바뀌며, 연락처가 답장한 번호나 제목으로 같은 옵션이 실행됩니다.",
+        "howWindow": "24시간 창이 없으므로 언제든지 답장할 수 있습니다.",
+        "howGroups": "그룹 및 상태 메시지는 무시됩니다."
+      }
     },
     "sections": {
       "overview": "개요",
@@ -2144,8 +2266,8 @@
       "profile": "이름, 사진 및 알림",
       "security": "비밀번호 및 활성 세션",
       "appearance": "모드 및 강조 색상",
-      "whatsapp": "WhatsApp Cloud API 연결",
-      "templates": "Meta 승인 메시지 템플릿",
+      "whatsapp": "공식 API 또는 QR 코드",
+      "templates": "메시지 템플릿",
       "quick-replies": "자주 쓰는 답변 바로가기",
       "fields": "태그 및 사용자 정의 필드",
       "deals": "기본 거래 통화",
@@ -2808,7 +2930,8 @@
       "phoneCheckFailed": "전화번호 메타데이터 확인 실패: {message}",
       "wabaNoApps": "WABA에 구독된 앱이 없습니다. 설정을 다시 저장해 구독하세요.",
       "wabaCheckFailed": "WABA 구독 확인 실패: {message}",
-      "noWabaId": "등록된 WABA ID가 없습니다 — WABA ID 없이는 웹훅을 연결할 수 없습니다. 양식에 추가한 후 다시 저장하세요."
+      "noWabaId": "등록된 WABA ID가 없습니다 — WABA ID 없이는 웹훅을 연결할 수 없습니다. 양식에 추가한 후 다시 저장하세요.",
+      "openwaDisconnected": "QR 코드로 연결된 번호가 온라인 상태가 아닙니다. 설정 › WhatsApp에서 다시 연결하세요."
     },
     "media": {
       "idRequired": "미디어 ID는 필수입니다",
@@ -2819,8 +2942,8 @@
       "messageNotFound": "메시지를 찾을 수 없습니다",
       "notSent": "WhatsApp으로 전송되지 않은 메시지에는 반응할 수 없습니다",
       "contactNoPhone": "연락처에 전화번호나 WhatsApp 사용자 ID가 없습니다",
-      "unknownMetaError": "알 수 없는 Meta API 오류",
-      "metaError": "Meta API 오류: {message}",
+      "unknownMetaError": "알 수 없는 WhatsApp 오류",
+      "metaError": "WhatsApp 오류: {message}",
       "dbDeleteFailed": "반응은 Meta로 전송되었지만 DB에서 삭제하지 못했습니다",
       "dbUpsertFailed": "반응은 Meta로 전송되었지만 DB에 저장하지 못했습니다"
     },
@@ -2851,7 +2974,9 @@
       "submittedSaveFailed": "Meta에 제출되었지만 로컬에 저장하지 못했습니다: {message}. 복구하려면 \"Meta에서 동기화\"를 실행하세요.",
       "submitFailed": "템플릿을 제출하지 못했습니다.",
       "metaApiStatus": "Meta API 오류: {status}",
-      "syncFailed": "템플릿을 동기화하지 못했습니다"
+      "syncFailed": "템플릿을 동기화하지 못했습니다",
+      "localSaveFailed": "템플릿을 저장하지 못했습니다: {message}",
+      "syncLocalMode": "QR 코드 모드에서는 템플릿이 로컬로 관리되므로 동기화할 Meta 카탈로그가 없습니다."
     }
   },
   "AuthScreen": {

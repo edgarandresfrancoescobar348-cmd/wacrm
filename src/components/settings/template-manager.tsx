@@ -13,6 +13,7 @@ import {
   Pencil,
   RotateCcw,
   Upload,
+  Info,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -138,7 +139,20 @@ export function TemplateManager() {
   const categoryLabel = (category: string) =>
     t.has(`categoryLabels.${category}`) ? t(`categoryLabels.${category}`) : category;
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  const { user, accountId, loading: authLoading } = useAuth();
+  // QR-code connection (migration 047): Meta approval doesn't exist —
+  // templates are local, ready to use, and never submitted or synced.
+  const [localMode, setLocalMode] = useState(false);
+  useEffect(() => {
+    if (!accountId) return;
+    supabase
+      .from('whatsapp_config')
+      .select('provider')
+      .eq('account_id', accountId)
+      .maybeSingle()
+      .then(({ data }) => setLocalMode(data?.provider === 'openwa'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -294,7 +308,9 @@ export function TemplateManager() {
       // immediately should not show a stale list.
       if (user) await fetchTemplates(user.id);
       toast.success(
-        data.dry_run
+        data.local
+          ? t('toastLocalSaved')
+          : data.dry_run
           ? isEdit
             ? t('toastSaveEditDry')
             : t('toastSaveNewDry')
@@ -530,15 +546,17 @@ export function TemplateManager() {
         description={t('description')}
         action={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleSyncFromMeta}
-              disabled={syncing}
-              title={t('syncTitle')}
-            >
-              <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? t('syncing') : t('syncFromMeta')}
-            </Button>
+            {!localMode && (
+              <Button
+                variant="outline"
+                onClick={handleSyncFromMeta}
+                disabled={syncing}
+                title={t('syncTitle')}
+              >
+                <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? t('syncing') : t('syncFromMeta')}
+              </Button>
+            )}
             <Button onClick={openCreate}>
               <Plus className="size-4" />
               {t('newTemplate')}
@@ -546,6 +564,16 @@ export function TemplateManager() {
           </div>
         }
       />
+
+      {localMode && (
+        <div
+          role="note"
+          className="flex items-start gap-3 rounded-xl bg-chip-active px-4 py-3 text-sm text-chip-active-foreground"
+        >
+          <Info className="mt-0.5 size-4 shrink-0" />
+          <span>{t('localModeNotice')}</span>
+        </div>
+      )}
 
       {templates.length === 0 ? (
         <Card>
@@ -561,6 +589,8 @@ export function TemplateManager() {
           {templates.map((template) => {
             const statusKey = template.status || 'DRAFT';
             const status = templateStatusConfig[statusKey];
+            // On a QR connection every template is local and usable as is.
+            const canEdit = localMode || statusKey === 'APPROVED';
             return (
               <Card key={template.id}>
                 <CardContent className="flex items-start justify-between pt-4">
@@ -573,9 +603,23 @@ export function TemplateManager() {
                         {categoryLabel(template.category)}
                       </Badge>
                       {/* WA pills are borderless: keep the shared status tint, drop its border. */}
-                      <Badge className={cn('text-xs', status.classes, 'border-transparent')}>
-                        {status.label}
-                      </Badge>
+                      {localMode ? (
+                        <Badge className="text-xs border-transparent bg-chip-active text-chip-active-foreground">
+                          {t('readyToUse')}
+                        </Badge>
+                      ) : (
+                        <Badge className={cn('text-xs', status.classes, 'border-transparent')}>
+                          {status.label}
+                        </Badge>
+                      )}
+                      {!localMode && template.origin === 'local' && (
+                        <Badge
+                          className="text-xs border-transparent bg-hover-surface text-muted-foreground"
+                          title={t('localOriginTitle')}
+                        >
+                          {t('localOrigin')}
+                        </Badge>
+                      )}
                       {template.language && (
                         <span className="text-xs text-muted-foreground uppercase">
                           {template.language}
@@ -614,7 +658,7 @@ export function TemplateManager() {
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0 ml-2">
-                    {statusKey === 'APPROVED' && (
+                    {canEdit && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -627,7 +671,7 @@ export function TemplateManager() {
                         {t('edit')}
                       </Button>
                     )}
-                    {(statusKey === 'REJECTED' || statusKey === 'PAUSED') && (
+                    {!localMode && (statusKey === 'REJECTED' || statusKey === 'PAUSED') && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -646,12 +690,12 @@ export function TemplateManager() {
                       onClick={() => setTemplateToDelete(template)}
                       disabled={deletingId === template.id}
                       aria-label={
-                        template.meta_template_id
+                        template.meta_template_id && !localMode
                           ? t('deleteMetaLocallyAria')
                           : t('deleteLocallyAria')
                       }
                       title={
-                        template.meta_template_id
+                        template.meta_template_id && !localMode
                           ? t('deleteMetaLocallyTitle')
                           : t('deleteLocallyTitle')
                       }
@@ -1114,6 +1158,8 @@ export function TemplateManager() {
                   <Loader2 className="size-4 animate-spin" />
                   {editingId ? t('saving') : t('submitting')}
                 </>
+              ) : localMode ? (
+                t('saveLocal')
               ) : editingId ? (
                 t('saveResubmit')
               ) : (

@@ -291,7 +291,10 @@
       "play": "Reproduzir",
       "pause": "Pausar",
       "seek": "Avançar para posição",
-      "playbackFailed": "Não foi possível reproduzir este áudio"
+      "playbackFailed": "Não foi possível reproduzir este áudio",
+      "revoked": "apagada",
+      "revokedTitle": "O contato apagou esta mensagem para todos",
+      "edited": "editada"
     },
     "mediaViewer": {
       "counter": "{index} de {total}",
@@ -949,7 +952,10 @@
         "estimatedReach": "Alcance estimado",
         "language": "Idioma",
         "confirmTitle": "Confirmar disparo",
-        "confirmDesc": "Você está prestes a enviar este disparo para <b>{count, number}</b> {count, plural, =1 {contato} other {contatos}} usando o modelo <b>{template}</b>. Esta ação não pode ser desfeita."
+        "confirmDesc": "Você está prestes a enviar este disparo para <b>{count, number}</b> {count, plural, =1 {contato} other {contatos}} usando o modelo <b>{template}</b>. Esta ação não pode ser desfeita.",
+        "qrWarningTitle": "Conexão por QR Code: risco de banimento",
+        "qrWarningBody": "As mensagens saem uma a uma, com pelo menos {seconds} s entre elas. Envie só para quem já conversou com você; disparos para desconhecidos geram denúncias e podem banir o número.",
+        "qrEstimate": "Duração estimada: cerca de {minutes} min."
       }
     },
     "sending": {
@@ -1512,7 +1518,9 @@
       "fieldsCount": "{count} {count, plural, =1 {campo personalizado} other {campos personalizados}}",
       "appearance": "modo {mode} · destaque {theme}",
       "yourAccount": "Sua conta",
-      "loading": "Carregando…"
+      "loading": "Carregando…",
+      "viaQrCode": "via QR Code",
+      "viaOfficialApi": "via API oficial"
     },
     "members": {
       "title": "Membros da equipe",
@@ -1731,7 +1739,13 @@
         "Marketing": "Marketing",
         "Utility": "Utilidade",
         "Authentication": "Autenticação"
-      }
+      },
+      "toastLocalSaved": "Modelo salvo e pronto para uso.",
+      "localModeNotice": "Modo QR Code: os modelos são locais. Não passam pela aprovação da Meta — ficam prontos assim que salvos e são enviados como texto (com a mídia do cabeçalho, se houver).",
+      "readyToUse": "Pronto para uso",
+      "localOrigin": "Local",
+      "localOriginTitle": "Criado no modo QR Code; nunca foi enviado à Meta para aprovação.",
+      "saveLocal": "Salvar modelo"
     },
     "roles": {
       "admin": "Administrador",
@@ -1846,7 +1860,115 @@
       "phoneNumberIdNotNumeric": "O Phone Number ID deve conter apenas dígitos. Copie o id numérico em Meta → WhatsApp → Configuração da API, não o número de telefone em si.",
       "wabaIdNotNumeric": "O ID da conta do WhatsApp Business deve conter apenas dígitos. Copie-o em Meta → WhatsApp → Configuração da API.",
       "wabaSubscribed": "A conta do WhatsApp Business está inscrita neste app — os webhooks de entrada podem ser entregues.",
-      "wabaNotSubscribed": "A conta do WhatsApp Business não está inscrita neste app, então a Meta não entregará webhooks de entrada. Informe novamente o token de acesso e salve de novo para inscrevê-la."
+      "wabaNotSubscribed": "A conta do WhatsApp Business não está inscrita neste app, então a Meta não entregará webhooks de entrada. Informe novamente o token de acesso e salve de novo para inscrevê-la.",
+      "inactiveTitle": "API oficial salva, mas não está ativa",
+      "inactiveDesc": "A conta está usando o QR Code. As credenciais da Meta continuam salvas — ative-as de volta quando quiser.",
+      "inactiveEmptyDesc": "A conta está usando o QR Code. Salve as credenciais da Meta abaixo para trocar para a API oficial.",
+      "useThisMode": "Usar este modo",
+      "modeSwitchFailed": "Não foi possível trocar o modo de conexão.",
+      "modeSwitchedMeta": "API oficial ativada.",
+      "modes": {
+        "label": "Modo de conexão",
+        "description": "Escolha como esta conta se conecta ao WhatsApp. Só um modo fica ativo por vez; contatos e conversas são mantidos ao trocar.",
+        "active": "Ativo",
+        "meta": {
+          "title": "API oficial",
+          "tagline": "Cloud API da Meta: modelos aprovados, janela de 24 h e números verificados."
+        },
+        "openwa": {
+          "title": "QR Code",
+          "tagline": "Um número de WhatsApp comum conectado por QR Code através do seu gateway OpenWA."
+        }
+      },
+      "openwa": {
+        "loading": "Carregando…",
+        "inactiveTitle": "QR Code configurado, mas não está ativo",
+        "inactiveDesc": "A conta está usando a API oficial. A sessão do QR Code continua salva.",
+        "useThisMode": "Usar este modo",
+        "activated": "QR Code ativado.",
+        "connectionTitle": "Conexão",
+        "statusNotConfigured": "Não configurado",
+        "notConfiguredDesc": "Informe a URL e a chave de API do seu OpenWA abaixo e clique em Conectar.",
+        "statusReady": "Conectado",
+        "statusQr": "Aguardando leitura do QR Code",
+        "statusInitializing": "Iniciando sessão…",
+        "statusAuthenticating": "Autenticando…",
+        "statusDisconnected": "Desconectado",
+        "statusFailed": "Falha na sessão",
+        "statusActionRequired": "Ação necessária no gateway",
+        "waitDesc": "Isso leva alguns segundos. A página atualiza sozinha.",
+        "disconnectedDesc": "Clique em Conectar para gerar um novo QR Code.",
+        "lastError": "Último erro",
+        "reconnectLoop": "O gateway está tentando reconectar ({attempts} tentativas). Se persistir, reinicie a sessão.",
+        "phone": "Número",
+        "pushName": "Nome no WhatsApp",
+        "since": "Conectado desde",
+        "connect": "Conectar",
+        "restart": "Reiniciar sessão",
+        "disconnect": "Desconectar",
+        "logoutConfirm": "Desconectar este número? O aparelho será desvinculado e será preciso escanear o QR Code de novo.",
+        "loggedOut": "Número desconectado.",
+        "restarted": "Sessão reiniciada.",
+        "actionFailed": "A ação falhou.",
+        "qrAlt": "QR Code para conectar o WhatsApp",
+        "scanStep1": "Abra o WhatsApp no celular do número que vai usar.",
+        "scanStep2": "Toque em Mais opções ou Configurações › Dispositivos conectados › Conectar dispositivo.",
+        "scanStep3": "Aponte a câmera para este QR Code.",
+        "qrRefreshing": "QR Code atualizado às {time}; ele muda sozinho até ser lido.",
+        "qrWaiting": "Gerando o QR Code…",
+        "usePairing": "Usar código de pareamento",
+        "pairingDesc": "Sem câmera? Informe o número com DDI e DDD e digite o código no celular.",
+        "pairingPhone": "Número para parear",
+        "pairingRequest": "Gerar código",
+        "pairingCodeLabel": "Código de pareamento",
+        "pairingHowTo": "No celular: Dispositivos conectados › Conectar dispositivo › Conectar com número de telefone.",
+        "pairingWarning": "Pedir um código para um número que já está conectado em outro lugar pode desconectar aquele aparelho.",
+        "pairingFailed": "Não foi possível gerar o código de pareamento.",
+        "gatewayTitle": "Gateway OpenWA",
+        "gatewayDesc": "O OpenWA é um serviço que você hospeda. O wacrm cria uma sessão própria nele e recebe os eventos por um webhook assinado.",
+        "urlLabel": "URL do OpenWA",
+        "keyLabel": "Chave de API",
+        "keyPlaceholder": "Cole a chave de API (função operator ou admin)",
+        "keyFromEnv": "Em branco: usa a chave OPENWA_API_KEY do servidor",
+        "keyHint": "Guardada criptografada e nunca enviada ao navegador.",
+        "showKey": "Mostrar chave",
+        "hideKey": "Ocultar chave",
+        "delayLabel": "Intervalo entre envios de campanha (segundos)",
+        "delayHint": "Pausa mínima entre duas mensagens de uma campanha (3 a 120 s), com uma pequena variação aleatória.",
+        "delayInvalid": "O intervalo deve ficar entre 3 e 120 segundos.",
+        "urlRequired": "Informe a URL do OpenWA.",
+        "testConnection": "Testar conexão",
+        "testFailed": "Não foi possível falar com o OpenWA.",
+        "testOk": "Conexão ok — OpenWA {version}, motor {engine}, chave com função {role}.",
+        "roleTooLow": "Essa chave só tem leitura: sessões, QR Code e webhooks exigem a função operator ou admin.",
+        "save": "Salvar",
+        "saved": "Configurações do OpenWA salvas.",
+        "saveFailed": "Não foi possível salvar as configurações do OpenWA.",
+        "engineTitle": "Motor do WhatsApp",
+        "engineDesc": "O motor que o seu OpenWA usa para falar com o WhatsApp.",
+        "engineWwebjs": "whatsapp-web.js (recomendado)",
+        "engineWwebjsHint": "Controla um WhatsApp Web real — menor risco de banimento.",
+        "engineBaileys": "Baileys",
+        "engineBaileysHint": "Protocolo direto, mais leve; risco um pouco maior.",
+        "engineDetected": "Em uso",
+        "engineSwitchHint": "O motor vale para o gateway inteiro: para trocar, defina ENGINE_TYPE no OpenWA e reinicie-o. Depois, conecte de novo (o QR Code precisa ser lido outra vez).",
+        "mirrorTitle": "Guardar cópia das mídias recebidas",
+        "mirrorDesc": "Copia fotos, áudios e documentos recebidos para o armazenamento do wacrm. Desligado, eles são buscados no gateway quando abertos.",
+        "mirrorSaveFailed": "Não foi possível salvar essa opção.",
+        "restrictionTitle": "O WhatsApp restringiu este número",
+        "restrictionDesc": "Restrição ativa ({kind}). Pare os envios em massa e use o número só para responder até a restrição acabar.",
+        "restrictionUntil": "Termina em {date}.",
+        "banTitle": "Risco de banimento",
+        "banDedicated": "Use um número dedicado ao atendimento, não o seu pessoal.",
+        "banNoCold": "Não faça disparos para quem nunca falou com você — denúncias levam ao banimento.",
+        "banPacing": "Campanhas saem uma a uma, com o intervalo configurado; comece com poucos contatos.",
+        "banUnofficial": "Esta é uma conexão não oficial: o WhatsApp pode bloquear o número a qualquer momento.",
+        "howTitle": "Como funciona no QR Code",
+        "howTemplates": "Modelos são locais: não passam pela aprovação da Meta e são enviados como texto.",
+        "howMenus": "Botões e listas viram um menu numerado; a resposta do contato (número ou título) aciona a mesma opção.",
+        "howWindow": "Não existe janela de 24 h: você pode responder a qualquer momento.",
+        "howGroups": "Mensagens de grupos e status são ignoradas."
+      }
     },
     "sections": {
       "overview": "Visão geral",
@@ -2144,8 +2266,8 @@
       "profile": "Nome, foto e alertas",
       "security": "Senha e sessões ativas",
       "appearance": "Modo e cor de destaque",
-      "whatsapp": "Conexão com a API do WhatsApp Cloud",
-      "templates": "Modelos de mensagem aprovados pela Meta",
+      "whatsapp": "API oficial ou QR Code",
+      "templates": "Modelos de mensagem",
       "quick-replies": "Atalhos para respostas frequentes",
       "fields": "Tags e campos personalizados",
       "deals": "Moeda padrão dos negócios",
@@ -2808,7 +2930,8 @@
       "phoneCheckFailed": "Falha na verificação dos dados do número: {message}",
       "wabaNoApps": "O WABA não tem apps inscritos. Salve a configuração novamente para inscrevê-lo.",
       "wabaCheckFailed": "Falha na verificação da inscrição do WABA: {message}",
-      "noWabaId": "Nenhum WABA ID registrado — os webhooks não podem ser conectados sem ele. Adicione-o no formulário e salve novamente."
+      "noWabaId": "Nenhum WABA ID registrado — os webhooks não podem ser conectados sem ele. Adicione-o no formulário e salve novamente.",
+      "openwaDisconnected": "O número conectado por QR Code não está online. Abra Configurações › WhatsApp para reconectar."
     },
     "media": {
       "idRequired": "O ID da mídia é obrigatório",
@@ -2819,8 +2942,8 @@
       "messageNotFound": "Mensagem não encontrada",
       "notSent": "Não é possível reagir a uma mensagem que não foi enviada ao WhatsApp",
       "contactNoPhone": "O contato não tem número de telefone nem ID de usuário do WhatsApp",
-      "unknownMetaError": "Erro desconhecido da API da Meta",
-      "metaError": "Erro da API da Meta: {message}",
+      "unknownMetaError": "Erro desconhecido do WhatsApp",
+      "metaError": "Erro do WhatsApp: {message}",
       "dbDeleteFailed": "Reação enviada à Meta, mas falhou ao removê-la do banco de dados",
       "dbUpsertFailed": "Reação enviada à Meta, mas falhou ao salvá-la no banco de dados"
     },
@@ -2851,7 +2974,9 @@
       "submittedSaveFailed": "Enviado à Meta, mas falhou ao salvar localmente: {message}. Use \"Sincronizar da Meta\" para recuperar.",
       "submitFailed": "Falha ao enviar o modelo.",
       "metaApiStatus": "Erro da API da Meta: {status}",
-      "syncFailed": "Falha ao sincronizar os modelos"
+      "syncFailed": "Falha ao sincronizar os modelos",
+      "localSaveFailed": "Não foi possível salvar o modelo: {message}",
+      "syncLocalMode": "No modo QR Code os modelos são locais — não há catálogo da Meta para sincronizar."
     }
   },
   "AuthScreen": {

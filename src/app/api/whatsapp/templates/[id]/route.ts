@@ -17,6 +17,7 @@ import {
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { getT } from '@/lib/i18n/translate'
+import { loadAccountProvider } from '@/lib/whatsapp/transport'
 
 const t = getT('Api')
 
@@ -91,6 +92,52 @@ export async function PATCH(
       .maybeSingle()
     if (lookupErr || !existing) {
       return NextResponse.json({ error: t('templates.notFound') }, { status: 404 })
+    }
+
+    // QR-code connection: templates are local (migration 047). An edit
+    // is a local update, ready to use at once — and a Meta-approved row
+    // edited here no longer matches Meta's copy, so it becomes local too.
+    const localMode = (await loadAccountProvider(supabase, accountId)) === 'openwa'
+    if (localMode) {
+      if (payload.category === 'Authentication') {
+        return NextResponse.json({ error: t('templates.authNotEditable') }, { status: 400 })
+      }
+      try {
+        validateTemplatePayload(payload)
+      } catch (e) {
+        return NextResponse.json(
+          { error: e instanceof Error ? e.message : t('templates.validationFailed') },
+          { status: 400 },
+        )
+      }
+      const { data: row, error: updErr } = await supabase
+        .from('message_templates')
+        .update({
+          category: payload.category,
+          header_type: payload.header_type ?? null,
+          header_content: payload.header_content ?? null,
+          header_media_url: payload.header_media_url ?? null,
+          body_text: payload.body_text,
+          footer_text: payload.footer_text ?? null,
+          buttons: payload.buttons ?? null,
+          sample_values: payload.sample_values ?? null,
+          status: 'APPROVED',
+          origin: 'local',
+          submission_error: null,
+          rejection_reason: null,
+          last_submitted_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .eq('account_id', accountId)
+        .select()
+        .single()
+      if (updErr) {
+        return NextResponse.json(
+          { error: t('templates.editedSaveFailed', { message: updErr.message }) },
+          { status: 500 },
+        )
+      }
+      return NextResponse.json({ success: true, template: row, local: true })
     }
 
     if (!existing.meta_template_id) {
@@ -256,7 +303,10 @@ export async function DELETE(
       return NextResponse.json({ error: t('templates.notFound') }, { status: 404 })
     }
 
-    if (existing.meta_template_id && !isDryRun()) {
+    // On a QR-code connection the Meta side is not reachable (and may not
+    // exist); deleting there removes the local row only.
+    const localMode = (await loadAccountProvider(supabase, accountId)) === 'openwa'
+    if (existing.meta_template_id && !isDryRun() && !localMode) {
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')

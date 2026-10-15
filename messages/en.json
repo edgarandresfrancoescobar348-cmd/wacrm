@@ -291,7 +291,10 @@
       "play": "Play",
       "pause": "Pause",
       "seek": "Seek",
-      "playbackFailed": "Couldn't play this audio"
+      "playbackFailed": "Couldn't play this audio",
+      "revoked": "deleted",
+      "revokedTitle": "The contact deleted this message for everyone",
+      "edited": "edited"
     },
     "mediaViewer": {
       "counter": "{index} of {total}",
@@ -949,7 +952,10 @@
         "estimatedReach": "Estimated Reach",
         "language": "Language",
         "confirmTitle": "Confirm Broadcast",
-        "confirmDesc": "You are about to send this broadcast to <b>{count, number}</b> {count, plural, =1 {contact} other {contacts}} using the <b>{template}</b> template. This action cannot be undone."
+        "confirmDesc": "You are about to send this broadcast to <b>{count, number}</b> {count, plural, =1 {contact} other {contacts}} using the <b>{template}</b> template. This action cannot be undone.",
+        "qrWarningTitle": "QR-code connection: ban risk",
+        "qrWarningBody": "Messages go out one by one, at least {seconds} s apart. Only send to people who have talked to you; blasting strangers gets reports and can get the number banned.",
+        "qrEstimate": "Estimated duration: about {minutes} min."
       }
     },
     "sending": {
@@ -1512,7 +1518,9 @@
       "fieldsCount": "{count} custom {count, plural, =1 {field} other {fields}}",
       "appearance": "{mode} mode · {theme} accent",
       "yourAccount": "Your account",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "viaQrCode": "via QR code",
+      "viaOfficialApi": "via official API"
     },
     "members": {
       "title": "Team members",
@@ -1731,7 +1739,13 @@
         "Marketing": "Marketing",
         "Utility": "Utility",
         "Authentication": "Authentication"
-      }
+      },
+      "toastLocalSaved": "Template saved and ready to use.",
+      "localModeNotice": "QR-code mode: templates are local. There's no Meta approval — they're ready as soon as they're saved and go out as text (with the header media, if any).",
+      "readyToUse": "Ready to use",
+      "localOrigin": "Local",
+      "localOriginTitle": "Created in QR-code mode; never submitted to Meta for approval.",
+      "saveLocal": "Save template"
     },
     "roles": {
       "admin": "Admin",
@@ -1846,7 +1860,115 @@
       "phoneNumberIdNotNumeric": "Phone Number ID must contain only digits. Copy the numeric id from Meta → WhatsApp → API Setup, not the phone number itself.",
       "wabaIdNotNumeric": "WhatsApp Business Account ID must contain only digits. Copy it from Meta → WhatsApp → API Setup.",
       "wabaSubscribed": "The WhatsApp Business Account is subscribed to this app — inbound webhooks can be delivered.",
-      "wabaNotSubscribed": "The WhatsApp Business Account is not subscribed to this app, so Meta will not deliver inbound webhooks. Re-enter the access token and save again to subscribe it."
+      "wabaNotSubscribed": "The WhatsApp Business Account is not subscribed to this app, so Meta will not deliver inbound webhooks. Re-enter the access token and save again to subscribe it.",
+      "inactiveTitle": "Official API saved, but not active",
+      "inactiveDesc": "This account is using the QR code. The Meta credentials stay saved — switch back whenever you like.",
+      "inactiveEmptyDesc": "This account is using the QR code. Save Meta credentials below to switch to the official API.",
+      "useThisMode": "Use this mode",
+      "modeSwitchFailed": "Couldn't switch the connection mode.",
+      "modeSwitchedMeta": "Official API activated.",
+      "modes": {
+        "label": "Connection mode",
+        "description": "Choose how this account connects to WhatsApp. One mode is active at a time; contacts and conversations are kept when you switch.",
+        "active": "Active",
+        "meta": {
+          "title": "Official API",
+          "tagline": "Meta's Cloud API: approved templates, the 24 h window and verified numbers."
+        },
+        "openwa": {
+          "title": "QR code",
+          "tagline": "A regular WhatsApp number linked by QR code through your OpenWA gateway."
+        }
+      },
+      "openwa": {
+        "loading": "Loading…",
+        "inactiveTitle": "QR code set up, but not active",
+        "inactiveDesc": "This account is using the official API. The QR-code session stays saved.",
+        "useThisMode": "Use this mode",
+        "activated": "QR code activated.",
+        "connectionTitle": "Connection",
+        "statusNotConfigured": "Not set up",
+        "notConfiguredDesc": "Enter your OpenWA URL and API key below, then click Connect.",
+        "statusReady": "Connected",
+        "statusQr": "Waiting for the QR code to be scanned",
+        "statusInitializing": "Starting session…",
+        "statusAuthenticating": "Authenticating…",
+        "statusDisconnected": "Disconnected",
+        "statusFailed": "Session failed",
+        "statusActionRequired": "Action needed on the gateway",
+        "waitDesc": "This takes a few seconds. The page updates by itself.",
+        "disconnectedDesc": "Click Connect to get a new QR code.",
+        "lastError": "Last error",
+        "reconnectLoop": "The gateway keeps trying to reconnect ({attempts} attempts). If it continues, restart the session.",
+        "phone": "Number",
+        "pushName": "WhatsApp name",
+        "since": "Connected since",
+        "connect": "Connect",
+        "restart": "Restart session",
+        "disconnect": "Disconnect",
+        "logoutConfirm": "Disconnect this number? The device will be unlinked and the QR code must be scanned again.",
+        "loggedOut": "Number disconnected.",
+        "restarted": "Session restarted.",
+        "actionFailed": "The action failed.",
+        "qrAlt": "QR code to link WhatsApp",
+        "scanStep1": "Open WhatsApp on the phone of the number you'll use.",
+        "scanStep2": "Tap More options or Settings › Linked devices › Link a device.",
+        "scanStep3": "Point the camera at this QR code.",
+        "qrRefreshing": "QR code updated at {time}; it rotates until scanned.",
+        "qrWaiting": "Generating the QR code…",
+        "usePairing": "Use a pairing code",
+        "pairingDesc": "No camera? Enter the number with country code and type the code on the phone.",
+        "pairingPhone": "Number to pair",
+        "pairingRequest": "Get code",
+        "pairingCodeLabel": "Pairing code",
+        "pairingHowTo": "On the phone: Linked devices › Link a device › Link with phone number instead.",
+        "pairingWarning": "Requesting a code for a number that is already linked elsewhere can unlink that device.",
+        "pairingFailed": "Couldn't get a pairing code.",
+        "gatewayTitle": "OpenWA gateway",
+        "gatewayDesc": "OpenWA is a service you host. wacrm creates its own session on it and receives events through a signed webhook.",
+        "urlLabel": "OpenWA URL",
+        "keyLabel": "API key",
+        "keyPlaceholder": "Paste the API key (operator or admin role)",
+        "keyFromEnv": "Empty: uses the server's OPENWA_API_KEY",
+        "keyHint": "Stored encrypted and never sent to the browser.",
+        "showKey": "Show key",
+        "hideKey": "Hide key",
+        "delayLabel": "Gap between campaign sends (seconds)",
+        "delayHint": "Minimum pause between two campaign messages (3–120 s), with a little random jitter.",
+        "delayInvalid": "The gap must be between 3 and 120 seconds.",
+        "urlRequired": "Enter the OpenWA URL.",
+        "testConnection": "Test connection",
+        "testFailed": "Couldn't reach OpenWA.",
+        "testOk": "Connection OK — OpenWA {version}, engine {engine}, key role {role}.",
+        "roleTooLow": "This key is read-only: sessions, QR codes and webhooks need the operator or admin role.",
+        "save": "Save",
+        "saved": "OpenWA settings saved.",
+        "saveFailed": "Couldn't save the OpenWA settings.",
+        "engineTitle": "WhatsApp engine",
+        "engineDesc": "The engine your OpenWA uses to talk to WhatsApp.",
+        "engineWwebjs": "whatsapp-web.js (recommended)",
+        "engineWwebjsHint": "Drives a real WhatsApp Web — lower ban risk.",
+        "engineBaileys": "Baileys",
+        "engineBaileysHint": "Direct protocol, lighter; somewhat higher risk.",
+        "engineDetected": "In use",
+        "engineSwitchHint": "The engine applies to the whole gateway: to switch, set ENGINE_TYPE on OpenWA and restart it. Then connect again (the QR code must be scanned again).",
+        "mirrorTitle": "Keep a copy of received media",
+        "mirrorDesc": "Copies received photos, audio and documents into wacrm's storage. When off, they're fetched from the gateway when opened.",
+        "mirrorSaveFailed": "Couldn't save this option.",
+        "restrictionTitle": "WhatsApp restricted this number",
+        "restrictionDesc": "Restriction active ({kind}). Stop bulk sends and only reply until it is lifted.",
+        "restrictionUntil": "Ends {date}.",
+        "banTitle": "Ban risk",
+        "banDedicated": "Use a number dedicated to customer service, not your personal one.",
+        "banNoCold": "Don't blast people who never wrote to you — reports lead to bans.",
+        "banPacing": "Campaigns go out one by one with the configured gap; start with few contacts.",
+        "banUnofficial": "This is an unofficial connection: WhatsApp may block the number at any time.",
+        "howTitle": "How the QR-code mode works",
+        "howTemplates": "Templates are local: no Meta approval, sent as text.",
+        "howMenus": "Buttons and lists become a numbered menu; the contact's reply (number or title) triggers the same option.",
+        "howWindow": "There's no 24 h window: you can reply at any time.",
+        "howGroups": "Group and status messages are ignored."
+      }
     },
     "sections": {
       "overview": "Overview",
@@ -2144,8 +2266,8 @@
       "profile": "Name, photo and alerts",
       "security": "Password and active sessions",
       "appearance": "Mode and accent color",
-      "whatsapp": "WhatsApp Cloud API connection",
-      "templates": "Message templates approved by Meta",
+      "whatsapp": "Official API or QR code",
+      "templates": "Message templates",
       "quick-replies": "Shortcuts for frequent answers",
       "fields": "Tags and custom fields",
       "deals": "Default deal currency",
@@ -2808,7 +2930,8 @@
       "phoneCheckFailed": "Phone metadata check failed: {message}",
       "wabaNoApps": "WABA has no subscribed apps. Re-save the configuration to subscribe.",
       "wabaCheckFailed": "WABA subscription check failed: {message}",
-      "noWabaId": "No WABA ID on file — webhooks can't be wired without it. Add it in the form and re-save."
+      "noWabaId": "No WABA ID on file — webhooks can't be wired without it. Add it in the form and re-save.",
+      "openwaDisconnected": "The number linked by QR code is not online. Open Settings › WhatsApp to reconnect."
     },
     "media": {
       "idRequired": "Media ID is required",
@@ -2819,8 +2942,8 @@
       "messageNotFound": "Message not found",
       "notSent": "Cannot react to a message that has not been sent to WhatsApp",
       "contactNoPhone": "Contact has no phone number or WhatsApp user ID",
-      "unknownMetaError": "Unknown Meta API error",
-      "metaError": "Meta API error: {message}",
+      "unknownMetaError": "Unknown WhatsApp error",
+      "metaError": "WhatsApp error: {message}",
       "dbDeleteFailed": "Reaction sent to Meta but DB delete failed",
       "dbUpsertFailed": "Reaction sent to Meta but DB upsert failed"
     },
@@ -2851,7 +2974,9 @@
       "submittedSaveFailed": "Submitted to Meta but failed to save locally: {message}. Run \"Sync from Meta\" to recover.",
       "submitFailed": "Failed to submit template.",
       "metaApiStatus": "Meta API error: {status}",
-      "syncFailed": "Failed to sync templates"
+      "syncFailed": "Failed to sync templates",
+      "localSaveFailed": "Couldn't save the template: {message}",
+      "syncLocalMode": "In QR-code mode templates are local — there's no Meta catalog to sync."
     }
   },
   "AuthScreen": {

@@ -349,6 +349,15 @@ export function MessageBubble({
           {t("aiBadge")}
         </span>
       )}
+      {/* QR-code connections report customer edits / deletions
+          (migration 047). The original text is kept; WA labels it. */}
+      {message.revoked_at ? (
+        <span className="italic" title={t("revokedTitle")}>
+          {t("revoked")}
+        </span>
+      ) : message.edited_at ? (
+        <span className="italic">{t("edited")}</span>
+      ) : null}
       <span>{time}</span>
       {isAgent && <StatusIcon status={message.status} title={failure} />}
     </>

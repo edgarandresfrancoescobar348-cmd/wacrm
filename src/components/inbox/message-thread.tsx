@@ -116,6 +116,13 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  /**
+   * Does Meta's 24h customer-service window apply? False on a QR-code
+   * (OpenWA) connection, where a regular number can reply at any time:
+   * the timer is hidden and the composer is never locked. Defaults to
+   * true (official API).
+   */
+  serviceWindow?: boolean;
 }
 
 function formatDateSeparator(
@@ -185,6 +192,7 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  serviceWindow = true,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -256,6 +264,7 @@ export function MessageThread({
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
+    if (!serviceWindow) return { expired: false, remaining: "" };
     if (!messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
@@ -279,7 +288,7 @@ export function MessageThread({
         : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer]);
+  }, [messages, tTimer, serviceWindow]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -945,7 +954,9 @@ export function MessageThread({
         subtitle={
           <>
             {contactHandle(contact)}
-            {/* 24h session window — red once it has expired. */}
+            {/* 24h session window — red once it has expired. Not
+                rendered on a QR-code connection (no window there). */}
+            {serviceWindow && (
             <span
               className={cn(
                 "ml-2 hidden items-center gap-1 sm:inline-flex",
@@ -955,6 +966,7 @@ export function MessageThread({
               <Clock className="size-3" />
               {sessionInfo.remaining}
             </span>
+            )}
           </>
         }
         onTitleClick={onToggleContactPanel}

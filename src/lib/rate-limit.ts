@@ -176,6 +176,14 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** QR-code (OpenWA) connection management, per admin: save settings,
+   *  test, connect / restart / disconnect, pairing code, switch mode.
+   *  Each call reaches the gateway, and a pairing-code burst is exactly
+   *  the kind of thing WhatsApp flags. */
+  openwaAdmin: { limit: 20, windowMs: 60_000 },
+  /** QR polling, per admin. The settings page refreshes every 3 s while
+   *  the code is on screen (20/min); doubled for a second tab. */
+  openwaQr: { limit: 40, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

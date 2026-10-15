@@ -58,7 +58,9 @@ export async function GET(
       .eq('account_id', accountId)
       .single()
 
-    if (configError || !config) {
+    // A QR-code-only account has no Meta token; its media never comes
+    // through this Meta proxy (see /api/whatsapp/openwa/media).
+    if (configError || !config || !config.access_token) {
       return NextResponse.json(
         { error: t('common.whatsappNotConfigured') },
         { status: 400 }
