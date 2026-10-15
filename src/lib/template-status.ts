@@ -3,7 +3,8 @@
  *
  * The DB stores Meta's raw enum (DRAFT / APPROVED / PENDING / REJECTED /
  * PAUSED / DISABLED / IN_APPEAL / PENDING_DELETION) — the UI maps it to
- * a human label + dark-theme badge classes here so the template manager,
+ * a human label + mode-safe WA pill classes (tokens / 600-tone text that
+ * reads on both the dark and light surfaces) so the template manager,
  * inbox picker, and broadcast picker stay aligned.
  */
 
@@ -23,34 +24,34 @@ export const templateStatusConfig: Record<
 > = {
   DRAFT: {
     label: t('DRAFT'),
-    classes: 'bg-slate-600/20 text-muted-foreground border-slate-600/30',
+    classes: 'bg-hover-surface text-muted-foreground border-transparent',
   },
   PENDING: {
     label: t('PENDING'),
-    classes: 'bg-yellow-600/20 text-yellow-400 border-yellow-600/30',
+    classes: 'bg-amber-500/15 text-amber-600 border-transparent',
   },
   APPROVED: {
     label: t('APPROVED'),
-    classes: 'bg-primary/20 text-primary border-primary/30',
+    classes: 'bg-chip-active text-chip-active-foreground border-transparent',
   },
   REJECTED: {
     label: t('REJECTED'),
-    classes: 'bg-red-600/20 text-red-400 border-red-600/30',
+    classes: 'bg-destructive/12 text-destructive border-transparent',
   },
   PAUSED: {
     label: t('PAUSED'),
-    classes: 'bg-orange-600/20 text-orange-400 border-orange-600/30',
+    classes: 'bg-orange-500/15 text-orange-600 border-transparent',
   },
   DISABLED: {
     label: t('DISABLED'),
-    classes: 'bg-red-900/30 text-red-500 border-red-900/40',
+    classes: 'bg-destructive/20 text-destructive border-transparent',
   },
   IN_APPEAL: {
     label: t('IN_APPEAL'),
-    classes: 'bg-blue-600/20 text-blue-400 border-blue-600/30',
+    classes: 'bg-sky-500/15 text-sky-600 border-transparent',
   },
   PENDING_DELETION: {
     label: t('PENDING_DELETION'),
-    classes: 'bg-slate-700/30 text-muted-foreground border-slate-700/40',
+    classes: 'bg-hover-surface text-muted-foreground border-transparent',
   },
 };
