@@ -39,11 +39,17 @@ export function ThemedToaster() {
     <Toaster
       theme={isClient ? mode : DEFAULT_MODE}
       position="top-right"
+      // WA snackbar look: raised surface, 12px radius, soft shadow
+      // instead of a border, system font at 14px.
       toastOptions={{
         style: {
           background: "var(--popover)",
-          border: "1px solid var(--border)",
+          border: "none",
+          borderRadius: "12px",
+          boxShadow:
+            "0 2px 5px 0 rgb(11 20 26 / 0.26), 0 2px 10px 0 rgb(11 20 26 / 0.16)",
           color: "var(--popover-foreground)",
+          fontSize: "14px",
         },
       }}
     />

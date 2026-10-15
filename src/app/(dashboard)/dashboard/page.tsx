@@ -125,7 +125,12 @@ export default function DashboardPage() {
 
   return (
     <FullBleedFrame>
-      <WaPage title={t('title')} subtitle={t('description')}>
+      <WaPage
+        title={t('title')}
+        subtitle={t('description')}
+        // Wallpaper tone keeps the surface cards raised in light mode.
+        bodyClassName="bg-wallpaper"
+      >
         <div className="space-y-4">
 
           {/* Metric cards */}

@@ -45,7 +45,7 @@ export default function AgentsPage() {
       <WaPage
         title={t('title')}
         subtitle={t('description')}
-        bodyClassName="p-0 sm:p-0"
+        bodyClassName="bg-wallpaper p-0 sm:p-0"
       >
         {decided && (
           <Tabs
@@ -55,7 +55,7 @@ export default function AgentsPage() {
           >
             {/* Section switcher as WA filter chips, flush under the
                 header bar like the inbox chip row. */}
-            <div className="sticky top-0 z-10 bg-background px-5 pb-3">
+            <div className="sticky top-0 z-10 mb-4 bg-background px-5 pb-3">
               <TabsList>
                 <TabsTrigger value="playground">
                   <Sparkles /> {t('tabPlayground')}
