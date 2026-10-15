@@ -1746,7 +1746,8 @@
       "localOrigin": "Local",
       "localOriginTitle": "Creada en el modo de código QR; nunca se envió a Meta para su aprobación.",
       "saveLocal": "Guardar plantilla",
-      "descriptionLocal": "Crea plantillas de mensaje con variables para usar en la bandeja de entrada, difusiones y automatizaciones."
+      "descriptionLocal": "Crea plantillas de mensaje con variables para usar en la bandeja de entrada, difusiones y automatizaciones.",
+      "localNotApproved": "Local · no aprobada por Meta"
     },
     "roles": {
       "admin": "Administrador",
@@ -2615,7 +2616,8 @@
       "notConfigured": "WhatsApp no está configurado para esta cuenta",
       "dbInsertFailed": "enviado a Meta, pero falló el guardado en la base de datos: {message}",
       "conversationLookupFailed": "falló la búsqueda de la conversación: {message}",
-      "conversationNotFound": "conversación no encontrada en esta cuenta"
+      "conversationNotFound": "conversación no encontrada en esta cuenta",
+      "templateNotApproved": "La plantilla \"{name}\" es local (creada o editada en modo código QR) y Meta no la aprobó — envíala a aprobación en Configuración › Plantillas."
     },
     "engine": {
       "needsContact": "{step} necesita un contacto",
@@ -2911,7 +2913,8 @@
       "recipientsRequired": "Proporciona `recipients` (preferido) o `phone_numbers`; debe ser una lista no vacía",
       "templateNameRequired": "El nombre de la plantilla es obligatorio",
       "templateMalformed": "El registro local de la plantilla está dañado: usa \"Sincronizar desde Meta\" en Configuración para repararlo antes de enviar la difusión.",
-      "invalidPhoneFormat": "Formato de número de teléfono no válido"
+      "invalidPhoneFormat": "Formato de número de teléfono no válido",
+      "templateNotApproved": "Esta plantilla es local (creada o editada en modo código QR) y Meta no la aprobó — envíala a aprobación en Configuración › Plantillas."
     },
     "whatsappConfig": {
       "fetchFailed": "Error al obtener la configuración",

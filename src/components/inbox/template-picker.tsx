@@ -111,11 +111,18 @@ export function TemplatePicker({
       // user_id. Templates are account-owned, so filtering on the caller's
       // user_id hid templates that a teammate created — leaving them unable
       // to send approved templates in a shared account.
-      const { data, error } = await supabase
+      // On the official API a `local` template (saved/edited in QR-code
+      // mode) isn't Meta-approved in its current form — not sendable.
+      const { data: cfg } = await supabase
+        .from("whatsapp_config")
+        .select("provider")
+        .maybeSingle();
+      let query = supabase
         .from("message_templates")
         .select("*")
-        .eq("status", "APPROVED")
-        .order("created_at", { ascending: false });
+        .eq("status", "APPROVED");
+      if (cfg?.provider !== "openwa") query = query.neq("origin", "local");
+      const { data, error } = await query.order("created_at", { ascending: false });
 
       if (cancelled) return;
       if (error) {

@@ -95,8 +95,11 @@ export async function PATCH(
     }
 
     // QR-code connection: templates are local (migration 047). An edit
-    // is a local update, ready to use at once — and a Meta-approved row
-    // edited here no longer matches Meta's copy, so it becomes local too.
+    // is a local update, ready to use at once. A Meta-approved row edited
+    // here no longer matches what Meta approved, so it stops being that
+    // template: origin 'local' and its Meta id is dropped. Back on the
+    // official API it is refused for sending until it is submitted (and
+    // approved) again — never sent by name while showing other text.
     const localMode = (await loadAccountProvider(supabase, accountId)) === 'openwa'
     if (localMode) {
       if (payload.category === 'Authentication') {
@@ -123,6 +126,8 @@ export async function PATCH(
           sample_values: payload.sample_values ?? null,
           status: 'APPROVED',
           origin: 'local',
+          meta_template_id: null,
+          quality_score: null,
           submission_error: null,
           rejection_reason: null,
           last_submitted_at: new Date().toISOString(),

@@ -260,7 +260,9 @@ export function TemplateManager() {
   }
 
   function openEdit(template: MessageTemplate) {
-    setEditingId(template.id);
+    // On the official API a local template (QR-code mode) has nothing on
+    // Meta to edit: the dialog submits it for approval instead.
+    setEditingId(!localMode && template.origin === 'local' ? null : template.id);
     setForm({
       name: template.name,
       category: template.category,
@@ -590,7 +592,8 @@ export function TemplateManager() {
             const statusKey = template.status || 'DRAFT';
             const status = templateStatusConfig[statusKey];
             // On a QR connection every template is local and usable as is.
-            const canEdit = localMode || statusKey === 'APPROVED';
+            const canEdit =
+              localMode || statusKey === 'APPROVED' || template.origin === 'local';
             return (
               <Card key={template.id}>
                 <CardContent className="flex items-start justify-between pt-4">
@@ -607,19 +610,19 @@ export function TemplateManager() {
                         <Badge className="text-xs border-transparent bg-chip-active text-chip-active-foreground">
                           {t('readyToUse')}
                         </Badge>
+                      ) : template.origin === 'local' ? (
+                        <Badge
+                          className="text-xs border-transparent bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          title={t('localOriginTitle')}
+                        >
+                          {t('localNotApproved')}
+                        </Badge>
                       ) : (
                         <Badge className={cn('text-xs', status.classes, 'border-transparent')}>
                           {status.label}
                         </Badge>
                       )}
-                      {!localMode && template.origin === 'local' && (
-                        <Badge
-                          className="text-xs border-transparent bg-hover-surface text-muted-foreground"
-                          title={t('localOriginTitle')}
-                        >
-                          {t('localOrigin')}
-                        </Badge>
-                      )}
+
                       {template.language && (
                         <span className="text-xs text-muted-foreground uppercase">
                           {template.language}

@@ -43,6 +43,7 @@ import {
   resolveTemplateRow,
   templateBodyParams,
   templateContentText,
+  templateUsableOn,
 } from '@/lib/whatsapp/template-body';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
@@ -319,6 +320,13 @@ export async function sendMessageToConversation(
     }
     templateRow = resolved.row;
     sendLanguage = resolved.language;
+    if (!templateUsableOn(transport.capabilities.templates, templateRow)) {
+      throw new SendMessageError(
+        'template_not_approved',
+        'This template is local (created or edited in QR-code mode) and not approved by Meta — submit it in Settings → Templates first.',
+        400
+      );
+    }
   }
 
   const attempt = async (to: string): Promise<string> => {

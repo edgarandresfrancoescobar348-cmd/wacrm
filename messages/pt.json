@@ -1746,7 +1746,8 @@
       "localOrigin": "Local",
       "localOriginTitle": "Criado no modo QR Code; nunca foi enviado à Meta para aprovação.",
       "saveLocal": "Salvar modelo",
-      "descriptionLocal": "Crie modelos de mensagem com variáveis para usar no inbox, em disparos e automações."
+      "descriptionLocal": "Crie modelos de mensagem com variáveis para usar no inbox, em disparos e automações.",
+      "localNotApproved": "Local · não aprovado pela Meta"
     },
     "roles": {
       "admin": "Administrador",
@@ -2615,7 +2616,8 @@
       "notConfigured": "WhatsApp não configurado para esta conta",
       "dbInsertFailed": "enviado à Meta, mas a gravação no banco de dados falhou: {message}",
       "conversationLookupFailed": "falha ao buscar a conversa: {message}",
-      "conversationNotFound": "conversa não encontrada nesta conta"
+      "conversationNotFound": "conversa não encontrada nesta conta",
+      "templateNotApproved": "O modelo \"{name}\" é local (criado ou editado no modo QR Code) e não foi aprovado pela Meta — envie-o para aprovação em Configurações › Modelos."
     },
     "engine": {
       "needsContact": "{step} precisa de um contato",
@@ -2911,7 +2913,8 @@
       "recipientsRequired": "Informe `recipients` (preferencial) ou `phone_numbers` — deve ser uma lista não vazia",
       "templateNameRequired": "O nome do modelo é obrigatório",
       "templateMalformed": "O registro local do modelo está corrompido — use \"Sincronizar da Meta\" em Configurações para corrigi-lo antes de disparar.",
-      "invalidPhoneFormat": "Formato de número de telefone inválido"
+      "invalidPhoneFormat": "Formato de número de telefone inválido",
+      "templateNotApproved": "Este modelo é local (criado ou editado no modo QR Code) e não foi aprovado pela Meta — envie-o para aprovação em Configurações › Modelos."
     },
     "whatsappConfig": {
       "fetchFailed": "Falha ao buscar a configuração",

@@ -268,14 +268,23 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
     // actually be sent (anything else 400s at send time), matching the
     // broadcast picker.
     void (async () => {
+      // On the official API a `local` template (QR-code mode) isn't
+      // Meta-approved in its current form — not offered.
+      const { data: cfg } = await supabase
+        .from("whatsapp_config")
+        .select("provider")
+        .maybeSingle();
+      const templatesQuery = supabase
+        .from("message_templates")
+        .select("*")
+        .eq("status", "APPROVED");
       const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes] =
         await Promise.all([
           supabase.from("tags").select("*").order("name"),
-          supabase
-            .from("message_templates")
-            .select("*")
-            .eq("status", "APPROVED")
-            .order("name"),
+          (cfg?.provider === "openwa"
+            ? templatesQuery
+            : templatesQuery.neq("origin", "local")
+          ).order("name"),
           supabase.from("custom_fields").select("*").order("field_name"),
           supabase.from("pipelines").select("id, name").order("name"),
           supabase

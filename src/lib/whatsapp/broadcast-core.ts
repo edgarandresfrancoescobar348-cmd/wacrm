@@ -27,7 +27,7 @@ import {
   type WhatsAppTransport,
 } from '@/lib/whatsapp/transport';
 import { paceBroadcastSend, type PaceOptions } from '@/lib/whatsapp/transport/pacing';
-import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
+import { resolveTemplateRow, templateUsableOn } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
 
@@ -131,6 +131,13 @@ export async function createBroadcast(
     );
   }
   const templateRow = resolvedTemplate.row;
+  if (!templateUsableOn(transport.capabilities.templates, templateRow)) {
+    throw new BroadcastError(
+      'template_not_approved',
+      'This template is local (created or edited in QR-code mode) and not approved by Meta — submit it first.',
+      400
+    );
+  }
 
   // Resolve each recipient to a contact. Invalid phones are dropped
   // (counted as rejected) rather than aborting the whole broadcast.

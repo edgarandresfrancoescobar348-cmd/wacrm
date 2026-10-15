@@ -1746,7 +1746,8 @@
       "localOrigin": "Local",
       "localOriginTitle": "Created in QR-code mode; never submitted to Meta for approval.",
       "saveLocal": "Save template",
-      "descriptionLocal": "Create message templates with variables to use in the inbox, broadcasts and automations."
+      "descriptionLocal": "Create message templates with variables to use in the inbox, broadcasts and automations.",
+      "localNotApproved": "Local · not approved by Meta"
     },
     "roles": {
       "admin": "Admin",
@@ -2615,7 +2616,8 @@
       "notConfigured": "WhatsApp not configured for this account",
       "dbInsertFailed": "sent to Meta but DB insert failed: {message}",
       "conversationLookupFailed": "conversation lookup failed: {message}",
-      "conversationNotFound": "conversation not found for this account"
+      "conversationNotFound": "conversation not found for this account",
+      "templateNotApproved": "Template \"{name}\" is local (created or edited in QR-code mode) and not approved by Meta — submit it in Settings › Templates first."
     },
     "engine": {
       "needsContact": "{step} needs a contact",
@@ -2911,7 +2913,8 @@
       "recipientsRequired": "Provide either `recipients` (preferred) or `phone_numbers` — must be a non-empty array",
       "templateNameRequired": "template_name is required",
       "templateMalformed": "Template row is malformed locally — run \"Sync from Meta\" in Settings to repair it before broadcasting.",
-      "invalidPhoneFormat": "Invalid phone number format"
+      "invalidPhoneFormat": "Invalid phone number format",
+      "templateNotApproved": "This template is local (created or edited in QR-code mode) and not approved by Meta — submit it in Settings › Templates first."
     },
     "whatsappConfig": {
       "fetchFailed": "Failed to fetch configuration",

@@ -7,6 +7,7 @@ import {
 import {
   resolveTemplateRow,
   templateContentText,
+  templateUsableOn,
 } from '@/lib/whatsapp/template-body'
 import { supabaseAdmin } from './admin-client'
 import { persistOutboundMessage } from '@/lib/whatsapp/outbound-persist'
@@ -127,6 +128,9 @@ async function sendViaTransport(input: SendInput): Promise<{ whatsapp_message_id
 
   const { waMessageId } = await sendToContact(input, async (transport, to) => {
     if (input.kind === 'template') {
+      if (!templateUsableOn(transport.capabilities.templates, templateRow)) {
+        throw new Error(t('send.templateNotApproved', { name: input.templateName }))
+      }
       const r = await transport.sendTemplate({
         to,
         templateName: input.templateName,

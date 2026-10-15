@@ -37,11 +37,20 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         // Only APPROVED templates can be sent via Meta — anything else
         // would 400 at broadcast time. Hide them rather than letting
         // the user pick a template that will fail.
-        const { data, error: fetchError } = await supabase
+        // On the official API a `local` template (QR-code mode) isn't
+        // Meta-approved in its current form — hide it.
+        const { data: cfg } = await supabase
+          .from('whatsapp_config')
+          .select('provider')
+          .maybeSingle();
+        let query = supabase
           .from('message_templates')
           .select('*')
-          .eq('status', 'APPROVED')
-          .order('created_at', { ascending: false });
+          .eq('status', 'APPROVED');
+        if (cfg?.provider !== 'openwa') query = query.neq('origin', 'local');
+        const { data, error: fetchError } = await query.order('created_at', {
+          ascending: false,
+        });
 
         if (fetchError) throw fetchError;
         setTemplates(data ?? []);

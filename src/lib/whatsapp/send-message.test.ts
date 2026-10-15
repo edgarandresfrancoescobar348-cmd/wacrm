@@ -477,3 +477,32 @@ describe('sendMessageToConversation — echo already persisted (F5)', () => {
     expect(captured.messageMerge).not.toHaveProperty('status');
   });
 });
+
+// F9 (review): on the official API a `local` template (edited or created
+// in QR-code mode) is not what Meta approved — never send it by name.
+describe('sendMessageToConversation — local template on Meta (F9)', () => {
+  it('refuses before calling Meta', async () => {
+    sendTemplateMessage.mockClear();
+    const captured: CapturedWrites = {};
+    await expect(
+      sendMessageToConversation(
+        sendPathDb([{ ...TEMPLATE_ROW, origin: 'local', status: 'APPROVED' }], captured),
+        'acct-1',
+        { conversationId: 'cv-1', messageType: 'template', templateName: 'order_update', templateParams: ['A', 'B'] }
+      )
+    ).rejects.toMatchObject({ code: 'template_not_approved', status: 400 });
+    expect(sendTemplateMessage).not.toHaveBeenCalled();
+    expect(captured.message).toBeUndefined();
+  });
+
+  it('still sends a Meta-origin template', async () => {
+    sendTemplateMessage.mockClear();
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(
+      sendPathDb([{ ...TEMPLATE_ROW, origin: 'meta' }], captured),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'template', templateName: 'order_update', templateParams: ['A', 'B'] }
+    );
+    expect(sendTemplateMessage).toHaveBeenCalledTimes(1);
+  });
+});

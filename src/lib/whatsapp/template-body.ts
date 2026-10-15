@@ -169,3 +169,6 @@ export function templateContentText(
   if (!row?.body_text) return null;
   return renderTemplateBody(row.body_text, params);
 }
+
+
+export { templateUsableOn, templateModeFor } from './template-usable';

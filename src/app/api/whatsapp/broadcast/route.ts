@@ -11,7 +11,7 @@ import {
   paceBroadcastSend,
 } from '@/lib/whatsapp/transport/pacing'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
-import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
+import { resolveTemplateRow, templateUsableOn } from '@/lib/whatsapp/template-body'
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import {
   checkRateLimit,
@@ -169,6 +169,12 @@ export async function POST(request: Request) {
       )
     }
     const templateRow = resolvedTemplate.row
+    if (!templateUsableOn(transport.capabilities.templates, templateRow)) {
+      return NextResponse.json(
+        { error: t('broadcast.templateNotApproved'), code: 'template_not_approved' },
+        { status: 400 }
+      )
+    }
 
     const results: BroadcastResult[] = []
     let sentCount = 0

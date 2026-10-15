@@ -24,7 +24,7 @@ import {
   type BroadcastPlan,
 } from '@/lib/whatsapp/broadcast-core';
 import { chunk } from '@/lib/supabase/paged-query';
-import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
+import { resolveTemplateRow, templateUsableOn } from '@/lib/whatsapp/template-body';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 
 /** Which recipients a resume pass picks up. */
@@ -229,6 +229,14 @@ export async function planBroadcastResume(
       'template_malformed',
       'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before resuming.',
       500
+    );
+  }
+
+  if (!templateUsableOn(transport.capabilities.templates, resolvedTemplate.row)) {
+    throw new BroadcastError(
+      'template_not_approved',
+      'This template is local (created or edited in QR-code mode) and not approved by Meta — submit it first.',
+      400
     );
   }
 

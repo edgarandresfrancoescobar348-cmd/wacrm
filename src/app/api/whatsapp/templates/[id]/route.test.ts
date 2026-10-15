@@ -16,6 +16,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /** Role `requireRole` reads off the caller's profile row. */
 let callerRole = 'admin'
+/** Active WhatsApp connection of the account. */
+let provider = 'meta'
 
 const TEMPLATE = {
   id: '3f1c9d2e-4b5a-4c6d-8e7f-0a1b2c3d4e5f',
@@ -50,6 +52,7 @@ function makeSupabaseMock() {
               phone_number_id: 'PNID-1',
               waba_id: 'WABA-1',
               access_token: 'enc-token',
+              provider,
             },
             error: null,
           }
@@ -132,6 +135,7 @@ beforeEach(() => {
   templateUpdates.length = 0
   templateDeletes = 0
   callerRole = 'admin'
+  provider = 'meta'
   supabaseMock = makeSupabaseMock()
   meta.editMessageTemplate.mockClear()
   meta.deleteMessageTemplate.mockClear()
@@ -164,5 +168,18 @@ describe('template lifecycle role gate (GHSA-m4fx-g6pr-hrw8)', () => {
     const deleted = await DELETE(new Request('http://localhost/t'), { params })
     expect(deleted.status).toBe(200)
     expect(meta.deleteMessageTemplate).toHaveBeenCalledTimes(1)
+  })
+})
+
+// F9 (review): editing a Meta-approved template in QR mode must not leave
+// a row that still claims Meta's approval for different content.
+describe('local edit of a Meta-approved template (F9)', () => {
+  it('drops the Meta association and marks the row local', async () => {
+    provider = 'openwa'
+    const res = await patchTemplate()
+    expect(res.status).toBe(200)
+    expect(meta.editMessageTemplate).not.toHaveBeenCalled()
+    expect(templateUpdates).toHaveLength(1)
+    expect(templateUpdates[0]).toMatchObject({ origin: 'local', meta_template_id: null })
   })
 })

@@ -10,7 +10,8 @@ vi.mock('@/lib/auth/account', () => ({
   requireRole: async () => ({ supabase: {}, accountId: 'acct-route', userId: 'u1' }),
   toErrorResponse: () => new Response('', { status: 500 }),
 }))
-vi.mock('@/lib/whatsapp/template-body', () => ({
+vi.mock('@/lib/whatsapp/template-body', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   resolveTemplateRow: async () => ({ row: null, malformed: false, language: 'pt_BR' }),
 }))
 vi.mock('@/lib/whatsapp/transport', async (importOriginal) => ({
