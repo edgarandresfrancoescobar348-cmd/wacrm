@@ -2754,5 +2754,8 @@
       "metaApiStatus": "Meta API error: {status}",
       "syncFailed": "Failed to sync templates"
     }
+  },
+  "AuthScreen": {
+    "footnote": "Secure connection to your workspace"
   }
 }

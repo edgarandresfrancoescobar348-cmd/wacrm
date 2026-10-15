@@ -10,9 +10,10 @@
 // visitors through its login redirect. A dedicated layout
 // avoids both.
 //
-// Styling matches the login / signup pages — centered card on a
-// slate-950 background — so the join experience feels like a
-// natural step in the auth funnel rather than a foreign page.
+// Styling matches the login / signup pages — the shared
+// WhatsApp-Web-style `AuthScreen` frame with a centered card — so
+// the join experience feels like a natural step in the auth funnel
+// rather than a foreign page.
 //
 // Referrer-Policy: no-referrer
 //   The plaintext invite token lives in the URL path. Without
@@ -27,6 +28,7 @@
 
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { AuthScreen } from '@/components/auth/auth-shell';
 
 export const metadata: Metadata = {
   referrer: 'no-referrer',
@@ -36,9 +38,5 @@ export const metadata: Metadata = {
 };
 
 export default function JoinLayout({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      {children}
-    </div>
-  );
+  return <AuthScreen>{children}</AuthScreen>;
 }

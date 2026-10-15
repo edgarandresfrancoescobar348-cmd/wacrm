@@ -2754,5 +2754,8 @@
       "metaApiStatus": "Erro da API da Meta: {status}",
       "syncFailed": "Falha ao sincronizar os modelos"
     }
+  },
+  "AuthScreen": {
+    "footnote": "Conexão segura com o seu espaço de trabalho"
   }
 }

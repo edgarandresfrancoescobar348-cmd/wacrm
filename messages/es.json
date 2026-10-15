@@ -2754,5 +2754,8 @@
       "metaApiStatus": "Error de la API de Meta: {status}",
       "syncFailed": "Error al sincronizar las plantillas"
     }
+  },
+  "AuthScreen": {
+    "footnote": "Conexión segura con tu espacio de trabajo"
   }
 }
