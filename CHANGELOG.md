@@ -14,11 +14,15 @@ and polish.
 Second WhatsApp connection mode: **QR Code** through a self-hosted OpenWA
 gateway, next to the official Meta Cloud API.
 
-> **Migration required:** apply `supabase/migrations/047_whatsapp_openwa.sql`
-> (adds `whatsapp_config.provider`, the service-role-only
-> `whatsapp_openwa_config` + `openwa_webhook_deliveries` tables,
-> `messages.revoked_at/edited_at` and `message_templates.origin`; additive,
-> existing rows keep working as official-API accounts).
+> **Migration required:** apply `supabase/migrations/047_whatsapp_openwa.sql`,
+> `048_openwa_delivery_state.sql`, `049_openwa_replay_guards.sql` and
+> `050_message_status_pending.sql`, in order. All additive; existing rows
+> keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
+> the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
+> tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
+> 048 the delivery ledger's processing state; 049 its per-account key and the
+> session-event watermark; 050 `message_status_pending` and the triggers that
+> apply early delivery receipts.
 
 ### Added
 
@@ -46,8 +50,25 @@ gateway, next to the official Meta Cloud API.
   deliveries are de-duplicated on their idempotency key.
 - The gateway URL is SSRF-guarded (operator allow-list for private hosts),
   redirects are never followed, the API key and webhook secret are encrypted
-  and never sent to the browser, and every new route is admin-only and
-  rate-limited.
+  and never sent to the browser; a held key is only sent to the gateway URL
+  it is bound to. Admin routes are admin-only and rate-limited per user.
+- Webhook deliveries are recorded as done only after their durable part
+  succeeded (failures answer 503 and are redelivered); the delivery identity
+  comes from the signed body, old deliveries are refused and session events
+  apply newest-wins.
+- Proxied gateway media is served inline only for inert types, otherwise as
+  a sandboxed download.
+
+### Fixed
+
+- Delivery receipts that arrive before their message exists are kept and
+  applied when it appears; ticks never move backwards (official API too).
+- A quoted reply to an older numbered menu maps to that menu's options.
+- The echo of our own QR send can no longer make the send fail.
+- Paced broadcasts stop at the request's time budget and leave the rest for
+  Resume instead of being cut off.
+- A Meta template edited in QR mode becomes local and is refused on the
+  official API until resubmitted.
 
 ## [0.8.1] — 2026-07-10
 

@@ -69,7 +69,15 @@ so quoting or reacting to messages from before the switch stops resolving.
   RLS on and **no** client policies: only server routes read it, and they only
   ever return a sanitized state.
 - Only owners/admins can save, test, connect, disconnect, request a QR or a
-  pairing code, or switch modes. Every route is account-scoped and rate-limited.
+  pairing code, or switch modes. Every route is account-scoped; the admin
+  routes are rate-limited per user (20/min for actions, 40/min for QR/status
+  polling). The member read routes (state, media proxy) and the signed webhook
+  have no limiter of their own.
+- A key the server holds (the stored one, or `OPENWA_API_KEY`) is only ever
+  sent to the gateway URL it is bound to.
+- Media proxied from the gateway is served inline only for inert types
+  (images, audio, video); anything else downloads as
+  `application/octet-stream`, always with `nosniff` and a sandboxing CSP.
 - Inbound events arrive at `POST /api/whatsapp/openwa/webhook`. A delivery is
   processed only if its session belongs to an account **and** its
   `X-OpenWA-Signature: sha256=<hex>` is the HMAC-SHA256 of the raw body under
