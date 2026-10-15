@@ -2147,7 +2147,15 @@
     "retry": "Retry",
     "emptyTitle": "No notifications yet",
     "emptyDesc": "You'll see an alert here when someone assigns you a conversation.",
-    "unread": "Unread"
+    "unread": "Unread",
+    "filterAll": "All",
+    "searchPlaceholder": "Search notifications",
+    "clearSearch": "Clear search",
+    "moreActions": "More options",
+    "noMatches": "No notifications found",
+    "yesterday": "Yesterday",
+    "openInbox": "Open inbox",
+    "alertSettings": "Alert settings"
   },
   "Agents": {
     "title": "AI Agents",
@@ -2167,7 +2175,8 @@
       "placeholder": "Type a customer message…",
       "notConfigured": "No agent configured yet — finish Setup first.",
       "noReply": "Couldn't get a reply.",
-      "unreachable": "Couldn't reach the agent."
+      "unreachable": "Couldn't reach the agent.",
+      "send": "Send"
     },
     "usage": {
       "title": "Token usage",

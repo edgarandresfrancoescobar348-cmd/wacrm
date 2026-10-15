@@ -2147,7 +2147,15 @@
     "retry": "Tentar novamente",
     "emptyTitle": "Nenhuma notificação ainda",
     "emptyDesc": "Você verá um alerta aqui quando alguém atribuir uma conversa a você.",
-    "unread": "Não lidas"
+    "unread": "Não lidas",
+    "filterAll": "Todas",
+    "searchPlaceholder": "Buscar notificações",
+    "clearSearch": "Limpar busca",
+    "moreActions": "Mais opções",
+    "noMatches": "Nenhuma notificação encontrada",
+    "yesterday": "Ontem",
+    "openInbox": "Abrir caixa de entrada",
+    "alertSettings": "Configurar alertas"
   },
   "Agents": {
     "title": "Agentes de IA",
@@ -2167,7 +2175,8 @@
       "placeholder": "Digite uma mensagem de cliente…",
       "notConfigured": "Nenhum agente configurado ainda — conclua a Configuração primeiro.",
       "noReply": "Não foi possível obter uma resposta.",
-      "unreachable": "Não foi possível conectar ao agente."
+      "unreachable": "Não foi possível conectar ao agente.",
+      "send": "Enviar"
     },
     "usage": {
       "title": "Uso de tokens",
