@@ -2,8 +2,8 @@
 
 import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
-import { formatCurrency } from "@/lib/currency";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDateOnly, formatMoney } from "@/components/broadcasts/locale-format";
 import { WaAvatar } from "@/components/layout/wa-panel";
 
 interface DealCardProps {
@@ -14,16 +14,9 @@ interface DealCardProps {
   isOverlay?: boolean;
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 export function DealCard({ deal, onEdit, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
+  const locale = useLocale();
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
 
@@ -75,13 +68,13 @@ export function DealCard({ deal, onEdit, isOverlay }: DealCardProps) {
 
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-primary-text tabular-nums">
-          {formatCurrency(deal.value, deal.currency)}
+          {formatMoney(deal.value, deal.currency ?? "", locale)}
         </span>
         <div className="flex min-w-0 items-center gap-2">
           {deal.expected_close_date && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Calendar className="size-3" />
-              {formatDate(deal.expected_close_date)}
+              {formatDateOnly(deal.expected_close_date, locale)}
             </span>
           )}
           {assigneeLabel && (

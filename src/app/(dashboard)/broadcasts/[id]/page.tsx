@@ -41,7 +41,12 @@ import {
   getBroadcastStatus,
   getRecipientStatus,
 } from '@/lib/broadcast-status';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import {
+  formatDate,
+  formatDateTime,
+  formatNumber,
+} from '@/components/broadcasts/locale-format';
 import {
   WaAvatar,
   WaChip,
@@ -70,6 +75,7 @@ interface StatCardProps {
 }
 
 function StatCard({ label, value, total, icon: Icon, tint }: StatCardProps) {
+  const locale = useLocale();
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
     <div className="rounded-xl bg-surface p-3 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
@@ -80,7 +86,7 @@ function StatCard({ label, value, total, icon: Icon, tint }: StatCardProps) {
         <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
       </div>
       <p className="mt-2.5 text-[22px] leading-7 font-medium text-foreground tabular-nums">
-        {value.toLocaleString()}
+        {formatNumber(value, locale)}
       </p>
       <p className="truncate text-[13px] text-muted-foreground">{label}</p>
     </div>
@@ -100,6 +106,7 @@ interface FunnelStep {
  */
 function FunnelChart({ steps }: { steps: FunnelStep[] }) {
   const t = useTranslations('Broadcasts.detail');
+  const locale = useLocale();
   const max = Math.max(...steps.map((s) => s.value), 1);
   return (
     <div className="rounded-xl bg-surface p-4 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
@@ -122,7 +129,7 @@ function FunnelChart({ steps }: { steps: FunnelStep[] }) {
                   style={{ width: `${pctOfMax}%` }}
                 />
                 <span className="absolute inset-0 flex items-center px-3 text-xs font-medium text-foreground tabular-nums">
-                  {step.value.toLocaleString()}
+                  {formatNumber(step.value, locale)}
                   <span className="ml-2 opacity-70">
                     ({pctOfSent}%)
                   </span>
@@ -171,6 +178,7 @@ export default function BroadcastDetailPage() {
   const router = useRouter();
   const t = useTranslations('Broadcasts.detail');
   const tStatus = useTranslations('Broadcasts.status');
+  const locale = useLocale();
   const broadcastId = params.id as string;
 
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
@@ -390,7 +398,7 @@ export default function BroadcastDetailPage() {
         }
         title={broadcast.name}
         subtitle={`${t('template', { name: broadcast.template_name })} · ${t('createdAt', {
-          date: new Date(broadcast.created_at).toLocaleDateString(),
+          date: formatDate(broadcast.created_at, locale),
         })}`}
         actions={
           <>
@@ -621,17 +629,17 @@ export default function BroadcastDetailPage() {
                             </TableCell>
                             <TableCell className="text-[13px] text-muted-foreground">
                               {recipient.sent_at
-                                ? new Date(recipient.sent_at).toLocaleString()
+                                ? formatDateTime(recipient.sent_at, locale)
                                 : '-'}
                             </TableCell>
                             <TableCell className="text-[13px] text-muted-foreground">
                               {recipient.delivered_at
-                                ? new Date(recipient.delivered_at).toLocaleString()
+                                ? formatDateTime(recipient.delivered_at, locale)
                                 : '-'}
                             </TableCell>
                             <TableCell className="text-[13px] text-muted-foreground">
                               {recipient.read_at
-                                ? new Date(recipient.read_at).toLocaleString()
+                                ? formatDateTime(recipient.read_at, locale)
                                 : '-'}
                             </TableCell>
                             <TableCell

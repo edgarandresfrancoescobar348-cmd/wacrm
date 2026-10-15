@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  CalendarDays,
   Check,
   ChevronRight,
   Columns3,
@@ -41,7 +42,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDateOnlyLong } from "@/components/broadcasts/locale-format";
 
 interface DealFormProps {
   open: boolean;
@@ -64,6 +66,7 @@ export function DealForm({
 }: DealFormProps) {
   const t = useTranslations("Pipelines.form");
   const tUi = useTranslations("UiPrimitives");
+  const locale = useLocale();
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
@@ -330,6 +333,14 @@ export function DealForm({
                   value={expectedCloseDate}
                   onChange={(e) => setExpectedCloseDate(e.target.value)}
                 />
+                {/* The native date input renders in the BROWSER's locale
+                    (e.g. 10/18/2026); echo the date in the app locale. */}
+                {expectedCloseDate && (
+                  <p className="flex items-center gap-1.5 px-1 text-[13px] text-muted-foreground">
+                    <CalendarDays className="size-3.5" />
+                    {formatDateOnlyLong(expectedCloseDate, locale)}
+                  </p>
+                )}
               </div>
             </section>
 

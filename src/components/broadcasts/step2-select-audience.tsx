@@ -23,7 +23,8 @@ import {
   UserMinus,
   X,
 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatNumber } from './locale-format';
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -56,6 +57,7 @@ export function Step2SelectAudience({
   onBack,
 }: Step2Props) {
   const t = useTranslations('Broadcasts.wizard');
+  const locale = useLocale();
 
   const OPERATOR_OPTIONS = useMemo<{ value: CustomFieldOperator; label: string }[]>(() => [
     { value: 'is', label: t('selectAudience.operatorIs') },
@@ -445,7 +447,7 @@ export function Step2SelectAudience({
           ) : estimatedCount !== null ? (
             <p>
               <span className="text-lg font-medium tabular-nums">
-                {estimatedCount.toLocaleString()}
+                {formatNumber(estimatedCount, locale)}
               </span>{' '}
               {t('selectAudience.estimatedRecipients')}
             </p>

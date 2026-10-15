@@ -27,7 +27,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { StepCard, StepHeading, StepNav } from './wizard-ui';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatNumber } from './locale-format';
 
 interface Step4Props {
   name: string;
@@ -53,6 +54,7 @@ export function Step4ScheduleSend({
   progress,
 }: Step4Props) {
   const t = useTranslations('Broadcasts.wizard');
+  const locale = useLocale();
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
@@ -108,7 +110,7 @@ export function Step4ScheduleSend({
                 <Loader2 className="size-4 animate-spin text-primary-text" />
               ) : (
                 <span className="font-medium tabular-nums">
-                  {estimatedReach.toLocaleString()}
+                  {formatNumber(estimatedReach, locale)}
                 </span>
               )
             }

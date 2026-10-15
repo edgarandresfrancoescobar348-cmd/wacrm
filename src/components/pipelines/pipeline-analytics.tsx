@@ -19,8 +19,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency } from "@/lib/currency";
-import { useTranslations } from "next-intl";
+import { formatMoney, formatNumber } from "@/components/broadcasts/locale-format";
+import { useLocale, useTranslations } from "next-intl";
 
 interface PipelineAnalyticsProps {
   stages: PipelineStage[];
@@ -49,6 +49,7 @@ function computeStageProbability(
 
 export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
   const t = useTranslations("Pipelines.analytics");
+  const locale = useLocale();
   const { defaultCurrency } = useAuth();
   const sortedStages = useMemo(
     () => [...stages].sort((a, b) => a.position - b.position),
@@ -101,7 +102,7 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
           icon={BarChart3}
           tint="neutral"
           label={t("totalDeals")}
-          value={String(stats.totalCount)}
+          value={formatNumber(stats.totalCount, locale)}
           tooltip={t("totalDealsTooltip")}
           t={t}
         />
@@ -109,7 +110,7 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
           icon={DollarSign}
           tint="green"
           label={t("pipelineValue")}
-          value={formatCurrency(stats.totalValue, defaultCurrency)}
+          value={formatMoney(stats.totalValue, defaultCurrency, locale)}
           tooltip={t("pipelineValueTooltip")}
           t={t}
         />
@@ -117,7 +118,7 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
           icon={Target}
           tint="blue"
           label={t("avgDealSize")}
-          value={formatCurrency(stats.avgValue, defaultCurrency)}
+          value={formatMoney(stats.avgValue, defaultCurrency, locale)}
           tooltip={t("avgDealSizeTooltip")}
           t={t}
         />
@@ -125,7 +126,7 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
           icon={TrendingUp}
           tint="green"
           label={t("weightedValue")}
-          value={formatCurrency(stats.weightedValue, defaultCurrency)}
+          value={formatMoney(stats.weightedValue, defaultCurrency, locale)}
           tooltip={t("weightedValueTooltip")}
           t={t}
         />
@@ -133,7 +134,7 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
           icon={Trophy}
           tint="green"
           label={t("wonThisMonth")}
-          value={String(stats.wonThisMonth)}
+          value={formatNumber(stats.wonThisMonth, locale)}
           tooltip={t("wonThisMonthTooltip")}
           t={t}
         />
@@ -141,7 +142,7 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
           icon={XCircle}
           tint="red"
           label={t("lostThisMonth")}
-          value={String(stats.lostThisMonth)}
+          value={formatNumber(stats.lostThisMonth, locale)}
           tooltip={t("lostThisMonthTooltip")}
           t={t}
         />

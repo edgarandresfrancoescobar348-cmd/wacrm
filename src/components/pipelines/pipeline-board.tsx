@@ -18,8 +18,8 @@ import type { Deal, PipelineStage } from "@/types";
 import { DealCard } from "./deal-card";
 import { Plus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency } from "@/lib/currency";
-import { useTranslations } from "next-intl";
+import { formatMoney } from "@/components/broadcasts/locale-format";
+import { useLocale, useTranslations } from "next-intl";
 
 interface PipelineBoardProps {
   stages: PipelineStage[];
@@ -201,6 +201,7 @@ function StageColumn({
   onEditDeal: (deal: Deal) => void;
 }) {
   const t = useTranslations("Pipelines.board");
+  const locale = useLocale();
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
 
   return (
@@ -225,7 +226,7 @@ function StageColumn({
             {stage.name}
           </h3>
           <p className="truncate text-xs leading-4 text-muted-foreground tabular-nums">
-            {formatCurrency(totalValue, currency)}
+            {formatMoney(totalValue, currency, locale)}
           </p>
         </div>
         <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-hover-surface px-1.5 text-xs font-medium text-muted-foreground tabular-nums">
