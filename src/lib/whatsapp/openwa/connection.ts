@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   isOpenWaSessionStatus,
+  normalizeOpenWaBaseUrl,
   type OpenWaCredentials,
   type OpenWaRestriction,
   type OpenWaSessionStatus,
@@ -138,4 +139,40 @@ export function toPublicOpenWaState(row: OpenWaConnectionRow | null): PublicOpen
     broadcast_delay_ms: row?.broadcast_delay_ms ?? null,
     webhook_registered: Boolean(row?.webhook_id),
   }
+}
+
+function sameGateway(a: string | null | undefined, b: string): boolean {
+  if (!a) return false
+  try {
+    return normalizeOpenWaBaseUrl(a) === b
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The API key to use for `baseUrl` (already normalized).
+ *
+ * A key is a credential FOR ONE GATEWAY. A typed key is the admin's own
+ * to send wherever they point it. A key we hold — the account's stored
+ * key, or the operator's `OPENWA_API_KEY` default — is only ever sent to
+ * the gateway it is bound to: the stored row's URL, or `OPENWA_URL`.
+ * Otherwise a tenant admin could aim "Testar conexão" at a server they
+ * control and receive the operator's (possibly unscoped admin) key in
+ * `X-API-Key`. Returns '' when no key may be used — the caller asks for
+ * one explicitly.
+ */
+export function resolveBoundApiKey(args: {
+  baseUrl: string
+  typedKey?: unknown
+  stored?: Pick<OpenWaConnectionRow, 'base_url' | 'api_key'> | null
+}): string {
+  const typed = typeof args.typedKey === 'string' ? args.typedKey.trim() : ''
+  if (typed) return typed
+  if (args.stored && sameGateway(args.stored.base_url, args.baseUrl)) {
+    return decrypt(args.stored.api_key)
+  }
+  const envKey = process.env.OPENWA_API_KEY?.trim() ?? ''
+  if (envKey && sameGateway(process.env.OPENWA_URL, args.baseUrl)) return envKey
+  return ''
 }

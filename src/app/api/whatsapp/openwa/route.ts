@@ -15,7 +15,7 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/account'
 import { hasMinRole } from '@/lib/auth/roles'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { decrypt, encrypt } from '@/lib/whatsapp/encryption'
+import { encrypt } from '@/lib/whatsapp/encryption'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import {
   assertOpenWaUrlAllowed,
@@ -23,7 +23,11 @@ import {
   validateOpenWaKey,
   OpenWaError,
 } from '@/lib/whatsapp/openwa/client'
-import { loadOpenWaRow, toPublicOpenWaState } from '@/lib/whatsapp/openwa/connection'
+import {
+  loadOpenWaRow,
+  resolveBoundApiKey,
+  toPublicOpenWaState,
+} from '@/lib/whatsapp/openwa/connection'
 import { openWaErrorResponse } from '@/lib/whatsapp/openwa/http'
 import { OPENWA_DEFAULT_BROADCAST_DELAY_MS } from '@/lib/whatsapp/transport/openwa'
 import { loadAccountProvider } from '@/lib/whatsapp/transport'
@@ -45,7 +49,8 @@ export async function GET() {
       defaults: isAdmin
         ? {
             base_url: process.env.OPENWA_URL?.trim() || null,
-            has_api_key: Boolean(process.env.OPENWA_API_KEY?.trim()),
+            // The env key is bound to OPENWA_URL; without it, it is never used.
+            has_api_key: Boolean(process.env.OPENWA_API_KEY?.trim() && process.env.OPENWA_URL?.trim()),
           }
         : { base_url: null, has_api_key: false },
     })
@@ -87,12 +92,9 @@ export async function PUT(request: Request) {
     const admin = supabaseAdmin()
     const existing = await loadOpenWaRow(admin, accountId)
 
-    // A typed key wins; otherwise keep the stored one; otherwise the
-    // operator's OPENWA_API_KEY default.
-    const typedKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
-    let apiKey = typedKey
-    if (!apiKey && existing) apiKey = decrypt(existing.api_key)
-    if (!apiKey) apiKey = process.env.OPENWA_API_KEY?.trim() ?? ''
+    // A typed key wins; a key we hold (stored / OPENWA_API_KEY) is only
+    // reused for the gateway it is bound to — see resolveBoundApiKey.
+    const apiKey = resolveBoundApiKey({ baseUrl, typedKey: body.api_key, stored: existing })
     if (!apiKey) {
       return NextResponse.json({ error: 'api_key is required', field: 'api_key' }, { status: 400 })
     }

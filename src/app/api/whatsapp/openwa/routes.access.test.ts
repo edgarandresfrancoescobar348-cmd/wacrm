@@ -3,7 +3,7 @@
 // RLS; members only ever see a sanitized state; the gateway URL is
 // SSRF-checked before anything is called or stored.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { encrypt } from '@/lib/whatsapp/encryption'
 import type { AccountRole } from '@/lib/auth/roles'
@@ -192,5 +192,69 @@ describe('as admin', () => {
     const res = await postPairing(json({ phone: '123' }))
     expect(res.status).toBe(400)
     expect(h.fetchCalls).toEqual([])
+  })
+})
+
+// F1 (review): a key the server holds must never leave for a URL other
+// than the one it is bound to.
+describe('credential binding (F1)', () => {
+  const captured: { url: string; key: unknown }[] = []
+  beforeEach(() => {
+    h.role = 'admin'
+    captured.length = 0
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      captured.push({ url: String(url), key: (init?.headers as Record<string, string>)?.['X-API-Key'] })
+      return new Response(JSON.stringify({ valid: true, role: 'operator', engineType: 'whatsapp-web.js', scoped: false }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    process.env.OPENWA_ALLOWED_HOSTS = 'gw.example.com,other.example.com,env-gw.example.com'
+    process.env.OPENWA_API_KEY = 'server-default-secret'
+    process.env.OPENWA_URL = 'https://env-gw.example.com'
+  })
+  afterEach(() => {
+    delete process.env.OPENWA_API_KEY
+    delete process.env.OPENWA_URL
+  })
+
+  it('test: never sends the server default key to an arbitrary URL', async () => {
+    h.row = null
+    const res = await postTest(json({ base_url: 'https://other.example.com/attacker' }))
+    expect(res.status).toBe(400)
+    expect(captured).toEqual([])
+  })
+
+  it('test: never sends the stored key to a different URL', async () => {
+    const res = await postTest(json({ base_url: 'https://other.example.com' }))
+    expect(res.status).toBe(400)
+    expect(captured).toEqual([])
+  })
+
+  it('PUT: changing the URL without a key is refused (stored key stays home)', async () => {
+    const res = await putConfig(json({ base_url: 'https://other.example.com' }))
+    expect(res.status).toBe(400)
+    expect(captured).toEqual([])
+    expect(h.writes).toEqual([])
+  })
+
+  it('reuses the stored key for its own (normalized) URL', async () => {
+    const res = await postTest(json({ base_url: 'https://gw.example.com/api/' }))
+    expect(res.status).toBe(200)
+    expect(captured[0]).toEqual({ url: 'https://gw.example.com/api/auth/validate', key: 'secret-key-value' })
+  })
+
+  it('uses the server default key only for OPENWA_URL', async () => {
+    h.row = null
+    const res = await postTest(json({ base_url: 'https://env-gw.example.com' }))
+    expect(res.status).toBe(200)
+    expect(captured[0].key).toBe('server-default-secret')
+  })
+
+  it('a typed key goes where the admin points it', async () => {
+    h.row = null
+    const res = await postTest(json({ base_url: 'https://other.example.com', api_key: 'my-own-key' }))
+    expect(res.status).toBe(200)
+    expect(captured[0]).toEqual({ url: 'https://other.example.com/api/auth/validate', key: 'my-own-key' })
   })
 })

@@ -59,7 +59,7 @@ so quoting or reacting to messages from before the switch stops resolving.
 |---|---|---|
 | `OPENWA_ALLOWED_HOSTS` | wacrm | Exact hosts/IPs the gateway URL may resolve to although they are private (`127.0.0.1`, `openwa`, `host.docker.internal`). Without it, private/loopback/link-local gateway URLs are refused (SSRF guard). Operator-only, never user input. |
 | `OPENWA_WEBHOOK_BASE_URL` | wacrm | Public base URL OpenWA posts events to (default: `NEXT_PUBLIC_SITE_URL`, then the browser's origin). E.g. `http://app:3000` in compose, `http://host.docker.internal:3000` when OpenWA runs in Docker and wacrm on the host. |
-| `OPENWA_URL`, `OPENWA_API_KEY` | wacrm | Optional defaults that prefill the form. The key never reaches the browser; leaving the key field empty uses it. |
+| `OPENWA_URL`, `OPENWA_API_KEY` | wacrm | Optional defaults that prefill the form. The key never reaches the browser and is **bound to `OPENWA_URL`**: an empty key field uses it only when the gateway URL is exactly `OPENWA_URL` (any other URL needs its key typed in). Likewise an account's stored key is only reused for the URL it was saved with. |
 | `SSRF_ALLOWED_HOSTS` | OpenWA | Must include wacrm's host when it is on a private network, or OpenWA refuses to deliver webhooks to it. |
 
 ## Security model

@@ -1,15 +1,15 @@
 // POST /api/whatsapp/openwa/test — "Testar conexão". Admin only.
 //
-// Body: { base_url?, api_key? } — the values typed in the form; either
-// falls back to the stored one, then to the operator env default. Never
-// stores anything. Answers what the gateway reported: engine, key role,
+// Body: { base_url?, api_key? } — the values typed in the form. Without
+// a typed key, a key we hold is used only for the gateway it is bound to
+// (the stored row's URL, or OPENWA_URL for OPENWA_API_KEY). Never stores
+// anything. Answers what the gateway reported: engine, key role,
 // version.
 
 import { NextResponse } from 'next/server'
 
 import { requireRole } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { decrypt } from '@/lib/whatsapp/encryption'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import {
   assertOpenWaUrlAllowed,
@@ -17,7 +17,7 @@ import {
   openWaVersion,
   validateOpenWaKey,
 } from '@/lib/whatsapp/openwa/client'
-import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
+import { loadOpenWaRow, resolveBoundApiKey } from '@/lib/whatsapp/openwa/connection'
 import { openWaErrorResponse } from '@/lib/whatsapp/openwa/http'
 
 export async function POST(request: Request) {
@@ -43,11 +43,9 @@ export async function POST(request: Request) {
     const baseUrl = normalizeOpenWaBaseUrl(rawUrl)
     await assertOpenWaUrlAllowed(baseUrl)
 
-    const apiKey =
-      (typeof body.api_key === 'string' && body.api_key.trim()) ||
-      (stored ? decrypt(stored.api_key) : '') ||
-      process.env.OPENWA_API_KEY?.trim() ||
-      ''
+    // A key we hold is only sent to the gateway it is bound to; testing
+    // any other URL needs the key typed in (resolveBoundApiKey).
+    const apiKey = resolveBoundApiKey({ baseUrl, typedKey: body.api_key, stored })
     if (!apiKey) {
       return NextResponse.json({ error: 'api_key is required', field: 'api_key' }, { status: 400 })
     }
