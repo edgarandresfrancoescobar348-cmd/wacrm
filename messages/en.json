@@ -423,7 +423,17 @@
       "toastBulkDeleted": "{count} contacts deleted",
       "filterByTag": "Filter by {name}",
       "removeTagFilter": "Remove {name} filter",
-      "selectContact": "Select {name}"
+      "selectContact": "Select {name}",
+      "moreOptions": "More options",
+      "selectContacts": "Select contacts",
+      "clearSearch": "Clear search",
+      "allChip": "All",
+      "tagsChip": "Tags",
+      "exitSelection": "Exit selection",
+      "selectAllShort": "Select all",
+      "prevPage": "Previous page",
+      "nextPage": "Next page",
+      "emptyPaneTitle": "Your contacts"
     },
     "form": {
       "addTitle": "Add Contact",
@@ -523,7 +533,9 @@
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
       "toastTemplateFailed": "Failed to send template: {reason}",
-      "networkError": "network error"
+      "networkError": "network error",
+      "backToList": "Back to contacts",
+      "closeDetail": "Close contact info"
     },
     "importModal": {
       "title": "Import Contacts",
@@ -2742,5 +2754,8 @@
       "metaApiStatus": "Meta API error: {status}",
       "syncFailed": "Failed to sync templates"
     }
+  },
+  "AuthScreen": {
+    "footnote": "Secure connection to your workspace"
   }
 }

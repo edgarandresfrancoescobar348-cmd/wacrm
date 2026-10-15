@@ -423,7 +423,17 @@
       "toastBulkDeleted": "{count} contactos eliminados",
       "filterByTag": "Filtrar por {name}",
       "removeTagFilter": "Quitar el filtro {name}",
-      "selectContact": "Seleccionar {name}"
+      "selectContact": "Seleccionar {name}",
+      "moreOptions": "Más opciones",
+      "selectContacts": "Seleccionar contactos",
+      "clearSearch": "Borrar búsqueda",
+      "allChip": "Todos",
+      "tagsChip": "Etiquetas",
+      "exitSelection": "Salir de la selección",
+      "selectAllShort": "Seleccionar todos",
+      "prevPage": "Página anterior",
+      "nextPage": "Página siguiente",
+      "emptyPaneTitle": "Tus contactos"
     },
     "form": {
       "addTitle": "Agregar contacto",
@@ -523,7 +533,9 @@
       "toastCustomFieldsFailed": "Error al guardar los campos personalizados",
       "toastTemplateSent": "Plantilla \"{name}\" enviada",
       "toastTemplateFailed": "Error al enviar la plantilla: {reason}",
-      "networkError": "error de red"
+      "networkError": "error de red",
+      "backToList": "Volver a contactos",
+      "closeDetail": "Cerrar información del contacto"
     },
     "importModal": {
       "title": "Importar contactos",
@@ -2742,5 +2754,8 @@
       "metaApiStatus": "Error de la API de Meta: {status}",
       "syncFailed": "Error al sincronizar las plantillas"
     }
+  },
+  "AuthScreen": {
+    "footnote": "Conexión segura con tu espacio de trabajo"
   }
 }

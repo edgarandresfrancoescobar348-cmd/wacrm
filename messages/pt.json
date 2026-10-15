@@ -423,7 +423,17 @@
       "toastBulkDeleted": "{count} contatos excluídos",
       "filterByTag": "Filtrar por {name}",
       "removeTagFilter": "Remover o filtro {name}",
-      "selectContact": "Selecionar {name}"
+      "selectContact": "Selecionar {name}",
+      "moreOptions": "Mais opções",
+      "selectContacts": "Selecionar contatos",
+      "clearSearch": "Limpar busca",
+      "allChip": "Todos",
+      "tagsChip": "Tags",
+      "exitSelection": "Sair da seleção",
+      "selectAllShort": "Selecionar todos",
+      "prevPage": "Página anterior",
+      "nextPage": "Próxima página",
+      "emptyPaneTitle": "Seus contatos"
     },
     "form": {
       "addTitle": "Adicionar contato",
@@ -523,7 +533,9 @@
       "toastCustomFieldsFailed": "Falha ao salvar os campos personalizados",
       "toastTemplateSent": "Modelo \"{name}\" enviado",
       "toastTemplateFailed": "Falha ao enviar o modelo: {reason}",
-      "networkError": "erro de rede"
+      "networkError": "erro de rede",
+      "backToList": "Voltar aos contatos",
+      "closeDetail": "Fechar informações do contato"
     },
     "importModal": {
       "title": "Importar contatos",
@@ -2742,5 +2754,8 @@
       "metaApiStatus": "Erro da API da Meta: {status}",
       "syncFailed": "Falha ao sincronizar os modelos"
     }
+  },
+  "AuthScreen": {
+    "footnote": "Conexão segura com o seu espaço de trabalho"
   }
 }
