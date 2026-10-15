@@ -158,7 +158,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp® no está conectado. Ve a Configuración para conectar tu cuenta."
+      "whatsappNotConnected": "WhatsApp® no está conectado. Ve a Configuración para conectar tu cuenta.",
+      "connectNow": "Conectar ahora"
     },
     "conversationList": {
       "searchPlaceholder": "Buscar conversaciones...",
@@ -173,7 +174,14 @@
       "clearAll": "Limpiar todo",
       "noConversations": "No se encontraron conversaciones",
       "noMessagesYet": "Aún no hay mensajes",
-      "unknown": "Desconocido"
+      "unknown": "Desconocido",
+      "title": "Chats",
+      "moreOptions": "Más opciones",
+      "menuTemplates": "Plantillas de mensaje",
+      "menuQuickReplies": "Respuestas rápidas",
+      "menuWhatsappSettings": "Conexión de WhatsApp",
+      "newContact": "Nuevo contacto",
+      "clearSearch": "Borrar búsqueda"
     },
     "messageThread": {
       "backToConversations": "Volver a las conversaciones",
@@ -258,7 +266,8 @@
         "document": "documento",
         "audio": "audio"
       },
-      "uploadFailed": "Falló la carga."
+      "uploadFailed": "Falló la carga.",
+      "messagePlaceholder": "Escribe un mensaje"
     },
     "bubble": {
       "photo": "Foto",
@@ -278,7 +287,11 @@
       "downloadFailed": "No se pudo descargar el adjunto",
       "viewImage": "Ver imagen",
       "expandVideo": "Ampliar video",
-      "imageAlt": "Imagen compartida"
+      "imageAlt": "Imagen compartida",
+      "play": "Reproducir",
+      "pause": "Pausar",
+      "seek": "Ir a la posición",
+      "playbackFailed": "No se pudo reproducir este audio"
     },
     "mediaViewer": {
       "counter": "{index} de {total}",
@@ -339,7 +352,9 @@
       "deals": "Negocios",
       "noTags": "Sin etiquetas",
       "noDeals": "Sin negocios",
-      "addNotePlaceholder": "Agregar una nota..."
+      "addNotePlaceholder": "Agregar una nota...",
+      "close": "Cerrar",
+      "addNote": "Agregar nota"
     },
     "aiBanner": {
       "pausedTitle": "El asistente de IA está en pausa aquí",
@@ -350,6 +365,16 @@
       "resumed": "IA reanudada.",
       "updateError": "No se pudo actualizar el asistente de IA.",
       "networkError": "No se pudo conectar con el servidor."
+    },
+    "emptyPane": {
+      "title": "La bandeja de entrada de tu equipo",
+      "subtitle": "Elige un chat a la izquierda para responder o usa uno de los atajos de abajo.",
+      "connectWhatsapp": "Conectar WhatsApp",
+      "newContact": "Nuevo contacto",
+      "newBroadcast": "Nueva difusión",
+      "templates": "Plantillas",
+      "quickReplies": "Respuestas rápidas",
+      "pipelines": "Embudos"
     }
   },
   "Contacts": {
@@ -2188,7 +2213,9 @@
     "defaultListButton": "Menú"
   },
   "DashboardShell": {
-    "loading": "Cargando..."
+    "loading": "Cargando...",
+    "loadingTitle": "Cargando tus chats",
+    "loadingFootnote": "Conexión segura con tu espacio de trabajo"
   },
   "UiPrimitives": {
     "close": "Cerrar"

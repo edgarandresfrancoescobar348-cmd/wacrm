@@ -158,7 +158,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
+      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account.",
+      "connectNow": "Connect now"
     },
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
@@ -173,7 +174,14 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "title": "Chats",
+      "moreOptions": "More options",
+      "menuTemplates": "Message templates",
+      "menuQuickReplies": "Quick replies",
+      "menuWhatsappSettings": "WhatsApp connection",
+      "newContact": "New contact",
+      "clearSearch": "Clear search"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -258,7 +266,8 @@
         "document": "document",
         "audio": "audio"
       },
-      "uploadFailed": "Upload failed."
+      "uploadFailed": "Upload failed.",
+      "messagePlaceholder": "Type a message"
     },
     "bubble": {
       "photo": "Photo",
@@ -278,7 +287,11 @@
       "downloadFailed": "Couldn't download the attachment",
       "viewImage": "View image",
       "expandVideo": "Expand video",
-      "imageAlt": "Shared image"
+      "imageAlt": "Shared image",
+      "play": "Play",
+      "pause": "Pause",
+      "seek": "Seek",
+      "playbackFailed": "Couldn't play this audio"
     },
     "mediaViewer": {
       "counter": "{index} of {total}",
@@ -339,7 +352,9 @@
       "deals": "Deals",
       "noTags": "No tags",
       "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+      "addNotePlaceholder": "Add a note...",
+      "close": "Close",
+      "addNote": "Add note"
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",
@@ -350,6 +365,16 @@
       "resumed": "AI resumed.",
       "updateError": "Couldn’t update the AI assistant.",
       "networkError": "Couldn’t reach the server."
+    },
+    "emptyPane": {
+      "title": "Your team inbox",
+      "subtitle": "Pick a chat on the left to reply, or jump straight to one of the shortcuts below.",
+      "connectWhatsapp": "Connect WhatsApp",
+      "newContact": "New contact",
+      "newBroadcast": "New broadcast",
+      "templates": "Templates",
+      "quickReplies": "Quick replies",
+      "pipelines": "Pipelines"
     }
   },
   "Contacts": {
@@ -2188,7 +2213,9 @@
     "defaultListButton": "Menu"
   },
   "DashboardShell": {
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "loadingTitle": "Loading your chats",
+    "loadingFootnote": "Secure connection to your workspace"
   },
   "UiPrimitives": {
     "close": "Close"

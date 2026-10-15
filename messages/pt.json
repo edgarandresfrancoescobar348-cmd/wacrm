@@ -158,7 +158,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta."
+      "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta.",
+      "connectNow": "Conectar agora"
     },
     "conversationList": {
       "searchPlaceholder": "Buscar conversas...",
@@ -173,7 +174,14 @@
       "clearAll": "Limpar tudo",
       "noConversations": "Nenhuma conversa encontrada",
       "noMessagesYet": "Nenhuma mensagem ainda",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "title": "Conversas",
+      "moreOptions": "Mais opções",
+      "menuTemplates": "Modelos de mensagem",
+      "menuQuickReplies": "Respostas rápidas",
+      "menuWhatsappSettings": "Conexão do WhatsApp",
+      "newContact": "Novo contato",
+      "clearSearch": "Limpar busca"
     },
     "messageThread": {
       "backToConversations": "Voltar às conversas",
@@ -258,7 +266,8 @@
         "document": "documento",
         "audio": "áudio"
       },
-      "uploadFailed": "Falha no upload."
+      "uploadFailed": "Falha no upload.",
+      "messagePlaceholder": "Digite uma mensagem"
     },
     "bubble": {
       "photo": "Foto",
@@ -278,7 +287,11 @@
       "downloadFailed": "Não foi possível baixar o anexo",
       "viewImage": "Ver imagem",
       "expandVideo": "Expandir vídeo",
-      "imageAlt": "Imagem compartilhada"
+      "imageAlt": "Imagem compartilhada",
+      "play": "Reproduzir",
+      "pause": "Pausar",
+      "seek": "Avançar para posição",
+      "playbackFailed": "Não foi possível reproduzir este áudio"
     },
     "mediaViewer": {
       "counter": "{index} de {total}",
@@ -339,7 +352,9 @@
       "deals": "Negócios",
       "noTags": "Sem tags",
       "noDeals": "Sem negócios",
-      "addNotePlaceholder": "Adicionar uma nota..."
+      "addNotePlaceholder": "Adicionar uma nota...",
+      "close": "Fechar",
+      "addNote": "Adicionar nota"
     },
     "aiBanner": {
       "pausedTitle": "O assistente de IA está pausado aqui",
@@ -350,6 +365,16 @@
       "resumed": "IA retomada.",
       "updateError": "Não foi possível atualizar o assistente de IA.",
       "networkError": "Não foi possível conectar ao servidor."
+    },
+    "emptyPane": {
+      "title": "Sua caixa de entrada da equipe",
+      "subtitle": "Escolha uma conversa à esquerda para responder ou use um dos atalhos abaixo.",
+      "connectWhatsapp": "Conectar o WhatsApp",
+      "newContact": "Novo contato",
+      "newBroadcast": "Novo disparo",
+      "templates": "Modelos",
+      "quickReplies": "Respostas rápidas",
+      "pipelines": "Pipelines"
     }
   },
   "Contacts": {
@@ -2188,7 +2213,9 @@
     "defaultListButton": "Menu"
   },
   "DashboardShell": {
-    "loading": "Carregando..."
+    "loading": "Carregando...",
+    "loadingTitle": "Carregando suas conversas",
+    "loadingFootnote": "Conexão segura com o seu espaço de trabalho"
   },
   "UiPrimitives": {
     "close": "Fechar"

@@ -13,7 +13,7 @@ import { useTranslations } from "next-intl";
  * moon shows in dark mode (click → go light); the label always names
  * the destination so screen-reader users hear what the click does.
  *
- * 40×40 hit target to match the header's other touch controls.
+ * 40px round ghost button — lives in the WA icon rail (wa-rail.tsx).
  */
 export function ModeToggle({ className }: { className?: string }) {
   const t = useTranslations("ModeToggle");
@@ -28,14 +28,14 @@ export function ModeToggle({ className }: { className?: string }) {
       aria-label={switchLabel}
       title={switchLabel}
       className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        "flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-hover-surface/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
     >
       {mode === "dark" ? (
-        <Moon className="h-5 w-5" />
+        <Moon className="size-[22px]" strokeWidth={1.75} />
       ) : (
-        <Sun className="h-5 w-5" />
+        <Sun className="size-[22px]" strokeWidth={1.75} />
       )}
     </button>
   );
