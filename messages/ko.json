@@ -625,7 +625,8 @@
         "proposalSent": "제안서 발송",
         "negotiation": "협상",
         "won": "성사"
-      }
+      },
+      "moreOptions": "추가 옵션"
     },
     "board": {
       "dropDealHere": "여기에 딜을 놓으세요",

@@ -4,9 +4,11 @@ import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
+import { WaAvatar } from "@/components/layout/wa-panel";
 
 interface DealCardProps {
   deal: Deal;
+  /** Kept for callers; the stage colour now lives on the column header. */
   stage: PipelineStage | null;
   onEdit: (deal: Deal) => void;
   isOverlay?: boolean;
@@ -20,13 +22,7 @@ function formatDate(dateStr: string) {
   });
 }
 
-function initials(name?: string, fallback?: string) {
-  const source = (name || fallback || "?").trim();
-  if (!source) return "?";
-  return source.charAt(0).toUpperCase();
-}
-
-export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
+export function DealCard({ deal, onEdit, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
@@ -41,67 +37,64 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         e.stopPropagation();
         onEdit(deal);
       }}
-      className={`group relative w-full cursor-pointer rounded-xl border border-border/50 bg-muted/70 pl-4 pr-3 py-3 text-left shadow-sm transition-all ${
+      // Styled like a WA incoming bubble: raised surface, small radius,
+      // the 1px bubble shadow. The stage colour lives on the column dot.
+      className={`group relative w-full cursor-pointer rounded-xl bg-surface px-3 py-2.5 text-left outline-none transition-[background-color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring ${
         isOverlay
-          ? "shadow-xl"
-          : "hover:-translate-y-0.5 hover:border-border hover:bg-muted hover:shadow-lg"
+          ? "shadow-xl ring-2 ring-primary/50"
+          : "shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] hover:bg-hover-surface"
       }`}
     >
-      {/* 4px left accent bar using stage color */}
-      <span
-        aria-hidden
-        className="absolute left-0 top-0 h-full w-1 rounded-l-xl"
-        style={{ backgroundColor: stage?.color ?? "#94a3b8" }}
-      />
-
       <div className="flex items-start justify-between gap-2">
-        <h4 className="flex-1 text-sm font-semibold leading-snug text-foreground break-words">
+        <h4 className="flex-1 text-[15px] leading-5 text-foreground break-words">
           {deal.title}
         </h4>
         {deal.status === "won" && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
-            <Check className="h-3 w-3" />
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-chip-active px-2 py-0.5 text-[11px] font-medium text-chip-active-foreground">
+            <Check className="size-3" />
             {t("won")}
           </span>
         )}
         {deal.status === "lost" && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
-            <X className="h-3 w-3" />
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/12 px-2 py-0.5 text-[11px] font-medium text-destructive">
+            <X className="size-3" />
             {t("lost")}
           </span>
         )}
       </div>
 
       {/* Contact row */}
-      <div className="mt-2 flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
-          {initials(deal.contact?.name, deal.contact?.phone)}
-        </span>
-        <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>
+      <div className="mt-1.5 flex items-center gap-2">
+        <WaAvatar
+          src={deal.contact?.avatar_url}
+          name={deal.contact?.name || deal.contact?.phone || "?"}
+          size={22}
+        />
+        <span className="truncate text-[13px] text-muted-foreground">{contactLabel}</span>
       </div>
 
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-sm font-bold text-primary">
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-primary-text tabular-nums">
           {formatCurrency(deal.value, deal.currency)}
         </span>
-        {deal.expected_close_date && (
-          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Calendar className="h-3 w-3" />
-            {formatDate(deal.expected_close_date)}
-          </span>
-        )}
-      </div>
-
-      {assigneeLabel && (
-        <div className="mt-2 flex items-center justify-end">
-          <span
-            title={assigneeLabel}
-            className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary"
-          >
-            {initials(assigneeLabel)}
-          </span>
+        <div className="flex min-w-0 items-center gap-2">
+          {deal.expected_close_date && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Calendar className="size-3" />
+              {formatDate(deal.expected_close_date)}
+            </span>
+          )}
+          {assigneeLabel && (
+            <span title={assigneeLabel} className="inline-flex">
+              <WaAvatar
+                src={deal.assignee?.avatar_url}
+                name={assigneeLabel}
+                size={22}
+              />
+            </span>
+          )}
         </div>
-      )}
+      </div>
     </button>
   );
 }

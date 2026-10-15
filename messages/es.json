@@ -625,7 +625,8 @@
         "proposalSent": "Propuesta enviada",
         "negotiation": "Negociación",
         "won": "Ganado"
-      }
+      },
+      "moreOptions": "Más opciones"
     },
     "board": {
       "dropDealHere": "Suelta un negocio aquí",

@@ -625,7 +625,8 @@
         "proposalSent": "Proposal Sent",
         "negotiation": "Negotiation",
         "won": "Won"
-      }
+      },
+      "moreOptions": "More options"
     },
     "board": {
       "dropDealHere": "Drop a deal here",
