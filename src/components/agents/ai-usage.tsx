@@ -112,7 +112,7 @@ export function AiUsageCard() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
-              <BarChart3 className="h-4 w-4 text-primary" /> {t('title')}
+              <BarChart3 className="size-[18px] text-primary-text" /> {t('title')}
             </CardTitle>
             <CardDescription>
               {t('description')}
@@ -139,10 +139,12 @@ export function AiUsageCard() {
         {loading || !data ? (
           <Skeleton className="h-[220px] w-full" />
         ) : !hasSpend ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-sm text-muted-foreground">
-            <BarChart3 className="h-8 w-8 opacity-40" />
-            <p>{t('empty', { days: data.window_days })}</p>
-            <p className="text-xs">
+          <div className="flex flex-col items-center justify-center gap-2 rounded-xl bg-bubble-quote py-10 text-center text-sm text-muted-foreground">
+            <span className="flex size-12 items-center justify-center rounded-full bg-hover-surface">
+              <BarChart3 className="size-[22px]" />
+            </span>
+            <p className="text-foreground">{t('empty', { days: data.window_days })}</p>
+            <p className="text-[13px]">
               {t('emptyHint')}
             </p>
           </div>
@@ -164,14 +166,14 @@ export function AiUsageCard() {
             </div>
 
             <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
+              <p className="mb-2 text-sm text-muted-foreground">
                 {t('tokensPerDay')}
               </p>
               <BarChart
                 data={chartData}
                 index="day"
                 categories={[tokensLabel]}
-                colors={['violet']}
+                colors={['primary']}
                 valueFormatter={(v) => formatCompactNumber(v)}
                 showLegend={false}
                 yAxisWidth={48}
@@ -181,14 +183,14 @@ export function AiUsageCard() {
 
             {data.by_model.length > 0 && (
               <div>
-                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                <p className="mb-2 text-sm text-muted-foreground">
                   {t('byModel')}
                 </p>
-                <ul className="divide-y divide-border rounded-md border border-border">
+                <ul className="overflow-hidden rounded-xl bg-hover-surface">
                   {data.by_model.map((m) => (
                     <li
                       key={`${m.provider}:${m.model}`}
-                      className="flex items-center justify-between px-3 py-2 text-sm"
+                      className="flex min-h-12 items-center justify-between gap-3 px-4 py-2 text-sm"
                     >
                       <span className="min-w-0 truncate">
                         <span className="text-foreground">{m.model}</span>{' '}
@@ -230,12 +232,12 @@ function Stat({
   icon?: typeof Bot;
 }) {
   return (
-    <div className="rounded-md border border-border p-3">
-      <p className="flex items-center gap-1 text-xs text-muted-foreground">
-        {Icon && <Icon className="h-3 w-3" />}
+    <div className="rounded-xl bg-hover-surface p-3.5">
+      <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+        {Icon && <Icon className="size-3.5" />}
         {label}
       </p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+      <p className="mt-1 text-xl font-bold tabular-nums text-foreground">
         {value}
       </p>
     </div>

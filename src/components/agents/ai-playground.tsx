@@ -82,15 +82,19 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   };
 
   return (
-    <div className="flex h-[60vh] min-h-[420px] flex-col rounded-xl border border-border bg-card">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Bot className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium text-foreground">{t('title')}</span>
-          <span className="text-xs text-muted-foreground">
-            {t('subtitle')}
-          </span>
+    <div className="flex h-[calc(100dvh-9.5rem)] min-h-[440px] flex-col overflow-hidden rounded-xl bg-background ring-1 ring-border">
+      {/* Header — WA chat header: avatar, name, muted subtitle, actions */}
+      <div className="flex h-16 shrink-0 items-center gap-3 bg-background px-4">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-chip-active text-chip-active-foreground">
+          <Bot className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base leading-5 text-foreground">{t('title')}</p>
+          <p className="truncate text-[13px] leading-5 text-muted-foreground">
+            {/* The catalogue string is written as a trailing clause
+                ("— test replies…"); as a header subtitle it stands alone. */}
+            {t('subtitle').replace(/^[—–-]\s*/, '')}
+          </p>
         </div>
         <Button
           variant="ghost"
@@ -99,98 +103,100 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
           disabled={turns.length === 0 || sending}
           className="text-muted-foreground"
         >
-          <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> {t('reset')}
+          <RotateCcw className="size-4" /> {t('reset')}
         </Button>
       </div>
 
-      {/* Transcript */}
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
-        {turns.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
-            <Bot className="mb-2 h-8 w-8 text-muted-foreground/60" />
-            <p>{t('emptyTitle')}</p>
-            <p className="mt-1 text-xs">
-              {t('emptyDesc')}
-            </p>
-            {onGoToSetup && (
-              <Button
-                variant="link"
-                size="sm"
-                onClick={onGoToSetup}
-                className="mt-1 h-auto p-0 text-xs"
-              >
-                {t('goToSetup')} <ArrowRight className="ml-1 h-3 w-3" />
-              </Button>
-            )}
-          </div>
-        )}
+      {/* Transcript — doodle wallpaper + WA bubbles */}
+      <div className="wa-wallpaper relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          className="flex h-full flex-col gap-3 overflow-y-auto px-[6%] py-5"
+        >
+          {turns.length === 0 && (
+            <div className="flex flex-1 items-center justify-center">
+              <div className="flex max-w-sm flex-col items-center rounded-2xl bg-surface px-6 py-6 text-center shadow-sm">
+                <span className="flex size-14 items-center justify-center rounded-full bg-hover-surface text-muted-foreground">
+                  <Bot className="size-7" strokeWidth={1.75} />
+                </span>
+                <p className="mt-3 text-[15px] text-foreground">{t('emptyTitle')}</p>
+                <p className="mt-1 text-[13px] text-muted-foreground">{t('emptyDesc')}</p>
+                {onGoToSetup && (
+                  <button
+                    type="button"
+                    onClick={onGoToSetup}
+                    className="mt-4 inline-flex h-9 items-center gap-1 rounded-full bg-chip-active px-4 text-sm font-medium text-chip-active-foreground transition-opacity hover:opacity-90"
+                  >
+                    {t('goToSetup')} <ArrowRight className="size-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
-        {turns.map((turn, i) => (
-          <div
-            key={i}
-            className={cn(
-              'flex gap-2',
-              turn.role === 'user' ? 'justify-end' : 'justify-start',
-            )}
-          >
-            {turn.role === 'assistant' && (
-              <Bot className="mt-1 h-5 w-5 shrink-0 text-primary" />
-            )}
+          {turns.map((turn, i) => (
             <div
+              key={i}
               className={cn(
-                'max-w-[80%] rounded-2xl px-3.5 py-2 text-sm',
-                turn.role === 'user'
-                  ? 'rounded-br-sm bg-primary text-primary-foreground'
-                  : 'rounded-bl-sm bg-muted text-foreground',
+                'flex',
+                turn.role === 'user' ? 'justify-end' : 'justify-start',
               )}
             >
-              {turn.content && <p className="whitespace-pre-wrap">{turn.content}</p>}
-              {turn.role === 'assistant' && turn.handoff && (
-                <p
-                  className={cn(
-                    'flex items-center gap-1 text-xs text-amber-500',
-                    turn.content && 'mt-1.5 border-t border-border/50 pt-1.5',
-                  )}
-                >
-                  <UserCircle2 className="h-3.5 w-3.5" />
-                  {t('handoff')}
-                </p>
-              )}
+              <div
+                className={cn(
+                  'max-w-[65%] rounded-[7.5px] px-[9px] pt-1.5 pb-2 text-[14.2px] leading-[19px] text-foreground shadow-[0_1px_0.5px_rgba(11,20,26,.13)]',
+                  turn.role === 'user' ? 'bg-bubble-out' : 'bg-bubble-in',
+                )}
+              >
+                {turn.content && <p className="whitespace-pre-wrap">{turn.content}</p>}
+                {turn.role === 'assistant' && turn.handoff && (
+                  <p
+                    className={cn(
+                      'flex items-center gap-1 rounded-md bg-bubble-quote px-2 py-1 text-xs text-muted-foreground',
+                      turn.content && 'mt-1.5',
+                    )}
+                  >
+                    <UserCircle2 className="size-3.5 text-primary-text" />
+                    {t('handoff')}
+                  </p>
+                )}
+              </div>
             </div>
-            {turn.role === 'user' && (
-              <UserCircle2 className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />
-            )}
-          </div>
-        ))}
+          ))}
 
-        {sending && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Bot className="h-5 w-5 text-primary" />
-            <Loader2 className="h-4 w-4 animate-spin" /> {t('thinking')}
-          </div>
-        )}
+          {sending && (
+            <div className="flex justify-start">
+              <div className="flex items-center gap-2 rounded-[7.5px] bg-bubble-in px-3 py-2 text-[13px] text-muted-foreground shadow-[0_1px_0.5px_rgba(11,20,26,.13)]">
+                <Loader2 className="size-4 animate-spin" /> {t('thinking')}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Composer */}
-      <div className="flex items-end gap-2 border-t border-border p-3">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={t('placeholder')}
-          rows={1}
-          className="flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
-        />
+      {/* Composer — WA floating pill + round green send */}
+      <div className="flex shrink-0 items-end gap-2 bg-background px-4 py-3">
+        <div className="flex min-h-[46px] flex-1 items-center rounded-3xl bg-surface px-4 py-1.5 shadow-sm focus-within:ring-2 focus-within:ring-ring">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t('placeholder')}
+            rows={1}
+            className="max-h-32 flex-1 resize-none bg-transparent py-1.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        </div>
         <Button
-          size="sm"
+          size="icon"
           onClick={send}
           disabled={!input.trim() || sending}
-          className="h-9 w-9 shrink-0 p-0"
+          aria-label={t('send')}
+          className="size-[46px] shrink-0"
         >
           {sending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="size-5 animate-spin" />
           ) : (
-            <Send className="h-4 w-4" />
+            <Send className="size-5" />
           )}
         </Button>
       </div>
