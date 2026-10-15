@@ -95,7 +95,13 @@ vi.mock('@/lib/flows/admin-client', () => ({
   supabaseAdmin: () => ({ from: (n: string) => table(n), rpc: async () => ({ error: null }) }),
 }))
 
-import { IngestFailure, ingestInboundMessage, recordOutboundEcho, type InboundMessage } from './ingest'
+import {
+  applyStatusUpdate,
+  IngestFailure,
+  ingestInboundMessage,
+  recordOutboundEcho,
+  type InboundMessage,
+} from './ingest'
 import { persistOutboundMessage } from '@/lib/whatsapp/outbound-persist'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 
@@ -212,5 +218,48 @@ describe('F5 — echo vs sender reconcile, the sender never fails', () => {
     const rows = h.tables.messages.filter((m) => m.message_id === sender.message_id)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ sender_type: 'bot', content_type: 'interactive' })
+  })
+})
+
+// F6 (review): ticks only move forward, on both providers; an ack that
+// arrives before the row exists is kept, not dropped.
+describe('F6 — status is monotonic and early acks are kept', () => {
+  const sent = (id: string, status: string) =>
+    h.tables.messages.push({ id: `m-${id}`, conversation_id: 'conv-1', message_id: id, status })
+
+  it.each([
+    ['openwa (account scope)', { accountId: ACCOUNT }],
+    ['meta (global)', {}],
+  ])('%s: a late "sent" never regresses "read"', async (_name, scope) => {
+    sent('wamid.A', 'read')
+    await applyStatusUpdate({ id: 'wamid.A', status: 'sent', timestamp: '1792100000' }, scope)
+    expect(h.tables.messages[0].status).toBe('read')
+  })
+
+  it('moves forward normally', async () => {
+    sent('wamid.B', 'sent')
+    await applyStatusUpdate({ id: 'wamid.B', status: 'delivered', timestamp: '1792100000' }, { accountId: ACCOUNT })
+    await applyStatusUpdate({ id: 'wamid.B', status: 'read', timestamp: '1792100001' }, { accountId: ACCOUNT })
+    expect(h.tables.messages[0].status).toBe('read')
+  })
+
+  it('failed only from sending/sent — not after delivery', async () => {
+    sent('wamid.C', 'delivered')
+    await applyStatusUpdate({ id: 'wamid.C', status: 'failed', timestamp: '1792100000', failure: { code: 1, title: 'x', details: null } }, {})
+    expect(h.tables.messages[0].status).toBe('delivered')
+  })
+
+  it('keeps an ack that arrives before the message row (scoped, most advanced wins)', async () => {
+    await applyStatusUpdate({ id: 'true_early', status: 'delivered', timestamp: '1792100000' }, { accountId: ACCOUNT })
+    await applyStatusUpdate({ id: 'true_early', status: 'read', timestamp: '1792100002' }, { accountId: ACCOUNT })
+    await applyStatusUpdate({ id: 'true_early', status: 'sent', timestamp: '1792100001' }, { accountId: ACCOUNT })
+    expect(h.tables.message_status_pending).toEqual([
+      expect.objectContaining({ scope: ACCOUNT, provider_message_id: 'true_early', status: 'read' }),
+    ])
+  })
+
+  it('Meta early acks are kept in the global scope', async () => {
+    await applyStatusUpdate({ id: 'wamid.early', status: 'read', timestamp: '1792100000' }, {})
+    expect(h.tables.message_status_pending?.[0]).toMatchObject({ scope: 'global', status: 'read' })
   })
 })

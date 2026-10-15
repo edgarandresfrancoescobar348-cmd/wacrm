@@ -150,6 +150,100 @@ export interface StatusScope {
   accountId?: string
 }
 
+/** Statuses a message may advance FROM to reach the key (F6). */
+const STATUS_PREDECESSORS: Record<string, string[]> = {
+  sent: ['sending'],
+  delivered: ['sending', 'sent'],
+  read: ['sending', 'sent', 'delivered'],
+  failed: ['sending', 'sent'],
+}
+
+async function advanceMessageStatus(
+  accountId: string | undefined,
+  providerMessageId: string,
+  update: Record<string, unknown>
+): Promise<{ exists: boolean; error: { message: string } | null }> {
+  const preds = STATUS_PREDECESSORS[String(update.status)]
+  if (!preds) return { exists: true, error: null } // not a message status
+  if (accountId) {
+    const { data: rows, error } = await supabaseAdmin()
+      .from('messages')
+      .select('id, conversations!inner(account_id)')
+      .eq('message_id', providerMessageId)
+      .eq('conversations.account_id', accountId)
+    if (error) return { exists: false, error }
+    const ids = (rows ?? []).map((r: { id: string }) => r.id)
+    if (ids.length === 0) return { exists: false, error: null }
+    const { error: updErr } = await supabaseAdmin()
+      .from('messages')
+      .update(update)
+      .in('id', ids)
+      .in('status', preds)
+      .select('id')
+    return { exists: true, error: updErr }
+  }
+  const { data: updated, error } = await supabaseAdmin()
+    .from('messages')
+    .update(update)
+    .eq('message_id', providerMessageId)
+    .in('status', preds)
+    .select('id')
+  if (error) return { exists: false, error }
+  if (updated && updated.length > 0) return { exists: true, error: null }
+  const { data: any } = await supabaseAdmin()
+    .from('messages')
+    .select('id')
+    .eq('message_id', providerMessageId)
+    .limit(1)
+  return { exists: Boolean(any && any.length > 0), error: null }
+}
+
+/** Ack for a message whose row doesn't exist yet (migration 050). */
+async function recordPendingStatus(
+  accountId: string | null,
+  status: InboundStatusUpdate,
+  throwOnFailure?: boolean
+): Promise<void> {
+  if (!STATUS_PREDECESSORS[status.status]) return
+  const scopeKey = accountId ?? 'global'
+  const rank = (s: string) => ['sent', 'delivered', 'read'].indexOf(s)
+  const { data: existing } = await supabaseAdmin()
+    .from('message_status_pending')
+    .select('status')
+    .eq('scope', scopeKey)
+    .eq('provider_message_id', status.id)
+    .maybeSingle()
+  // Keep the most advanced status seen (failed only over sent).
+  if (existing) {
+    const cur = String(existing.status)
+    const next = status.status
+    const forward = next === 'failed' ? cur === 'sent' : cur !== 'failed' && rank(next) > rank(cur)
+    if (!forward) return
+  }
+  const { error } = await supabaseAdmin()
+    .from('message_status_pending')
+    .upsert(
+      {
+        scope: scopeKey,
+        provider_message_id: status.id,
+        status: status.status,
+        failure: status.failure ?? null,
+        status_at: new Date(parseInt(status.timestamp) * 1000).toISOString(),
+      },
+      { onConflict: 'scope,provider_message_id' }
+    )
+  if (error) {
+    console.error('[webhook] pending status insert failed:', error.message)
+    if (throwOnFailure) throw new IngestFailure('pending status', error)
+  }
+  if (Math.random() < 0.01) {
+    await supabaseAdmin()
+      .from('message_status_pending')
+      .delete()
+      .lt('created_at', new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString())
+  }
+}
+
 async function updateAccountMessages(
   accountId: string,
   providerMessageId: string,
@@ -262,12 +356,11 @@ export async function applyStatusUpdate(
     messageUpdate.error_title = failure.title
     messageUpdate.error_details = failure.details
   }
-  const { error: msgErr } = scope.accountId
-    ? await updateAccountMessages(scope.accountId, status.id, messageUpdate)
-    : await supabaseAdmin()
-        .from('messages')
-        .update(messageUpdate)
-        .eq('message_id', status.id)
+  // Monotonic (F6): the row only moves FORWARD — the update is
+  // conditional on the row's current status being a predecessor, in one
+  // statement, so a late `sent` never overwrites `read` (on Meta too).
+  const advanced = await advanceMessageStatus(scope.accountId, status.id, messageUpdate)
+  const msgErr = advanced.error
 
   if (msgErr) {
     console.error('Error updating message status:', msgErr)
@@ -328,6 +421,14 @@ export async function applyStatusUpdate(
       console.error('Error updating broadcast recipient status:', recUpdateErr)
       if (scope.throwOnFailure) throw new IngestFailure('broadcast recipient status', recUpdateErr)
     }
+  }
+
+  // 2b) Nothing to update yet: the ack beat the sender's own write (the
+  //     provider answers acks asynchronously, sometimes before our send
+  //     call returns). Keep it; migration 050's triggers apply it when
+  //     the message / recipient row appears.
+  if (!msgErr && !advanced.exists && !recFetchErr && !recipient) {
+    await recordPendingStatus(scope.accountId ?? null, status, scope.throwOnFailure)
   }
 
   // 3) Webhook fan-out for messages we store (inbox / API sends).

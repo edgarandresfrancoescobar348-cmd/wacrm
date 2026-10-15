@@ -195,10 +195,16 @@ vi.mock('@supabase/supabase-js', () => ({
                       }),
                     }),
                   },
-            // Status webhook mirror (#535): update(...).eq('message_id', ...)
+            // Status webhook mirror (#535), monotonic since F6:
+            // update(...).eq('message_id', ...).in('status', preds).select('id')
             update: (patch: Record<string, unknown>) => {
               h.state.messageUpdates.push(patch)
-              return { eq: () => Promise.resolve({ error: null }) }
+              const chain = {
+                eq: () => chain,
+                in: () => chain,
+                select: () => Promise.resolve({ data: [{ id: 'msg-1' }], error: null }),
+              }
+              return chain
             },
             // Idempotent insert: upsert(...).select('id')
             upsert: (row: Record<string, unknown>, options: unknown) => {

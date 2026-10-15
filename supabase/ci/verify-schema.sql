@@ -160,6 +160,14 @@ BEGIN
     RAISE EXCEPTION 'openwa_webhook_deliveries.status is missing — migration 048 did not apply';
   END IF;
 
+  -- 050: early delivery receipts are kept and applied by triggers.
+  IF to_regclass('public.message_status_pending') IS NULL THEN
+    RAISE EXCEPTION 'message_status_pending is missing — migration 050 did not apply';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'apply_pending_status' AND tgrelid = 'public.messages'::regclass) THEN
+    RAISE EXCEPTION 'apply_pending_status trigger on messages is missing — migration 050 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;
