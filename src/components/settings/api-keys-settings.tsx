@@ -139,7 +139,10 @@ export function ApiKeysSettings() {
         description={
           t.rich('description', {
             apiCode: (chunks: React.ReactNode) => <code className="text-xs">{chunks}</code>,
-            headerCode: (chunks: React.ReactNode) => <code className="text-xs">{chunks}</code>
+            headerCode: (chunks: React.ReactNode) => <code className="text-xs">{chunks}</code>,
+            // Literal placeholder, passed as a value so React escapes it
+            // (an entity in the catalogue rendered as "&lt;key&gt;").
+            keyPlaceholder: '<key>',
           })
         }
         action={

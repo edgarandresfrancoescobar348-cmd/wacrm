@@ -1928,7 +1928,41 @@
       "active": "사용 중",
       "accentColor": "강조 색상",
       "useTheme": "{name} 테마 사용",
-      "themeId": "테마 ID: {id}"
+      "themeId": "테마 ID: {id}",
+      "modes": {
+        "light": "라이트",
+        "dark": "다크"
+      },
+      "modesInline": {
+        "light": "라이트",
+        "dark": "다크"
+      },
+      "themes": {
+        "whatsapp": {
+          "name": "WhatsApp",
+          "tagline": "기본값 — 익숙한 WhatsApp 그린."
+        },
+        "violet": {
+          "name": "바이올렛",
+          "tagline": "자신감 있고 살짝 경쾌한 느낌."
+        },
+        "emerald": {
+          "name": "에메랄드",
+          "tagline": "성장을 떠올리게 하며, WhatsApp 그린을 따라 하지 않고 메신저 느낌을 줍니다."
+        },
+        "cobalt": {
+          "name": "코발트",
+          "tagline": "깔끔한 B2B SaaS 블루 — 차분하고 제품다운 느낌."
+        },
+        "amber": {
+          "name": "앰버",
+          "tagline": "따뜻하고 친근함 — 중소기업 팀에 잘 어울립니다."
+        },
+        "rose": {
+          "name": "로즈",
+          "tagline": "대담하고 모던함 — D2C, 크리에이터 이코노미, 라이프스타일."
+        }
+      }
     },
     "security": {
       "title": "로그인 & 보안",
@@ -1960,7 +1994,7 @@
     },
     "apiKeys": {
       "title": "API 키",
-      "description": "키는 공개 REST API(<apiCode>/api/v1</apiCode>)를 인증해 직접 자동화를 구축할 수 있게 해줍니다. <headerCode>Authorization: Bearer &lt;key&gt;</headerCode> 형식으로 전송하세요.",
+      "description": "키는 공개 REST API(<apiCode>/api/v1</apiCode>)를 인증해 직접 자동화를 구축할 수 있게 해줍니다. <headerCode>Authorization: Bearer {keyPlaceholder}</headerCode> 형식으로 전송하세요.",
       "newApiKey": "새 API 키",
       "noApiKeys": "아직 API 키가 없습니다.",
       "createOneHint": "<bold>새 API 키</bold>를 클릭해 만드세요.",

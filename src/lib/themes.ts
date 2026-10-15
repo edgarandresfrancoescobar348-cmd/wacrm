@@ -55,6 +55,11 @@ export function isMode(value: unknown): value is Mode {
 
 export interface ThemeMeta {
   id: ThemeId;
+  /**
+   * English fallback copy. The UI renders the translated
+   * `Settings.appearance.themes.<id>.name` / `.tagline` keys instead
+   * (messages/*.json); keep the two in sync when adding an accent.
+   */
   name: string;
   tagline: string;
   /**

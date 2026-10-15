@@ -121,6 +121,10 @@ export function AiUsageCard() {
           <Select
             value={String(days)}
             onValueChange={(v) => setDays(Number(v))}
+            // Lets <SelectValue> show the label ("Últimos 30 dias"), not the raw value.
+            items={Object.fromEntries(
+              WINDOWS.map((w) => [String(w), t('window', { days: w })]),
+            )}
           >
             <SelectTrigger className="w-32 flex-shrink-0">
               <SelectValue />

@@ -1928,7 +1928,41 @@
       "active": "Ativo",
       "accentColor": "Cor de destaque",
       "useTheme": "Usar o tema {name}",
-      "themeId": "ID do tema: {id}"
+      "themeId": "ID do tema: {id}",
+      "modes": {
+        "light": "Claro",
+        "dark": "Escuro"
+      },
+      "modesInline": {
+        "light": "claro",
+        "dark": "escuro"
+      },
+      "themes": {
+        "whatsapp": {
+          "name": "WhatsApp",
+          "tagline": "O padrão — verde WhatsApp, você se sente em casa."
+        },
+        "violet": {
+          "name": "Violeta",
+          "tagline": "Confiante, um pouco divertido."
+        },
+        "emerald": {
+          "name": "Esmeralda",
+          "tagline": "Cara de crescimento; lembra mensageria sem copiar o verde do WhatsApp."
+        },
+        "cobalt": {
+          "name": "Cobalto",
+          "tagline": "Azul limpo de SaaS B2B — calmo e com cara de produto."
+        },
+        "amber": {
+          "name": "Âmbar",
+          "tagline": "Quente e acolhedor — combina com pequenas e médias empresas."
+        },
+        "rose": {
+          "name": "Rosa",
+          "tagline": "Ousado e moderno — D2C, economia de criadores, lifestyle."
+        }
+      }
     },
     "security": {
       "title": "Login e segurança",
@@ -1960,7 +1994,7 @@
     },
     "apiKeys": {
       "title": "Chaves de API",
-      "description": "As chaves autenticam a API REST pública (<apiCode>/api/v1</apiCode>) para que você crie suas próprias automações. Envie-as como <headerCode>Authorization: Bearer &lt;key&gt;</headerCode>.",
+      "description": "As chaves autenticam a API REST pública (<apiCode>/api/v1</apiCode>) para que você crie suas próprias automações. Envie-as como <headerCode>Authorization: Bearer {keyPlaceholder}</headerCode>.",
       "newApiKey": "Nova chave de API",
       "noApiKeys": "Nenhuma chave de API ainda.",
       "createOneHint": "Clique em <bold>Nova chave de API</bold> para criar uma.",

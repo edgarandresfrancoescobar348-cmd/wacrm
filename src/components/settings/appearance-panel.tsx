@@ -64,8 +64,8 @@ export function AppearancePanel() {
             <ThemeCard
               key={tObj.id}
               id={tObj.id}
-              name={tObj.name}
-              tagline={tObj.tagline}
+              name={t(`themes.${tObj.id}.name`)}
+              tagline={t(`themes.${tObj.id}.tagline`)}
               swatch={tObj.swatch}
               isActive={tObj.id === theme}
               onPick={() => setTheme(tObj.id)}
@@ -95,7 +95,7 @@ function ModeCard({
       role="radio"
       onClick={onPick}
       aria-checked={isActive}
-      aria-label={t("useMode", { mode })}
+      aria-label={t("useMode", { mode: t(`modesInline.${mode}`) })}
       className="flex min-h-14 w-full items-center gap-4 px-4 text-left outline-none transition-colors hover:bg-hover-surface focus-visible:bg-hover-surface"
     >
       {/* WA radio: ring, filled accent dot when selected */}
@@ -109,8 +109,8 @@ function ModeCard({
         {isActive && <span className="size-2.5 rounded-full bg-primary" />}
       </span>
       <Icon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
-      <span className="flex-1 text-[15px] capitalize text-foreground">
-        {mode}
+      <span className="flex-1 text-[15px] text-foreground">
+        {t(`modes.${mode}`)}
       </span>
       {isActive && (
         <span className="text-[13px] text-primary-text">{t("active")}</span>
