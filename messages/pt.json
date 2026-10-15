@@ -977,7 +977,22 @@
         "duplicateError": "Falha ao duplicar",
         "deleteError": "Falha ao excluir"
       },
-      "loadFailed": "Falha ao carregar as automações"
+      "loadFailed": "Falha ao carregar as automações",
+      "searchPlaceholder": "Buscar automações",
+      "clearSearch": "Limpar busca",
+      "filterAll": "Todas",
+      "filterActive": "Ativas",
+      "filterPaused": "Pausadas",
+      "noMatches": "Nenhuma automação encontrada",
+      "paneHint": "Selecione uma automação para ver os detalhes ou comece com um modelo abaixo.",
+      "closeDetail": "Voltar à lista",
+      "statusActive": "Ativa",
+      "statusPaused": "Pausada",
+      "statusHint": "Executa automaticamente quando o gatilho dispara",
+      "sectionStatus": "Status",
+      "sectionActivity": "Atividade",
+      "sectionTrigger": "Gatilho",
+      "emptyPaneDesc": "Escolha um modelo abaixo ou crie uma do zero."
     },
     "edit": {
       "loading": "Carregando...",
@@ -1222,7 +1237,21 @@
       "triggerKeyword": "Acionado por: {keywords}",
       "triggerFirstInbound": "Acionado pela primeira mensagem recebida de um contato",
       "triggerManual": "Acionamento manual",
-      "cloneFailedStatus": "Falha ao clonar: {status}"
+      "cloneFailedStatus": "Falha ao clonar: {status}",
+      "searchPlaceholder": "Buscar fluxos",
+      "clearSearch": "Limpar busca",
+      "filterAll": "Todos",
+      "filterActive": "Ativos",
+      "filterDraft": "Rascunhos",
+      "filterArchived": "Arquivados",
+      "noMatches": "Nenhum fluxo encontrado",
+      "paneHint": "Selecione um fluxo para ver os detalhes ou comece com um modelo abaixo.",
+      "closeDetail": "Voltar à lista",
+      "openEditor": "Abrir editor",
+      "viewRuns": "Ver execuções",
+      "sectionActivity": "Detalhes",
+      "sectionStatus": "Status",
+      "sectionTrigger": "Gatilho"
     },
     "edit": {
       "notFound": "Fluxo não encontrado.",

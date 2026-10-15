@@ -977,7 +977,22 @@
         "duplicateError": "복제하지 못했습니다",
         "deleteError": "삭제하지 못했습니다"
       },
-      "loadFailed": "자동화를 불러오지 못했습니다"
+      "loadFailed": "자동화를 불러오지 못했습니다",
+      "searchPlaceholder": "자동화 검색",
+      "clearSearch": "검색 지우기",
+      "filterAll": "전체",
+      "filterActive": "활성",
+      "filterPaused": "일시 중지됨",
+      "noMatches": "일치하는 자동화가 없습니다",
+      "paneHint": "자동화를 선택해 세부 정보를 보거나 아래 템플릿으로 시작하세요.",
+      "closeDetail": "목록으로 돌아가기",
+      "statusActive": "활성",
+      "statusPaused": "일시 중지됨",
+      "statusHint": "트리거가 발생하면 자동으로 실행됩니다",
+      "sectionStatus": "상태",
+      "sectionActivity": "활동",
+      "sectionTrigger": "트리거",
+      "emptyPaneDesc": "아래 템플릿을 선택하거나 처음부터 만드세요."
     },
     "edit": {
       "loading": "불러오는 중...",
@@ -1222,7 +1237,21 @@
       "triggerKeyword": "트리거 조건: {keywords}",
       "triggerFirstInbound": "연락처의 첫 수신 메시지에서 트리거됨",
       "triggerManual": "수동 트리거",
-      "cloneFailedStatus": "복제 실패: {status}"
+      "cloneFailedStatus": "복제 실패: {status}",
+      "searchPlaceholder": "플로우 검색",
+      "clearSearch": "검색 지우기",
+      "filterAll": "전체",
+      "filterActive": "활성",
+      "filterDraft": "초안",
+      "filterArchived": "보관됨",
+      "noMatches": "일치하는 플로우가 없습니다",
+      "paneHint": "플로우를 선택해 세부 정보를 보거나 아래 템플릿으로 시작하세요.",
+      "closeDetail": "목록으로 돌아가기",
+      "openEditor": "편집기 열기",
+      "viewRuns": "실행 보기",
+      "sectionActivity": "세부 정보",
+      "sectionStatus": "상태",
+      "sectionTrigger": "트리거"
     },
     "edit": {
       "notFound": "플로우를 찾을 수 없습니다.",

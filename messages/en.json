@@ -977,7 +977,22 @@
         "duplicateError": "Failed to duplicate",
         "deleteError": "Failed to delete"
       },
-      "loadFailed": "Failed to load automations"
+      "loadFailed": "Failed to load automations",
+      "searchPlaceholder": "Search automations",
+      "clearSearch": "Clear search",
+      "filterAll": "All",
+      "filterActive": "Active",
+      "filterPaused": "Paused",
+      "noMatches": "No automations match",
+      "paneHint": "Select an automation to see its details, or start from a template below.",
+      "closeDetail": "Back to list",
+      "statusActive": "Active",
+      "statusPaused": "Paused",
+      "statusHint": "Runs automatically when the trigger fires",
+      "sectionStatus": "Status",
+      "sectionActivity": "Activity",
+      "sectionTrigger": "Trigger",
+      "emptyPaneDesc": "Pick a template below or create one from scratch."
     },
     "edit": {
       "loading": "Loading...",
@@ -1222,7 +1237,21 @@
       "triggerKeyword": "Triggers on: {keywords}",
       "triggerFirstInbound": "Triggers on a contact's first-ever inbound message",
       "triggerManual": "Manual trigger",
-      "cloneFailedStatus": "Clone failed: {status}"
+      "cloneFailedStatus": "Clone failed: {status}",
+      "searchPlaceholder": "Search flows",
+      "clearSearch": "Clear search",
+      "filterAll": "All",
+      "filterActive": "Active",
+      "filterDraft": "Drafts",
+      "filterArchived": "Archived",
+      "noMatches": "No flows match",
+      "paneHint": "Select a flow to see its details, or start from a template below.",
+      "closeDetail": "Back to list",
+      "openEditor": "Open editor",
+      "viewRuns": "View runs",
+      "sectionActivity": "Details",
+      "sectionStatus": "Status",
+      "sectionTrigger": "Trigger"
     },
     "edit": {
       "notFound": "Flow not found.",
