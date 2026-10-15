@@ -172,13 +172,19 @@ export function openWaMediaProxyUrl(chatId: string, messageId: string): string {
   return `/api/whatsapp/openwa/media?chat=${encodeURIComponent(chatId)}&id=${encodeURIComponent(messageId)}`
 }
 
-interface EventContext {
+export interface EventContext {
   admin: SupabaseClient
   row: OpenWaConnectionRow
   creds: OpenWaCredentials
   /** whatsapp_config.provider for the account ('meta' | 'openwa'). */
   activeProvider: string
   mirrorMedia: boolean
+  /**
+   * Receives the bot fan-out of an ingested message (flows, automations,
+   * AI, public webhooks) to run after the delivery is acknowledged.
+   * Without it the fan-out runs inline.
+   */
+  defer?: (task: () => Promise<void>) => void
 }
 
 async function resolveOpenWaContent(
@@ -266,12 +272,10 @@ async function resolveChatPhone(
   if (direct) return direct
   if (senderPhone) return normalizePhone(senderPhone) || null
   if (chatId.endsWith('@lid') && ctx.row.session_id) {
-    try {
-      const r = await getOpenWaContactPhone(ctx.creds, ctx.row.session_id, chatId)
-      return r.phone ? normalizePhone(r.phone) || null : null
-    } catch (err) {
-      console.warn('[openwa] @lid phone lookup failed:', err instanceof Error ? err.message : err)
-    }
+    // A failed lookup throws: the delivery is retried rather than the
+    // message dropped. Only "no phone known" is a definitive skip.
+    const r = await getOpenWaContactPhone(ctx.creds, ctx.row.session_id, chatId)
+    return r.phone ? normalizePhone(r.phone) || null : null
   }
   return null
 }
@@ -298,17 +302,17 @@ export type OpenWaEventOutcome =
   | 'mutation'
   | 'echo'
 
-/** Process one verified, de-duplicated delivery. Never throws. */
+/**
+ * Process one verified delivery's durable part. THROWS on a transient
+ * failure (DB, gateway lookup) so the webhook can answer non-2xx and
+ * OpenWA redelivers — every write below is idempotent, so a retry never
+ * duplicates. Bot fan-out goes to `ctx.defer` when given.
+ */
 export async function handleOpenWaEvent(
   env: OpenWaEnvelope,
   ctx: EventContext,
 ): Promise<OpenWaEventOutcome> {
-  try {
-    return await dispatch(env, ctx)
-  } catch (err) {
-    console.error(`[openwa] ${env.event} processing failed:`, err)
-    return 'ignored'
-  }
+  return dispatch(env, ctx)
 }
 
 async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaEventOutcome> {
@@ -339,6 +343,8 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       await ingestInboundMessage(inbound, accountId, ctx.row.user_id, {
         runBots: ctx.activeProvider === 'openwa',
         mapNumberedMenuReplies: true,
+        throwOnFailure: true,
+        deferFanOut: ctx.defer,
         onContactCreated: async (contact) => {
           if (!ctx.row.session_id) return
           const pic = await getOpenWaProfilePicture(ctx.creds, ctx.row.session_id, chatId)
@@ -378,6 +384,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
         },
         accountId,
         ctx.row.user_id,
+        { throwOnFailure: true },
       )
       return 'echo'
     }
@@ -400,7 +407,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
               ? { code: 0, title: 'OpenWA: message not delivered', details: null }
               : null,
         },
-        { accountId },
+        { accountId, throwOnFailure: true },
       )
       return 'status'
     }
@@ -434,7 +441,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
         },
         accountId,
         ctx.row.user_id,
-        { runBots: false },
+        { runBots: false, throwOnFailure: true },
       )
       return 'ingested'
     }
@@ -442,10 +449,12 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
     case 'message.revoked': {
       const target = (data.revokedId ?? data.id) as string | undefined
       if (!target) return 'ignored'
-      await applyMessageMutation(accountId, target, {
-        kind: 'revoked',
-        at: new Date().toISOString(),
-      })
+      await applyMessageMutation(
+        accountId,
+        target,
+        { kind: 'revoked', at: new Date().toISOString() },
+        { throwOnFailure: true },
+      )
       return 'mutation'
     }
 
@@ -453,11 +462,12 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       const target = data.messageId as string | undefined
       const body = data.body as string | undefined
       if (!target || typeof body !== 'string') return 'ignored'
-      await applyMessageMutation(accountId, target, {
-        kind: 'edited',
-        at: new Date().toISOString(),
-        text: body,
-      })
+      await applyMessageMutation(
+        accountId,
+        target,
+        { kind: 'edited', at: new Date().toISOString(), text: body },
+        { throwOnFailure: true },
+      )
       return 'mutation'
     }
 
@@ -540,7 +550,7 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
     .eq('session_id', env.sessionId)
   if (error) {
     console.error('[openwa] session state update failed:', error.message)
-    return
+    throw new Error(`session state update failed: ${error.message}`)
   }
 
   if (typeof patch.status === 'string' && isOpenWaSessionStatus(patch.status)) {

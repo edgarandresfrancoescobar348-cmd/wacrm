@@ -190,7 +190,7 @@ describe('acks, failures, reactions, mutations', () => {
     await handleOpenWaEvent(env('message.ack', { id: 'true_x', messageId: 'true_x', status: 'read', ack: 3 }), ctx())
     expect(h.applyStatusUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'true_x', status: 'read', failure: null }),
-      { accountId: 'acct-1' },
+      { accountId: 'acct-1', throwOnFailure: true },
     )
   })
 
@@ -203,7 +203,7 @@ describe('acks, failures, reactions, mutations', () => {
     await handleOpenWaEvent(env('message.failed', { messageId: 'true_x', status: 'failed', ack: -1 }), ctx())
     expect(h.applyStatusUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'failed', failure: expect.objectContaining({ title: expect.any(String) }) }),
-      { accountId: 'acct-1' },
+      { accountId: 'acct-1', throwOnFailure: true },
     )
   })
 
@@ -214,7 +214,7 @@ describe('acks, failures, reactions, mutations', () => {
     )
     const [inbound, , , options] = h.ingestInboundMessage.mock.calls[0] as unknown as [Record<string, unknown>, string, string, Record<string, unknown>]
     expect(inbound).toMatchObject({ type: 'reaction', reaction: { targetMessageId: 'true_x', emoji: '❤️' } })
-    expect(options).toEqual({ runBots: false })
+    expect(options).toEqual({ runBots: false, throwOnFailure: true })
   })
 
   it('ignores our own reaction echoing back from the phone', async () => {
@@ -228,8 +228,8 @@ describe('acks, failures, reactions, mutations', () => {
   it('revoked and edited messages are marked, not deleted', async () => {
     await handleOpenWaEvent(env('message.revoked', { id: 'notice', revokedId: 'false_z', chatId: 'c', type: 'revoked' }), ctx())
     await handleOpenWaEvent(env('message.edited', { messageId: 'false_z', body: 'texto novo' }), ctx())
-    expect(h.applyMessageMutation).toHaveBeenNthCalledWith(1, 'acct-1', 'false_z', expect.objectContaining({ kind: 'revoked' }))
-    expect(h.applyMessageMutation).toHaveBeenNthCalledWith(2, 'acct-1', 'false_z', expect.objectContaining({ kind: 'edited', text: 'texto novo' }))
+    expect(h.applyMessageMutation).toHaveBeenNthCalledWith(1, 'acct-1', 'false_z', expect.objectContaining({ kind: 'revoked' }), { throwOnFailure: true })
+    expect(h.applyMessageMutation).toHaveBeenNthCalledWith(2, 'acct-1', 'false_z', expect.objectContaining({ kind: 'edited', text: 'texto novo' }), { throwOnFailure: true })
   })
 })
 
@@ -275,6 +275,7 @@ describe('message.sent (phone echo)', () => {
         expect.objectContaining({ messageId: 'true_5511988887777@c.us_AB', identity: expect.objectContaining({ phone: '5511988887777', name: '' }) }),
         'acct-1',
         'user-1',
+        { throwOnFailure: true },
       )
     } finally {
       vi.useRealTimers()

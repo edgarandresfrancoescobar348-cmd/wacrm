@@ -93,6 +93,32 @@ export interface IngestOptions {
    * are logged, never thrown.
    */
   onContactCreated?: (contact: { id: string }) => Promise<void>
+  /**
+   * Throw {@link IngestFailure} instead of logging-and-returning when a
+   * write the message depends on fails (contact, conversation, message
+   * insert). A webhook that can still answer non-2xx uses this so the
+   * provider redelivers; the idempotent insert makes the retry safe.
+   */
+  throwOnFailure?: boolean
+  /**
+   * Hand the bot fan-out (flows, automations, AI, public webhooks) to the
+   * caller instead of running it inline — it runs after the durable part
+   * succeeded, e.g. in `after()` once the delivery has been acknowledged.
+   */
+  deferFanOut?: (task: () => Promise<void>) => void
+}
+
+/** A transient failure the provider should retry (see throwOnFailure). */
+export class IngestFailure extends Error {
+  constructor(step: string, cause?: unknown) {
+    super(
+      `ingestion failed at ${step}` +
+        (cause && typeof cause === 'object' && 'message' in cause
+          ? `: ${(cause as { message: string }).message}`
+          : '')
+    )
+    this.name = 'IngestFailure'
+  }
 }
 
 /** Why an outbound message failed, provider-neutral. */
@@ -113,6 +139,8 @@ export interface InboundStatusUpdate {
 }
 
 export interface StatusScope {
+  /** Throw {@link IngestFailure} on a DB error instead of logging it. */
+  throwOnFailure?: boolean
   /**
    * Restrict every read and write to this account's rows. The Meta
    * webhook has always matched globally on the wamid; the OpenWA
@@ -242,6 +270,7 @@ export async function applyStatusUpdate(
 
   if (msgErr) {
     console.error('Error updating message status:', msgErr)
+    if (scope.throwOnFailure) throw new IngestFailure('message status', msgErr)
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -269,6 +298,7 @@ export async function applyStatusUpdate(
 
   if (recFetchErr) {
     console.error('Error fetching broadcast recipient:', recFetchErr)
+    if (scope.throwOnFailure) throw new IngestFailure('broadcast recipient lookup', recFetchErr)
   } else if (
     recipient &&
     // Guard transitions — forward-only on the success ladder, and
@@ -295,6 +325,7 @@ export async function applyStatusUpdate(
 
     if (recUpdateErr) {
       console.error('Error updating broadcast recipient status:', recUpdateErr)
+      if (scope.throwOnFailure) throw new IngestFailure('broadcast recipient status', recUpdateErr)
     }
   }
 
@@ -487,7 +518,10 @@ export async function ingestInboundMessage(
     configOwnerUserId,
     identity
   )
-  if (!contactOutcome) return
+  if (!contactOutcome) {
+    if (options.throwOnFailure) throw new IngestFailure('contact')
+    return
+  }
   const contactRecord = contactOutcome.contact
   if (contactOutcome.wasCreated && options.onContactCreated) {
     try {
@@ -503,7 +537,10 @@ export async function ingestInboundMessage(
     configOwnerUserId,
     contactRecord.id
   )
-  if (!convResult) return
+  if (!convResult) {
+    if (options.throwOnFailure) throw new IngestFailure('conversation')
+    return
+  }
   const conversation = convResult.conversation
 
   // Emit conversation.created as soon as the thread is opened — BEFORE
@@ -637,6 +674,7 @@ export async function ingestInboundMessage(
 
   if (msgError) {
     console.error('Error inserting message:', msgError)
+    if (options.throwOnFailure) throw new IngestFailure('message insert', msgError)
     return
   }
 
@@ -682,162 +720,168 @@ export async function ingestInboundMessage(
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
-  // ============================================================
-  // Flow runner dispatch.
-  //
-  // If the runner consumes the message (it either advanced an active
-  // run or started a new one), we suppress the `new_message_received`
-  // + `keyword_match` automation triggers for this inbound. Customer
-  // is navigating the bot menu, not sending a fresh trigger word
-  // that should fork into automations.
-  //
-  // The relationship-level triggers (`new_contact_created`,
-  // `first_inbound_message`) still fire even when consumed — those
-  // are about WHO is messaging, not what they said.
-  //
-  // Awaited (not fire-and-forget) because we need the `consumed`
-  // result before deciding whether to dispatch automations. The
-  // runner has its own try/catch and never throws. Accounts with
-  // no active flows take the runner's early-exit "no_match" path
-  // basically for free (one indexed SELECT for the active run).
-  // ============================================================
-  // A message that arrived on the account's INACTIVE connection (the
-  // number it switched away from) is stored and surfaced, but no bot
-  // answers it: the reply would go out from the other number.
-  const botsEnabled = options.runBots !== false
-  const flowResult = botsEnabled
-    ? await dispatchInboundToFlows({
-    accountId,
-    userId: configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    message:
-      interactiveReplyId
-        ? {
-            kind: 'interactive_reply',
-            reply_id: interactiveReplyId,
-            reply_title: contentText ?? '',
-            meta_message_id: inbound.messageId,
-          }
-        : {
-            kind: 'text',
-            text: contentText ?? inbound.text ?? '',
-            meta_message_id: inbound.messageId,
+  // Everything below is fan-out to bots and subscribers. It runs after
+  // the durable part above; a caller may defer it (deferFanOut).
+  const fanOut = async () => {
+    // ============================================================
+    // Flow runner dispatch.
+    //
+    // If the runner consumes the message (it either advanced an active
+    // run or started a new one), we suppress the `new_message_received`
+    // + `keyword_match` automation triggers for this inbound. Customer
+    // is navigating the bot menu, not sending a fresh trigger word
+    // that should fork into automations.
+    //
+    // The relationship-level triggers (`new_contact_created`,
+    // `first_inbound_message`) still fire even when consumed — those
+    // are about WHO is messaging, not what they said.
+    //
+    // Awaited (not fire-and-forget) because we need the `consumed`
+    // result before deciding whether to dispatch automations. The
+    // runner has its own try/catch and never throws. Accounts with
+    // no active flows take the runner's early-exit "no_match" path
+    // basically for free (one indexed SELECT for the active run).
+    // ============================================================
+    // A message that arrived on the account's INACTIVE connection (the
+    // number it switched away from) is stored and surfaced, but no bot
+    // answers it: the reply would go out from the other number.
+    const botsEnabled = options.runBots !== false
+    const flowResult = botsEnabled
+      ? await dispatchInboundToFlows({
+      accountId,
+      userId: configOwnerUserId,
+      contactId: contactRecord.id,
+      conversationId: conversation.id,
+      message:
+        interactiveReplyId
+          ? {
+              kind: 'interactive_reply',
+              reply_id: interactiveReplyId,
+              reply_title: contentText ?? '',
+              meta_message_id: inbound.messageId,
+            }
+          : {
+              kind: 'text',
+              text: contentText ?? inbound.text ?? '',
+              meta_message_id: inbound.messageId,
+            },
+      isFirstInboundMessage,
+    })
+      : { consumed: false }
+    const flowConsumed = flowResult.consumed
+
+    // Fire any automations that react to this webhook event. All dispatches
+    // run here (not earlier) so the contact, conversation, and inbound
+    // message all exist before any step — including send_message — runs.
+    // Fire-and-forget: a slow or failing automation must not block the
+    // webhook's 200 OK response to Meta.
+    const inboundText = contentText ?? inbound.text ?? ''
+
+    // An automation parked at a "wait for reply" Send Buttons / Send List
+    // step takes this message as its reply — a tap or typed text — and
+    // continues from the step after the send. Like a Flow consuming the
+    // message, that suppresses the content-level triggers and AI reply
+    // below so the customer doesn't get a second bot answering. Runs
+    // BEFORE the trigger dispatch so the message that parks a run can
+    // never also resume it. Flows still win: only checked if no flow
+    // consumed the message. Never throws.
+    const automationConsumed = flowConsumed || !botsEnabled
+      ? false
+      : await resumeAwaitingReply({
+          accountId,
+          contactId: contactRecord.id,
+          context: {
+            message_text: inboundText,
+            conversation_id: conversation.id,
+            interactive_reply_id: interactiveReplyId ?? undefined,
           },
-    isFirstInboundMessage,
-  })
-    : { consumed: false }
-  const flowConsumed = flowResult.consumed
+        })
+    const contentConsumed = flowConsumed || automationConsumed
 
-  // Fire any automations that react to this webhook event. All dispatches
-  // run here (not earlier) so the contact, conversation, and inbound
-  // message all exist before any step — including send_message — runs.
-  // Fire-and-forget: a slow or failing automation must not block the
-  // webhook's 200 OK response to Meta.
-  const inboundText = contentText ?? inbound.text ?? ''
-
-  // An automation parked at a "wait for reply" Send Buttons / Send List
-  // step takes this message as its reply — a tap or typed text — and
-  // continues from the step after the send. Like a Flow consuming the
-  // message, that suppresses the content-level triggers and AI reply
-  // below so the customer doesn't get a second bot answering. Runs
-  // BEFORE the trigger dispatch so the message that parks a run can
-  // never also resume it. Flows still win: only checked if no flow
-  // consumed the message. Never throws.
-  const automationConsumed = flowConsumed || !botsEnabled
-    ? false
-    : await resumeAwaitingReply({
+    const automationTriggers: (
+      | 'new_contact_created'
+      | 'first_inbound_message'
+      | 'new_message_received'
+      | 'keyword_match'
+      | 'interactive_reply'
+    )[] = []
+    // Content-level triggers are suppressed when a flow or a waiting
+    // automation consumed the message — see the comment blocks above.
+    if (!contentConsumed) {
+      automationTriggers.push('new_message_received', 'keyword_match')
+      // Interactive tap → fire the interactive_reply trigger too (only
+      // meaningful when a button/list reply actually arrived). Enables
+      // automation-only chained menus; when a Flow owns the menu it will
+      // have consumed the reply and this is skipped.
+      if (interactiveReplyId) {
+        automationTriggers.push('interactive_reply')
+      }
+    }
+    // new_contact_created fires only when the webhook just auto-created the
+    // contact row. first_inbound_message fires whenever this is the contact's
+    // first-ever customer-sent message — a superset that also catches
+    // manually-imported contacts sending for the first time. We dispatch both
+    // so users can pick whichever semantic they want; an automation that
+    // listens to only one trigger runs only when that trigger matches.
+    if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
+    if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
+    // Awaited — not fire-and-forget. We're inside the route's `after()`
+    // block, which only keeps the function alive for promises it can see, so
+    // a detached dispatch can be frozen part-way through: the log row is
+    // inserted, then the steps never run. That is issue #301's failure mode
+    // recurring one level down, and it's what issue #409 reported as runs
+    // logging zero steps. `runAutomationsForTrigger` owns its own try/catch
+    // and never throws; the `.catch` is belt-and-braces so one trigger
+    // type's failure can't skip the rest of the loop.
+    for (const triggerType of botsEnabled ? automationTriggers : []) {
+      await runAutomationsForTrigger({
         accountId,
+        triggerType,
         contactId: contactRecord.id,
         context: {
           message_text: inboundText,
           conversation_id: conversation.id,
+          // Only set on interactive taps; drives the interactive_reply
+          // trigger's exact-id match.
           interactive_reply_id: interactiveReplyId ?? undefined,
         },
-      })
-  const contentConsumed = flowConsumed || automationConsumed
-
-  const automationTriggers: (
-    | 'new_contact_created'
-    | 'first_inbound_message'
-    | 'new_message_received'
-    | 'keyword_match'
-    | 'interactive_reply'
-  )[] = []
-  // Content-level triggers are suppressed when a flow or a waiting
-  // automation consumed the message — see the comment blocks above.
-  if (!contentConsumed) {
-    automationTriggers.push('new_message_received', 'keyword_match')
-    // Interactive tap → fire the interactive_reply trigger too (only
-    // meaningful when a button/list reply actually arrived). Enables
-    // automation-only chained menus; when a Flow owns the menu it will
-    // have consumed the reply and this is skipped.
-    if (interactiveReplyId) {
-      automationTriggers.push('interactive_reply')
+      }).catch((err) => console.error('[automations] dispatch failed:', err))
     }
-  }
-  // new_contact_created fires only when the webhook just auto-created the
-  // contact row. first_inbound_message fires whenever this is the contact's
-  // first-ever customer-sent message — a superset that also catches
-  // manually-imported contacts sending for the first time. We dispatch both
-  // so users can pick whichever semantic they want; an automation that
-  // listens to only one trigger runs only when that trigger matches.
-  if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
-  if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
-  // Awaited — not fire-and-forget. We're inside the route's `after()`
-  // block, which only keeps the function alive for promises it can see, so
-  // a detached dispatch can be frozen part-way through: the log row is
-  // inserted, then the steps never run. That is issue #301's failure mode
-  // recurring one level down, and it's what issue #409 reported as runs
-  // logging zero steps. `runAutomationsForTrigger` owns its own try/catch
-  // and never throws; the `.catch` is belt-and-braces so one trigger
-  // type's failure can't skip the rest of the loop.
-  for (const triggerType of botsEnabled ? automationTriggers : []) {
-    await runAutomationsForTrigger({
-      accountId,
-      triggerType,
-      contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-        // Only set on interactive taps; drives the interactive_reply
-        // trigger's exact-id match.
-        interactive_reply_id: interactiveReplyId ?? undefined,
-      },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
-  }
 
-  // AI auto-reply. Runs only for plain-text inbound the deterministic
-  // flow runner did NOT consume (flows win over the LLM), and only when
-  // the account has enabled it. Awaited inside `after()` (same reason as
-  // the webhook dispatch below); `dispatchInboundToAiReply` owns its
-  // eligibility gates + try/catch and never throws.
-  if (botsEnabled && !contentConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
-      accountId,
-      conversationId: conversation.id,
-      contactId: contactRecord.id,
-      configOwnerUserId,
-      // Lets the bot show "typing…" (and mark the message read) while
-      // the reply is generated.
-      inboundMessageId: inbound.messageId,
+    // AI auto-reply. Runs only for plain-text inbound the deterministic
+    // flow runner did NOT consume (flows win over the LLM), and only when
+    // the account has enabled it. Awaited inside `after()` (same reason as
+    // the webhook dispatch below); `dispatchInboundToAiReply` owns its
+    // eligibility gates + try/catch and never throws.
+    if (botsEnabled && !contentConsumed && !interactiveReplyId && inboundText.trim()) {
+      await dispatchInboundToAiReply({
+        accountId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        configOwnerUserId,
+        // Lets the bot show "typing…" (and mark the message read) while
+        // the reply is generated.
+        inboundMessageId: inbound.messageId,
+      })
+    }
+
+    // message.received webhook (public API). Awaited — not fire-and-forget
+    // — because we're inside the route's `after()` block, which only keeps
+    // the function alive for promises it can see; a detached promise could
+    // be frozen before it delivers. `dispatchWebhookEvent` early-exits
+    // when the account has no matching endpoint and never throws.
+    // (conversation.created is emitted earlier, right after the thread is
+    // opened.)
+    await dispatchWebhookEvent(supabaseAdmin(), accountId, 'message.received', {
+      conversation_id: conversation.id,
+      contact_id: contactRecord.id,
+      whatsapp_message_id: inbound.messageId,
+      content_type: contentType,
+      text: contentText,
     })
   }
-
-  // message.received webhook (public API). Awaited — not fire-and-forget
-  // — because we're inside the route's `after()` block, which only keeps
-  // the function alive for promises it can see; a detached promise could
-  // be frozen before it delivers. `dispatchWebhookEvent` early-exits
-  // when the account has no matching endpoint and never throws.
-  // (conversation.created is emitted earlier, right after the thread is
-  // opened.)
-  await dispatchWebhookEvent(supabaseAdmin(), accountId, 'message.received', {
-    conversation_id: conversation.id,
-    contact_id: contactRecord.id,
-    whatsapp_message_id: inbound.messageId,
-    content_type: contentType,
-    text: contentText,
-  })
+  if (options.deferFanOut) options.deferFanOut(fanOut)
+  else await fanOut()
 }
 
 /**
@@ -850,8 +894,13 @@ export async function ingestInboundMessage(
 export async function recordOutboundEcho(
   echo: Omit<InboundMessage, 'reaction'>,
   accountId: string,
-  configOwnerUserId: string
+  configOwnerUserId: string,
+  options: { throwOnFailure?: boolean } = {}
 ): Promise<'recorded' | 'duplicate' | 'skipped'> {
+  const fail = (step: string, cause?: unknown): 'skipped' => {
+    if (options.throwOnFailure) throw new IngestFailure(step, cause)
+    return 'skipped'
+  }
   if (!hasUsableIdentity(echo.identity)) return 'skipped'
   const contactOutcome = await findOrCreateContact(
     accountId,
@@ -860,13 +909,13 @@ export async function recordOutboundEcho(
     // let it rename the contact.
     { ...echo.identity, name: '' }
   )
-  if (!contactOutcome) return 'skipped'
+  if (!contactOutcome) return fail('contact')
   const convResult = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
     contactOutcome.contact.id
   )
-  if (!convResult) return 'skipped'
+  if (!convResult) return fail('conversation')
   const conversationId = convResult.conversation.id
 
   const { data: existing } = await supabaseAdmin()
@@ -910,7 +959,7 @@ export async function recordOutboundEcho(
     .select('id')
   if (error) {
     console.error('[webhook] outbound echo insert failed:', error.message)
-    return 'skipped'
+    return fail('echo insert', error)
   }
   if (!inserted || inserted.length === 0) return 'duplicate'
 
@@ -933,7 +982,8 @@ export async function recordOutboundEcho(
 export async function applyMessageMutation(
   accountId: string,
   providerMessageId: string,
-  mutation: { kind: 'revoked'; at: string } | { kind: 'edited'; at: string; text: string }
+  mutation: { kind: 'revoked'; at: string } | { kind: 'edited'; at: string; text: string },
+  options: { throwOnFailure?: boolean } = {}
 ): Promise<void> {
   const update: Record<string, unknown> =
     mutation.kind === 'revoked'
@@ -942,6 +992,7 @@ export async function applyMessageMutation(
   const { error } = await updateAccountMessages(accountId, providerMessageId, update)
   if (error) {
     console.error(`[webhook] message ${mutation.kind} update failed:`, error.message)
+    if (options.throwOnFailure) throw new IngestFailure(`message ${mutation.kind}`, error)
   }
 }
 

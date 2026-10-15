@@ -10,10 +10,13 @@ import { encrypt } from '@/lib/whatsapp/encryption'
 const SECRET = 'a'.repeat(64)
 const SESSION = '9f7af9f5-6eb1-4092-8c61-0b1e443958b9'
 
+type LedgerRowShape = Record<string, unknown> & { idempotency_key: string }
+
 const h = vi.hoisted(() => ({
-  handleOpenWaEvent: vi.fn(async () => 'ingested'),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handleOpenWaEvent: vi.fn<(...args: any[]) => Promise<string>>(async () => 'ingested'),
   after: [] as (() => Promise<void>)[],
-  ledger: new Set<string>(),
+  ledger: new Map<string, LedgerRowShape>(),
   row: null as Record<string, unknown> | null,
 }))
 
@@ -29,6 +32,45 @@ vi.mock('@/lib/whatsapp/openwa/events', async (importOriginal) => ({
   handleOpenWaEvent: h.handleOpenWaEvent,
   credsForRow: () => ({ baseUrl: 'http://gw', apiKey: 'k' }),
 }))
+
+// In-memory ledger with just enough PostgREST semantics: insert with a
+// unique key, filtered select / conditional update.
+type LedgerRow = Record<string, unknown> & { idempotency_key: string }
+function ledgerTable() {
+  return {
+    insert: async (row: LedgerRow) => {
+      if (h.ledger.has(row.idempotency_key)) return { error: { code: '23505', message: 'duplicate key' } }
+      h.ledger.set(row.idempotency_key, { ...row })
+      return { error: null }
+    },
+    select: () => {
+      const filters: [string, unknown][] = []
+      const q = {
+        eq: (c: string, v: unknown) => (filters.push([c, v]), q),
+        maybeSingle: async () => {
+          const found = [...h.ledger.values()].find((r) => filters.every(([c, v]) => r[c] === v))
+          return { data: found ?? null, error: null }
+        },
+      }
+      return q
+    },
+    update: (patch: Record<string, unknown>) => {
+      const filters: [string, unknown][] = []
+      const apply = () => {
+        const hits = [...h.ledger.values()].filter((r) => filters.every(([c, v]) => r[c] === v))
+        hits.forEach((r) => Object.assign(r, patch))
+        return hits
+      }
+      const q = {
+        eq: (c: string, v: unknown) => (filters.push([c, v]), q),
+        select: async () => ({ data: apply().map((r) => ({ idempotency_key: r.idempotency_key })), error: null }),
+        then: (resolve: (v: unknown) => unknown) => resolve((apply(), { error: null })),
+      }
+      return q
+    },
+    delete: () => ({ eq: () => ({ lt: async () => ({ error: null }) }) }),
+  }
+}
 
 vi.mock('@/lib/flows/admin-client', () => ({
   supabaseAdmin: () => ({
@@ -47,18 +89,7 @@ vi.mock('@/lib/flows/admin-client', () => ({
         }
         return q
       }
-      if (table === 'openwa_webhook_deliveries') {
-        return {
-          insert: async (row: { idempotency_key: string }) => {
-            if (h.ledger.has(row.idempotency_key)) {
-              return { error: { code: '23505', message: 'duplicate key' } }
-            }
-            h.ledger.add(row.idempotency_key)
-            return { error: null }
-          },
-          delete: () => ({ lt: async () => ({ error: null }) }),
-        }
-      }
+      if (table === 'openwa_webhook_deliveries') return ledgerTable()
       // whatsapp_config
       const q = {
         select: () => q,
@@ -205,5 +236,58 @@ describe('OpenWA webhook — idempotency', () => {
     await post(a, { 'x-openwa-signature': sign(a) })
     await post(b, { 'x-openwa-signature': sign(b) })
     expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(2)
+  })
+})
+
+// F3 (review): the ledger records COMPLETION, not arrival. A transient
+// failure must leave the delivery re-processable by OpenWA's retry.
+describe('OpenWA webhook — failures are redeliverable (F3)', () => {
+  it('answers 503 on a processing failure and processes the redelivery', async () => {
+    h.handleOpenWaEvent.mockRejectedValueOnce(new Error('connection reset by peer'))
+    const body = delivery()
+    const headers = { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' }
+    const first = await post(body, headers)
+    expect(first.status).toBe(503)
+    expect(h.ledger.get('msg_key_1')).toMatchObject({ status: 'failed' })
+
+    const retry = await post(body, headers)
+    expect(retry.status).toBe(200)
+    expect(retry.body).toEqual({ status: 'received' })
+    expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(2)
+    expect(h.ledger.get('msg_key_1')).toMatchObject({ status: 'done', attempts: 2 })
+
+    const third = await post(body, headers)
+    expect(third.body).toEqual({ status: 'duplicate' })
+    expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks for a later retry while another request is processing the same delivery', async () => {
+    h.ledger.set('msg_key_1', { idempotency_key: 'msg_key_1', account_id: 'acct-1', status: 'processing', attempts: 1, updated_at: new Date().toISOString() })
+    const body = delivery()
+    const res = await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' })
+    expect(res.status).toBe(409)
+    expect(h.handleOpenWaEvent).not.toHaveBeenCalled()
+  })
+
+  it('re-claims a delivery abandoned by a crashed worker', async () => {
+    h.ledger.set('msg_key_1', { idempotency_key: 'msg_key_1', account_id: 'acct-1', status: 'processing', attempts: 1, updated_at: new Date(Date.now() - 5 * 60_000).toISOString() })
+    const body = delivery()
+    const res = await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' })
+    expect(res.status).toBe(200)
+    expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(1)
+    expect(h.ledger.get('msg_key_1')).toMatchObject({ status: 'done' })
+  })
+
+  it('runs the bot fan-out only after the delivery is recorded as done', async () => {
+    const order: string[] = []
+    h.handleOpenWaEvent.mockImplementationOnce(async (_env: unknown, ctx: { defer?: (t: () => Promise<void>) => void }) => {
+      ctx.defer?.(async () => {
+        order.push(`fan-out sees ledger ${String(h.ledger.get('msg_key_1')?.status)}`)
+      })
+      return 'ingested'
+    })
+    const body = delivery()
+    await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' })
+    expect(order).toEqual(['fan-out sees ledger done'])
   })
 })

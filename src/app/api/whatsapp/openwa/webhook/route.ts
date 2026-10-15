@@ -10,8 +10,12 @@
 // once, so every delivery is then de-duplicated on its idempotency key
 // (`X-OpenWA-Idempotency-Key`, mirrored in the body) before any work.
 //
-// Processing runs in `after()` so the gateway gets its 2xx quickly
-// (it times out at 10 s and retries), exactly like the Meta webhook.
+// The durable part (message insert, ticks, session state) runs inside
+// the request: if it fails the delivery is answered 503, the ledger
+// marks it failed, and OpenWA's redelivery processes it again (every
+// write is idempotent). Only the bot fan-out — flows, automations, AI,
+// public webhooks — runs in `after()`, once the delivery is safely
+// recorded.
 // ============================================================
 
 import { NextResponse, after } from 'next/server'
@@ -19,6 +23,7 @@ import { NextResponse, after } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { OpenWaConnectionRow } from '@/lib/whatsapp/openwa/connection'
+import { claimDelivery, finishDelivery } from '@/lib/whatsapp/openwa/delivery-ledger'
 import {
   credsForRow,
   handleOpenWaEvent,
@@ -87,19 +92,27 @@ export async function POST(request: Request) {
 
   const idempotencyKey =
     request.headers.get('x-openwa-idempotency-key') || envelope.idempotencyKey || null
-  if (idempotencyKey) {
-    const { error: ledgerError } = await admin.from('openwa_webhook_deliveries').insert({
-      idempotency_key: idempotencyKey,
-      account_id: row.account_id,
+  if (!idempotencyKey) {
+    return NextResponse.json({ error: 'Missing idempotency key' }, { status: 400 })
+  }
+
+  // Claim the delivery. Only a COMPLETED delivery is a duplicate; one
+  // that failed (or whose worker died) is processed again — see
+  // delivery-ledger.ts.
+  let claim: Awaited<ReturnType<typeof claimDelivery>>
+  try {
+    claim = await claimDelivery(admin, {
+      key: idempotencyKey,
+      accountId: row.account_id,
       event: envelope.event,
     })
-    if (ledgerError) {
-      if (ledgerError.code === '23505') {
-        return NextResponse.json({ status: 'duplicate' })
-      }
-      console.error('[openwa webhook] ledger insert failed:', ledgerError.message)
-      return NextResponse.json({ error: 'Ledger failed' }, { status: 500 })
-    }
+  } catch (err) {
+    console.error('[openwa webhook] ledger claim failed:', err)
+    return NextResponse.json({ error: 'Ledger failed' }, { status: 503 })
+  }
+  if (claim === 'done') return NextResponse.json({ status: 'duplicate' })
+  if (claim === 'busy') {
+    return NextResponse.json({ error: 'Delivery in progress' }, { status: 409 })
   }
 
   const { data: config } = await admin
@@ -108,19 +121,40 @@ export async function POST(request: Request) {
     .eq('account_id', row.account_id)
     .maybeSingle()
 
+  // The durable part (message, status, session state) runs inside the
+  // request, so a failure can still be answered non-2xx and OpenWA
+  // redelivers. Only the bot fan-out waits for `after()`.
   const connection = row as OpenWaConnectionRow
-  after(async () => {
+  const deferred: (() => Promise<void>)[] = []
+  try {
     await handleOpenWaEvent(envelope, {
       admin,
       row: connection,
       creds: credsForRow(connection),
       activeProvider: config?.provider ?? 'meta',
       mirrorMedia: config?.mirror_inbound_media !== false,
+      defer: (task) => deferred.push(task),
     })
+  } catch (err) {
+    console.error(`[openwa webhook] ${envelope.event} failed; OpenWA will redeliver:`, err)
+    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, error: err })
+    return NextResponse.json({ error: 'Processing failed, retry' }, { status: 503 })
+  }
+  await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id })
+
+  after(async () => {
+    for (const task of deferred) {
+      try {
+        await task()
+      } catch (err) {
+        console.error('[openwa webhook] fan-out failed:', err)
+      }
+    }
     if (Math.random() < 0.01) {
       await admin
         .from('openwa_webhook_deliveries')
         .delete()
+        .eq('status', 'done')
         .lt('received_at', new Date(Date.now() - LEDGER_RETENTION_MS).toISOString())
     }
   })

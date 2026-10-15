@@ -74,8 +74,12 @@ so quoting or reacting to messages from before the switch stops resolving.
   processed only if its session belongs to an account **and** its
   `X-OpenWA-Signature: sha256=<hex>` is the HMAC-SHA256 of the raw body under
   that account's random 64-character secret (constant-time compare). Anything
-  else is `401`. Deliveries are de-duplicated on `X-OpenWA-Idempotency-Key`
-  and messages on their id.
+  else is `401`. The durable part (message, ticks, session state) is
+  processed inside the request; a transient failure answers `503` so OpenWA
+  redelivers, and only a delivery that **completed** is answered `duplicate`
+  afterwards (ledger states `processing`/`done`/`failed`). Bots (flows,
+  automations, AI) run after that, in the background. Messages are also
+  de-duplicated on their id.
 - Messages that arrive on the account's inactive connection are stored but no
   flow, automation or AI reply answers them (it would answer from the other
   number).

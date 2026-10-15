@@ -150,6 +150,16 @@ BEGIN
     RAISE EXCEPTION 'whatsapp_config.provider is missing — migration 047 did not apply';
   END IF;
 
+  -- 048: the delivery ledger must track processing state, or a failed
+  -- delivery is answered "duplicate" on redelivery and lost.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'openwa_webhook_deliveries'
+      AND column_name = 'status'
+  ) THEN
+    RAISE EXCEPTION 'openwa_webhook_deliveries.status is missing — migration 048 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;
