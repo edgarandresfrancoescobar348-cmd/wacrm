@@ -234,11 +234,21 @@ gateway stored are imported, and the page says the history is limited.
   429, a timeout or a 5xx goes back to the queue — never a definitive error;
   chats an older version marked failed for those reasons are requeued on
   the next run. A disconnected session waits.
-- A chat whose history has nothing to show (only WhatsApp's content-less
-  placeholders, or only messages newer than the import) creates no contact
-  and no conversation; it counts as skipped. Migration 065 removes the empty
-  conversations earlier versions created (only untouched ones the import
-  made). Conversations without messages never sit above those with them.
+- **Every chat the phone lists is a conversation** (phase 5f; replaces 5c's
+  "no messages, no conversation"), placed by WhatsApp's chat timestamp
+  (`conversations.wa_sort_at`, migration 069 — the inbox orders by the later
+  of it and the last message, so the list is in the phone's order) with the
+  phone's unread count. WhatsApp's content-less placeholders become the
+  phone's "Aguardando mensagem. Isso pode levar algum tempo." bubble; when the
+  real message arrives under the same id — by re-import or live (webhook,
+  phone echo, group) — it replaces the placeholder in place. A chat with
+  nothing at all has an empty preview (never "Nenhuma mensagem ainda"). On an
+  account imported before, **Importar de novo** creates the missing ones.
+  (Migration 065 still removed the empty conversations a 5b-era import made.)
+- **A re-import refreshes what is stored:** ticks only go up (sent <
+  delivered < read; a failed send is left alone), forwarded / score / media
+  details are filled, "played" is kept, and text edited or deleted in wacrm
+  is never touched. No duplicates (provider message id).
 - `errors` is the number of chats that are still failed at the end (not
   attempts); with none, the last error is cleared.
 - **Media opens.** Every imported photo, video, audio/voice note, document
@@ -271,8 +281,10 @@ gateway stored are imported, and the page says the history is limited.
 The QR-code inbox follows the linked phone (migration 067):
 
 - **Names** like the phone: the saved address-book name, else the business's
-  verified name, else the sender's own profile name shown as `~Name`, else
-  the number formatted (`+55 62 99842-3737`). `contacts.name_source` says
+  verified name, else the number formatted (`+55 62 99842-3737`) — the
+  sender's own profile name is not a title: it shows as a detail, `~Sara
+  Ferreira`, under the number (header, contact panel) and as a group
+  sender. `contacts.name_source` says
   where the name came from; a name a wacrm user typed (`manual`, set by a
   trigger for every edit from the app) is never overwritten by WhatsApp.
 - **Ticks** from WhatsApp's `ack`, in the import and live (sent ✓, delivered
@@ -298,8 +310,8 @@ The QR-code inbox follows the linked phone (migration 067):
   chat (a business named "Grupo …" is still a one-to-one chat). Filters in
   WhatsApp's order: Todas, Não lidas, Grupos (always in QR mode), then
   Abertas / Pendentes / Fechadas and the CRM's tags.
-  Archived chats sit under "Arquivadas" (and out of the
-  unread total), pinned chats on top, then WhatsApp's order; each chat's
+  Archived chats sit under "Arquivadas" — no count on that row, like the
+  phone, and out of the unread total — pinned chats on top, then WhatsApp's order; each chat's
   unread count is the phone's. The gateway sends no webhook for archiving,
   pinning or reading on the phone, so the scheduler re-reads the chat list
   (≤ once a minute per account, paced) and mirrors archived, pinned, unread,
