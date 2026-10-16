@@ -193,6 +193,38 @@ BEGIN
     RAISE EXCEPTION 'broadcasts.auto_resume_at is missing — migration 054 did not apply';
   END IF;
 
+  -- 056: durable broadcast send attempts (third review H3–H7).
+  IF to_regclass('public.broadcast_send_attempts') IS NULL
+     OR to_regprocedure('public.broadcast_attempt_begin(uuid,uuid,timestamptz,text,text,interval)') IS NULL
+     OR to_regprocedure('public.broadcast_attempt_reconcile_echo(uuid,text,text,text,timestamptz)') IS NULL
+     OR to_regprocedure('public.broadcast_attempt_decide(uuid,uuid,uuid[],text)') IS NULL THEN
+    RAISE EXCEPTION 'broadcast send attempts are missing — migration 056 did not apply';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.broadcast_recipients'::regclass
+      AND conname = 'broadcast_recipients_status_check'
+      AND pg_get_constraintdef(oid) LIKE '%unknown%'
+  ) THEN
+    RAISE EXCEPTION 'broadcast_recipients.status does not allow ''unknown'' — migration 056 did not apply';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.broadcast_attempt_begin(uuid,uuid,timestamptz,text,text,interval)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'broadcast_attempt_begin is executable by authenticated — migration 056 grants are wrong';
+  END IF;
+
+  -- 057: the inbound fan-out outbox (H1).
+  IF to_regclass('public.inbound_fanout_tasks') IS NULL
+     OR to_regprocedure('public.complete_inbound_message(uuid,text,uuid,uuid,jsonb)') IS NULL
+     OR to_regprocedure('public.claim_inbound_fanout(uuid,integer,integer,integer)') IS NULL THEN
+    RAISE EXCEPTION 'inbound fan-out outbox is missing — migration 057 did not apply';
+  END IF;
+
+  -- 058: the active-connection flag is derived from the OpenWA session.
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mirror_openwa_session_status' AND NOT tgisinternal)
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'derive_openwa_config_status' AND NOT tgisinternal) THEN
+    RAISE EXCEPTION 'OpenWA status mirror triggers are missing — migration 058 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

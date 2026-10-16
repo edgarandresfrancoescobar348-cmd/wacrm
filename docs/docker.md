@@ -75,5 +75,6 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
   (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
   503 until that variable is set. The automations cron also continues
   broadcasts that paused at their time budget (QR-code pacing, large
-  audiences); `GET /api/whatsapp/broadcast/cron` does only that, on its
-  own schedule if you prefer.
+  audiences, unconfirmed sends being reconciled) and runs inbound bot
+  fan-out that a delivery couldn't run; `GET /api/whatsapp/broadcast/cron`
+  does the same two, on its own schedule if you prefer.

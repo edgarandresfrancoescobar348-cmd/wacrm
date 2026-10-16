@@ -18,8 +18,9 @@ gateway, next to the official Meta Cloud API.
 > `048_openwa_delivery_state.sql`, `049_openwa_replay_guards.sql` and
 > `050_message_status_pending.sql`, `051_definer_search_path.sql`,
 > `052_apply_message_receipt.sql`, `053_inbound_completion.sql` and
-> `054_broadcast_send_checkpoint.sql` and `055_broadcast_params_jsonb.sql`,
-> in order. All additive; existing rows
+> `054_broadcast_send_checkpoint.sql`, `055_broadcast_params_jsonb.sql`,
+> `056_broadcast_send_attempts.sql`, `057_inbound_fanout_outbox.sql` and
+> `058_openwa_status_mirror.sql`, in order. All additive; existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -28,7 +29,9 @@ gateway, next to the official Meta Cloud API.
 > apply early delivery receipts; 051 pins the definer functions'
 > search_path; 052 the atomic receipt function; 053 inbound completion;
 > 054 the broadcast send checkpoint and automatic continuation flag; 055
-> fixes per-recipient params on `POST /api/v1/broadcasts`.
+> fixes per-recipient params on `POST /api/v1/broadcasts`; 056 durable
+> broadcast send attempts (and recipient status `unknown`); 057 the inbound
+> fan-out outbox; 058 derives the QR "connected" flag from the session.
 
 ### Added
 
@@ -76,6 +79,17 @@ gateway, next to the official Meta Cloud API.
   (`/api/automations/cron`, or `/api/whatsapp/broadcast/cron`) — also for
   public-API broadcasts. A send cut off mid-way is re-sent only where the
   provider de-duplicates (OpenWA Idempotency-Key).
+- Broadcast sends are durable send attempts: checkpoint before sending (no
+  send without it), the same key and payload on every retry, OpenWA's
+  "still running" retried later with the same key, unknown outcomes
+  reconciled (echo, stored message, gateway history) and never resent past
+  the gateway's 24 h window or to another gateway/session — those show as
+  **Unconfirmed** on the broadcast page for a person to decide. Retry
+  failed is resumable even if interrupted; the continuation keeps its
+  schedule through failures.
+- Inbound bot fan-out is a durable outbox task written with the message: a
+  failed ledger write or a crash no longer drops a bot reply.
+- The QR "connected" flag can no longer fall behind a newer session event.
 - Public API header variables: `POST /api/v1/messages` (`template.params`)
   and `POST /api/v1/broadcasts` (per recipient `params`) take the
   structured `{ "body": [...], "headerText": "..." }` besides the plain

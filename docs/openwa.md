@@ -91,6 +91,15 @@ so quoting or reacting to messages from before the switch stops resolving.
 - Messages that arrive on the account's inactive connection are stored but no
   flow, automation or AI reply answers them (it would answer from the other
   number).
+- An inbound message's fan-out (flows, automations, AI reply, the public
+  `message.received` webhook) is a durable task written together with the
+  message (migration 057). It runs right after the delivery is processed; if
+  that doesn't happen (the delivery couldn't be marked done, the process
+  died), a redelivery of the message or the cron above runs it — once, and
+  steps already run are not repeated.
+- The account's "connected" flag is derived in the database from the
+  session state (migration 058), so it can't fall behind a newer session
+  event.
 
 ## Limits
 
@@ -99,16 +108,33 @@ so quoting or reacting to messages from before the switch stops resolving.
 - A paced broadcast never runs a request past its time limit. Each pass
   prepares a media header before reserving a paced slot, only starts sends
   that can finish inside the request (the gateway call is aborted at the
-  budget), and checkpoints each recipient (`send_started_at`) before
-  sending. What doesn't fit stays `pending` and **continues automatically**
+  budget, DNS check included).
+- **Every broadcast send has a durable send attempt** (migration 056): its
+  own idempotency key and frozen payload, recorded BEFORE anything is sent —
+  if that checkpoint can't be written, nothing is sent. A retry of the same
+  attempt resends the identical request with the identical key; a new key
+  exists only as a new attempt after the previous one is known to have
+  failed. OpenWA's "still running" (409 `IDEMPOTENCY_KEY_IN_PROGRESS`) keeps
+  the attempt and retries later with the same key.
+- A send whose outcome can't be established (gateway timeout, lost answer,
+  409 `IDEMPOTENCY_OUTCOME_UNKNOWN`) is **reconciled before anything is sent
+  again**: the gateway's `message.sent` echo, a stored message or the
+  gateway's message history. It is resent automatically only within
+  OpenWA's 24 h idempotency window (minus a margin) and only to the same
+  gateway URL and session. Otherwise — and always on the official API,
+  which has no idempotency key — the recipient is shown as **Unconfirmed**
+  on the broadcast page, where a person records "They arrived" or "Not sent
+  (allow retry)" after checking the chat.
+- What doesn't fit a pass stays `pending` and **continues automatically**
   on the next run of the scheduler you already use for automations
   (`GET /api/automations/cron`, or the dedicated
   `GET /api/whatsapp/broadcast/cron`, both with `x-cron-secret`) — also for
-  broadcasts created through the public API. **Resume** still works for an
-  immediate pass. A recipient cut off mid-send is re-sent only where the
-  provider de-duplicates sends (OpenWA, keyed by the recipient); on the
-  official API it is failed as "interrupted" instead of risking a duplicate.
-  Without a configured scheduler, paused broadcasts wait for Resume.
+  broadcasts created through the public API and for leftovers of the
+  dashboard wizard. The schedule is kept until nothing is pending; a pass
+  that can't run is retried with a backoff. **Resume** still works for an
+  immediate pass; "Retry failed" makes the failed recipients resumable
+  before its pass starts. Without a configured scheduler, paused broadcasts
+  wait for Resume.
 - Template quick-reply buttons have no reply mapping in QR mode (they are
   rendered as labels).
 - OpenWA has no API to send buttons or lists on either engine, so menus are
