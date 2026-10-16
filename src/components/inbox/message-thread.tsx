@@ -485,6 +485,13 @@ export function MessageThread({
       .then(({ error }) => {
         if (error) console.error("Failed to reset unread_count:", error);
       });
+    // QR mode: read on the phone too (the chat-state sync mirrors the
+    // phone's unread count back otherwise). No-op for other conversations.
+    void fetch("/api/whatsapp/openwa/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }).catch(() => undefined);
   }, [conversationId, hasUnread]);
 
   // Auto-scroll to bottom on new messages

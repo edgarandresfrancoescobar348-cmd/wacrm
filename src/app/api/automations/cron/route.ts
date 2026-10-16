@@ -7,6 +7,7 @@ import type { AutomationContext } from '@/lib/automations/engine'
 import { continuePausedBroadcasts } from '@/lib/whatsapp/broadcast-continue'
 import { drainInboundFanout } from '@/lib/whatsapp/inbound/fanout'
 import { runHistoryImport } from '@/lib/whatsapp/openwa/history-import'
+import { syncOpenWaChatState } from '@/lib/whatsapp/openwa/chat-state'
 
 // Room for the broadcast continuation run in after() below (paced
 // broadcasts deliver in time-boxed passes).
@@ -63,6 +64,9 @@ export async function GET(request: Request) {
     } catch (err) {
       console.error('[history import] cron run failed:', err instanceof Error ? err.message : err)
     }
+    // QR-code inbox mirrors the phone's chat list: archived, pinned,
+    // unread, group names, saved contact names (phase 5e).
+    await syncOpenWaChatState(supabaseAdmin(), { deadline: startedAt + (maxDuration - 10) * 1000 })
   })
 
   // Close out wait_for_reply runs whose 24h reply window lapsed. The
