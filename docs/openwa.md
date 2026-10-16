@@ -67,6 +67,17 @@ dependencies on the next start.
 
 In dev/start, Ctrl-C (or either process exiting) stops both.
 
+### Sessions after a restart
+
+The runner and compose start the gateway with `AUTO_START_SESSIONS=true`
+(opt-in upstream): on boot OpenWA restarts every session that was linked when
+it went down — phone known, status disconnected, not stopped by an operator —
+from its saved WhatsApp Web auth, so restarting `npm run dev` / the container
+brings the number back to "Conectado" by itself (the settings card follows it
+while it reconnects). A session that never finished pairing (QR shown, never
+scanned) and one an admin disconnected are not restarted. Turn it off with
+`OPENWA_AUTO_START_SESSIONS=false`.
+
 ### The scheduler
 
 "One start" includes the cron: `npm run dev` / `npm run start` tick every
@@ -210,6 +221,13 @@ gateway stored are imported, and the page says the history is limited.
   429, a timeout or a 5xx goes back to the queue — never a definitive error;
   chats an older version marked failed for those reasons are requeued on
   the next run. A disconnected session waits.
+- A chat whose history has nothing to show (only WhatsApp's content-less
+  placeholders, or only messages newer than the import) creates no contact
+  and no conversation; it counts as skipped. Migration 065 removes the empty
+  conversations earlier versions created (only untouched ones the import
+  made). Conversations without messages never sit above those with them.
+- `errors` is the number of chats that are still failed at the end (not
+  attempts); with none, the last error is cleared.
 - Never a silent stall: every run that stops leaves its reason and next
   attempt on the job (`last_error`, `next_run_at`) and logs a
   `[history import]` line; a run whose process died is picked up again when

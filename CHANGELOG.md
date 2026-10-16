@@ -23,7 +23,7 @@ now ships inside wacrm, next to the official Meta Cloud API.
 > `058_openwa_status_mirror.sql`, `059_send_evidence.sql`,
 > `060_fanout_outcomes.sql`, `061_connection_lock.sql`,
 > `062_message_content_meta.sql`, `063_whatsapp_history_import.sql` and
-> `064_openwa_embedded_gateway.sql`, in order. All additive; existing rows
+> `064_openwa_embedded_gateway.sql` and `065_history_import_empty_conversations.sql`, in order. All additive except 064 (drops the per-account gateway URL/key) and 065 (deletes empty conversations the history import created); existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -58,6 +58,15 @@ now ships inside wacrm, next to the official Meta Cloud API.
   endpoints every 60 s with the cron secret (generated when unset); compose
   has a `scheduler` service. Nothing had continued the QR history import,
   broadcasts or the fan-out safety net outside serverless cron.
+- **QR sessions come back after a restart:** the embedded gateway runs with
+  `AUTO_START_SESSIONS=true` (dev/start and compose), so a linked number is
+  "Conectado" again after restarting wacrm, without a manual start.
+- **Import fixes (real account):** chats with nothing renderable create no
+  empty conversation (migration 065 removes the ones already created —
+  **apply `065_history_import_empty_conversations.sql`**); the job's error
+  count is the chats still failed, not attempts, and a stale last error is
+  cleared; contacts without a saved name show their number formatted like
+  WhatsApp Web (`+55 11 93373-9259`) in the list, header and contact panel.
 - **History import on real accounts:** connecting only queues it; a slow
   first chat listing (whatsapp-web.js loading the phone's chats, 90 s+)
   waits up to 180 s and otherwise retries with "waiting for WhatsApp" on the
