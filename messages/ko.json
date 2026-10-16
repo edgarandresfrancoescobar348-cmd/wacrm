@@ -159,7 +159,8 @@
   "Inbox": {
     "page": {
       "whatsappNotConnected": "WhatsApp®이 연결되어 있지 않습니다. 설정으로 이동해 계정을 연결하세요.",
-      "connectNow": "지금 연결"
+      "connectNow": "지금 연결",
+      "whatsappQrDisconnected": "WhatsApp QR 코드 세션의 연결이 끊어졌습니다. 설정 › WhatsApp에서 QR 코드를 다시 스캔해 다시 연결하세요."
     },
     "conversationList": {
       "searchPlaceholder": "대화 검색...",
@@ -377,7 +378,8 @@
       "newBroadcast": "새 브로드캐스트",
       "templates": "템플릿",
       "quickReplies": "빠른 답장",
-      "pipelines": "파이프라인"
+      "pipelines": "파이프라인",
+      "reconnectQr": "WhatsApp 다시 연결 (QR 코드)"
     }
   },
   "Contacts": {

@@ -159,7 +159,8 @@
   "Inbox": {
     "page": {
       "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta.",
-      "connectNow": "Conectar agora"
+      "connectNow": "Conectar agora",
+      "whatsappQrDisconnected": "A sessão do WhatsApp por QR Code está desconectada. Escaneie o QR Code de novo em Configurações › WhatsApp para reconectar."
     },
     "conversationList": {
       "searchPlaceholder": "Buscar conversas...",
@@ -377,7 +378,8 @@
       "newBroadcast": "Novo disparo",
       "templates": "Modelos",
       "quickReplies": "Respostas rápidas",
-      "pipelines": "Pipelines"
+      "pipelines": "Pipelines",
+      "reconnectQr": "Reconectar o WhatsApp (QR Code)"
     }
   },
   "Contacts": {

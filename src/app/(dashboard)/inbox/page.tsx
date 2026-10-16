@@ -4,6 +4,8 @@ import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
+import { useWhatsAppStatus } from "@/hooks/use-whatsapp-status";
 import {
   CONVERSATION_SELECT,
   normalizeConversation,
@@ -49,12 +51,14 @@ function InboxPageInner() {
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  // The active connection, kept current while the inbox is open (a page
+  // opened before the QR code was scanned no longer shows a stale state).
+  const { accountId } = useAuth();
+  const whatsapp = useWhatsAppStatus(accountId);
+  const whatsappConnected = whatsapp.connected;
   // Meta's 24h window applies unless the account is on a QR-code
   // (OpenWA) connection.
-  const [serviceWindow, setServiceWindow] = useState(true);
-  const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
-    null
-  );
+  const serviceWindow = whatsapp.provider !== "openwa";
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -177,47 +181,6 @@ function InboxPageInner() {
   }, []);
 
   // Check WhatsApp connection status on mount
-  useEffect(() => {
-    const checkConnection = async () => {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-
-      if (!user) return;
-
-      // whatsapp_config is one-row-per-account post-multi-user, so
-      // the previous `.eq('user_id', user.id)` would miss the row
-      // for any teammate who didn't personally save the config —
-      // the "WhatsApp not connected" banner would show in the
-      // shared inbox even though the admin had it configured.
-      // Resolve account_id via the profile and query by that.
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("account_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const accountId = profile?.account_id as string | undefined;
-      if (!accountId) {
-        setWhatsappConnected(false);
-        return;
-      }
-
-      const { data } = await supabase
-        .from("whatsapp_config")
-        .select("status, provider")
-        .eq("account_id", accountId)
-        .maybeSingle();
-
-      // `status` is the ACTIVE connection's health in both modes (Meta
-      // Cloud API or QR code / OpenWA — migration 047).
-      setWhatsappConnected(data?.status === "connected");
-      setServiceWindow(data?.provider !== "openwa");
-    };
-
-    checkConnection();
-  }, []);
 
   // Handle realtime message events
   const handleMessageEvent = useCallback(
@@ -578,7 +541,9 @@ function InboxPageInner() {
       >
         <WifiOff className="mt-0.5 size-5 shrink-0" />
         <span className="min-w-0 text-sm leading-5">
-          {t("whatsappNotConnected")}
+          {whatsapp.kind === "qr_disconnected"
+            ? t("whatsappQrDisconnected")
+            : t("whatsappNotConnected")}
           <span className="mt-0.5 block font-medium text-primary-text">
             {t("connectNow")}
           </span>
@@ -627,7 +592,7 @@ function InboxPageInner() {
             serviceWindow={serviceWindow}
           />
         ) : (
-          <EmptyPane whatsappConnected={whatsappConnected} />
+          <EmptyPane whatsappConnected={whatsappConnected} provider={whatsapp.provider} />
         )}
 
         {contactPanelOpen && activeContact && (

@@ -159,7 +159,8 @@
   "Inbox": {
     "page": {
       "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account.",
-      "connectNow": "Connect now"
+      "connectNow": "Connect now",
+      "whatsappQrDisconnected": "The WhatsApp QR-code session is disconnected. Scan the QR code again in Settings › WhatsApp to reconnect."
     },
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
@@ -377,7 +378,8 @@
       "newBroadcast": "New broadcast",
       "templates": "Templates",
       "quickReplies": "Quick replies",
-      "pipelines": "Pipelines"
+      "pipelines": "Pipelines",
+      "reconnectQr": "Reconnect WhatsApp (QR code)"
     }
   },
   "Contacts": {

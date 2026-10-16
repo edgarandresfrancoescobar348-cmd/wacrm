@@ -17,9 +17,12 @@ import { WaEmptyState } from "@/components/layout/wa-panel";
  */
 export function EmptyPane({
   whatsappConnected,
+  provider,
 }: {
   /** `false` adds a "Connect WhatsApp" call to action to the card. */
   whatsappConnected?: boolean | null;
+  /** The active mode: a QR session is "reconnected", not set up. */
+  provider?: "meta" | "openwa" | null;
 }) {
   const t = useTranslations("Inbox.emptyPane");
 
@@ -31,7 +34,10 @@ export function EmptyPane({
         description={t("subtitle")}
         cta={
           whatsappConnected === false
-            ? { label: t("connectWhatsapp"), href: "/settings?tab=whatsapp" }
+            ? {
+                label: provider === "openwa" ? t("reconnectQr") : t("connectWhatsapp"),
+                href: "/settings?tab=whatsapp",
+              }
             : undefined
         }
         actions={[
