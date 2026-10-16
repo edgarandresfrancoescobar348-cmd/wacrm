@@ -46,6 +46,8 @@ import {
 } from "@/components/layout/wa-panel";
 import { formatListTime } from "./wa-format";
 import { usePreviewParts } from "./message-preview";
+import { previewLead } from "@/lib/inbox/preview-lead";
+import { StatusIcon } from "./message-bubble";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -507,6 +509,7 @@ function ConversationItem({
   // Preview tokens become icon + label, like WA's "📷 Photo" line (A2).
   const preview = previewOf(conversation.last_message_text, t("noMessagesYet"));
   const MediaIcon = preview.icon;
+  const lead = previewLead(conversation);
 
   return (
     <WaListRow
@@ -527,8 +530,14 @@ function ConversationItem({
       subtitle={
         <>
           {/* A group's preview names who wrote it, like WhatsApp: "Luciana Alves: …". */}
-          {isGroup && conversation.last_message_sender ? (
-            <span className="shrink-0">{conversation.last_message_sender}:</span>
+          {/* WhatsApp's rule (preview-lead.ts): yours → ticks; a group
+              member → "Name:"; a one-to-one chat → nothing. */}
+          {lead?.kind === "ticks" ? (
+            <span className="inline-flex shrink-0 text-muted-foreground" data-testid="list-ticks" data-status={lead.status}>
+              <StatusIcon status={lead.status} />
+            </span>
+          ) : lead?.kind === "sender" ? (
+            <span className="shrink-0">{lead.name}:</span>
           ) : null}
           {MediaIcon ? <MediaIcon className="size-4 shrink-0" /> : null}
           <span className="truncate">

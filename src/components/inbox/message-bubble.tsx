@@ -101,7 +101,7 @@ function failureReason(message: Message): string | null {
     : message.error_title;
 }
 
-function StatusIcon({
+export function StatusIcon({
   status,
   title,
 }: {
