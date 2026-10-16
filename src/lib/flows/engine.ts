@@ -203,6 +203,13 @@ export class FlowLookupError extends Error {
   }
 }
 
+/**
+ * Load every node of a flow in one round trip and key them by
+ * `node_key`. The advance loop is then in-memory — a 5-node
+ * auto-advancing chain costs one SELECT, not five. A failed read
+ * throws: dispatching a run against an empty node map would fail the
+ * run on a transient error (K4).
+ */
 async function loadAllNodesOrThrow(
   db: AdminClient,
   flowId: string,
@@ -261,34 +268,6 @@ async function loadFlow(
     return null;
   }
   return (data as FlowRow | null) ?? null;
-}
-
-/**
- * Load every node of a flow in one round trip and key them by
- * `node_key`. The advance loop is then in-memory — a 5-node
- * auto-advancing chain costs one SELECT, not five.
- *
- * Returns an empty map on error so the caller can still dispatch
- * cleanly (every subsequent .get() returns undefined → the run
- * fails with node_not_found, same as the old per-node lookup).
- */
-async function loadAllNodes(
-  db: AdminClient,
-  flowId: string,
-): Promise<Map<string, FlowNodeRow>> {
-  const { data, error } = await db
-    .from("flow_nodes")
-    .select("*")
-    .eq("flow_id", flowId);
-  if (error) {
-    console.error("[flows] loadAllNodes error:", error.message);
-    return new Map();
-  }
-  const map = new Map<string, FlowNodeRow>();
-  for (const row of (data ?? []) as FlowNodeRow[]) {
-    map.set(row.node_key, row);
-  }
-  return map;
 }
 
 async function logEvent(
