@@ -89,3 +89,31 @@ describe('paceBroadcastSend with a deadline (F8)', () => {
     expect(broadcastSendDeadline(300, 0)).toBe(300_000 - SEND_RESERVE_MS)
   })
 })
+
+// G7 (second review): the deadline is re-checked after the wait.
+describe('paceBroadcastSend — late wake-up (G7)', () => {
+  beforeEach(() => resetBroadcastPacing())
+
+  it('refuses when the timer fired after the deadline', async () => {
+    let now = 1_000_000
+    const opts = {
+      now: () => now,
+      // the event loop was busy: the 8 s wait took 30 s
+      sleep: async () => {
+        now += 30_000
+      },
+      random: () => 0,
+      deadline: 1_000_000 + 10_000,
+    }
+    expect(await paceBroadcastSend('acct', 8000, opts)).toBe(true)
+    expect(await paceBroadcastSend('acct', 8000, opts)).toBe(false)
+  })
+
+  it('estimatePassCapacity counts the sends that can start before the deadline', async () => {
+    const { estimatePassCapacity } = await import('./pacing')
+    const plan = (n: number, delay: number) => ({ planned: new Array(n).fill(0), transport: { capabilities: { broadcastDelayMs: delay } } })
+    expect(estimatePassCapacity(plan(10, 8000), 20_000, 0)).toBe(3)
+    expect(estimatePassCapacity(plan(10, 0), 20_000, 0)).toBe(10)
+    expect(estimatePassCapacity(plan(2, 8000), 100_000, 0)).toBe(2)
+  })
+})

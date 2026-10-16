@@ -33,7 +33,11 @@ import { requireApiKey } from '@/lib/auth/api-context';
 // and Resume continues from there. A send is never cut off mid-way.
 export const maxDuration = 300;
 import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
-import { broadcastSendDeadline } from '@/lib/whatsapp/transport/pacing';
+import {
+  broadcastSendBy,
+  broadcastSendDeadline,
+  estimatePassCapacity,
+} from '@/lib/whatsapp/transport/pacing';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 import {
   createBroadcast,
@@ -81,7 +85,11 @@ export async function POST(request: Request) {
     // reached stay pending and the broadcast stays `sending`, ready for
     // Resume (dashboard) — never a handler killed mid-send.
     const deadline = broadcastSendDeadline(maxDuration, startedAt);
-    after(() => deliverBroadcast(ctx.supabase, plan, { deadline }));
+    const sendBy = broadcastSendBy(maxDuration, startedAt);
+    after(() => deliverBroadcast(ctx.supabase, plan, { deadline, sendBy }));
+    // What this first pass can reach; the rest continues automatically
+    // on the next cron run (broadcast-continue.ts).
+    const firstPass = estimatePassCapacity(plan, deadline, startedAt);
 
     return ok(
       {
@@ -90,6 +98,10 @@ export async function POST(request: Request) {
         total_recipients: plan.planned.length,
         accepted: plan.planned.length,
         rejected: plan.rejected,
+        // Paced connections deliver in time-boxed passes; `remaining`
+        // recipients are continued automatically by the scheduler.
+        first_pass: firstPass,
+        remaining: plan.planned.length - firstPass,
       },
       202
     );

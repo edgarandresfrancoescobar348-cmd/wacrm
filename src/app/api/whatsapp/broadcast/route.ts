@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
   loadAccountTransport,
+  SendBudgetExceededError,
   sendWithRecipientVariants,
   TransportNotConfiguredError,
   type WhatsAppTransport,
 } from '@/lib/whatsapp/transport'
 import {
+  broadcastSendBy,
   broadcastSendDeadline,
   paceBroadcastSend,
 } from '@/lib/whatsapp/transport/pacing'
@@ -60,6 +62,9 @@ interface BroadcastResult {
  */
 interface NewRecipient {
   phone: string
+  /** The wizard's broadcast_recipients row: send checkpoint + provider
+   *  de-duplication key. Optional for older callers. */
+  recipient_id?: string
   /** Body variable values, one per {{N}}. Legacy field. */
   params?: string[]
   /**
@@ -72,7 +77,9 @@ interface NewRecipient {
 }
 
 export async function POST(request: Request) {
-  const deadline = broadcastSendDeadline(maxDuration)
+  const startedAt = Date.now()
+  const deadline = broadcastSendDeadline(maxDuration, startedAt)
+  const sendBy = broadcastSendBy(maxDuration, startedAt)
   try {
     // Requires the 'agent' role — `canSendMessages` in lib/auth/roles is
     // explicit that running broadcasts is a write operation and that
@@ -194,9 +201,41 @@ export async function POST(request: Request) {
         continue
       }
 
+      const idempotencyKey = recipient.recipient_id
+        ? `broadcast-recipient:${recipient.recipient_id}`
+        : undefined
+      const sendArgs = {
+        templateName: template_name,
+        language: resolvedTemplate.language,
+        template: templateRow,
+        messageParams: recipient.messageParams,
+        params: recipient.params ?? [],
+        sendBy,
+        idempotencyKey,
+      }
+      // Slow send-independent work (a media header to inline) BEFORE the
+      // paced slot — the slot then only waits on the provider.
+      try {
+        await transport.prepareTemplate?.({ ...sendArgs, to: sanitized })
+      } catch (error) {
+        if (error instanceof SendBudgetExceededError) {
+          results.push({ phone: recipient.phone, status: 'deferred' })
+          deferredCount++
+          continue
+        }
+        results.push({
+          phone: recipient.phone,
+          status: 'failed',
+          error: error instanceof Error ? error.message : t('common.unknownError'),
+        })
+        failedCount++
+        continue
+      }
+
       // Provider pacing (a no-op on Meta), bounded by this request's
-      // budget: a recipient that can't START in time is returned as
-      // `deferred` (not sent, not failed) for the wizard to re-queue.
+      // budget and re-checked after the wait: a recipient that can't
+      // START in time is returned as `deferred` (not sent, not failed)
+      // for the wizard to re-queue.
       const mayStart = await paceBroadcastSend(
         accountId,
         transport.capabilities.broadcastDelayMs,
@@ -210,6 +249,14 @@ export async function POST(request: Request) {
 
       // Retry with phone variants on "not in allowed list" so numbers
       // that differ only in a trunk-prefix 0 still reach recipients.
+      // Checkpoint BEFORE the external effect (the wizard's row).
+      if (recipient.recipient_id) {
+        await supabase
+          .from('broadcast_recipients')
+          .update({ send_started_at: new Date().toISOString() })
+          .eq('id', recipient.recipient_id)
+      }
+
       let sentMessageId: string | null = null
       let lastError: string | null = null
       try {
@@ -217,18 +264,19 @@ export async function POST(request: Request) {
           transport,
           sanitized,
           true,
-          (to) =>
-            transport.sendTemplate({
-              to,
-              templateName: template_name,
-              language: resolvedTemplate.language,
-              template: templateRow,
-              messageParams: recipient.messageParams,
-              params: recipient.params ?? [],
-            })
+          (to) => transport.sendTemplate({ ...sendArgs, to })
         )
         sentMessageId = result.messageId
       } catch (error) {
+        // Aborted at the budget: outcome unknown. Where the provider
+        // de-duplicates (same key) the wizard may safely re-queue it;
+        // otherwise report it failed rather than risk a duplicate.
+        const budgetHit = error instanceof SendBudgetExceededError || Date.now() >= sendBy - 1000
+        if (budgetHit && transport.capabilities.idempotentSends && idempotencyKey) {
+          results.push({ phone: recipient.phone, status: 'deferred' })
+          deferredCount++
+          continue
+        }
         lastError =
           error instanceof Error ? error.message : t('common.unknownError')
       }

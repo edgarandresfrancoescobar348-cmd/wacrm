@@ -60,20 +60,27 @@ export async function paceBroadcastSend(
   lastSendAt.set(key, startAt)
   const wait = startAt - now()
   if (wait > 0) await sleep(wait)
+  // A timer can fire late (a busy event loop, a suspended worker): check
+  // the deadline again before letting the send start.
+  if (opts.deadline !== undefined && now() > opts.deadline) return false
   return true
 }
 
+/** Kept free at the end of the handler for the result writes. */
+export const PERSIST_RESERVE_MS = 10_000
+
 /**
- * Time a send needs after it starts: OpenWA answers within its 45 s send
- * timeout (simulated typing included), plus margin for our own writes.
+ * Time a send needs once it starts: the provider call (OpenWA answers
+ * within its 45 s send timeout, simulated typing included) — media is
+ * prepared BEFORE the slot is reserved — plus the persist reserve.
  */
-export const SEND_RESERVE_MS = 50_000
+export const SEND_RESERVE_MS = 45_000 + PERSIST_RESERVE_MS
 
 /**
  * The last moment a broadcast send may START inside a handler that
  * started at `startedAt` and may run `maxDurationSeconds`. Sends planned
- * past it are left `pending` — the checkpoint the resume pass picks up —
- * so a paced broadcast never runs the handler past its limit.
+ * past it are left `pending` — the checkpoint the next pass (cron
+ * continuation or Resume) picks up.
  */
 export function broadcastSendDeadline(
   maxDurationSeconds: number,
@@ -82,7 +89,37 @@ export function broadcastSendDeadline(
   return startedAt + maxDurationSeconds * 1000 - SEND_RESERVE_MS
 }
 
+/**
+ * The absolute moment every provider call of the pass must have
+ * finished (`sendBy`): the handler limit minus the persist reserve. The
+ * transports abort at it, so no send outlives the handler.
+ */
+export function broadcastSendBy(
+  maxDurationSeconds: number,
+  startedAt: number = Date.now(),
+): number {
+  return startedAt + maxDurationSeconds * 1000 - PERSIST_RESERVE_MS
+}
+
 /** Test hook. */
 export function resetBroadcastPacing(): void {
   lastSendAt.clear()
+}
+
+/**
+ * How many of a plan's recipients one pass can START before `deadline`
+ * at the transport's pacing (the first goes immediately; each next one
+ * waits at least the delay). An estimate for `remaining` in responses —
+ * the authoritative checkpoint is the recipients' status.
+ */
+export function estimatePassCapacity(
+  plan: { planned: unknown[]; transport: { capabilities: { broadcastDelayMs: number } } },
+  deadline: number,
+  now: number = Date.now(),
+): number {
+  const total = plan.planned.length
+  const delay = plan.transport.capabilities.broadcastDelayMs
+  if (!(delay > 0)) return total
+  if (now > deadline) return 0
+  return Math.min(total, Math.floor((deadline - now) / delay) + 1)
 }

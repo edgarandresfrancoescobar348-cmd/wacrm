@@ -32,7 +32,11 @@ import {
   type ResumeScope,
 } from '@/lib/whatsapp/broadcast-resume';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
-import { broadcastSendDeadline } from '@/lib/whatsapp/transport/pacing';
+import {
+  broadcastSendBy,
+  broadcastSendDeadline,
+  estimatePassCapacity,
+} from '@/lib/whatsapp/transport/pacing';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -102,11 +106,16 @@ export async function POST(
     // account-scoped read above.
     const admin = supabaseAdmin();
     const deadline = broadcastSendDeadline(maxDuration, startedAt);
+    const sendBy = broadcastSendBy(maxDuration, startedAt);
+    // Recipients this pass can actually reach within its budget — the
+    // rest (and anything beyond the per-request cap) is `remaining` and
+    // continues automatically on the next cron run.
+    const thisPass = estimatePassCapacity(plan, deadline, startedAt);
     after(async () => {
       try {
         // Bounded by this invocation's budget; whatever doesn't fit stays
         // pending for the next Resume (see broadcastSendDeadline).
-        await deliverBroadcast(admin, plan, { deadline });
+        await deliverBroadcast(admin, plan, { deadline, sendBy });
       } catch (err) {
         console.error(
           '[broadcast-resume] delivery threw:',
@@ -124,10 +133,11 @@ export async function POST(
         success: true,
         broadcast_id: id,
         scope,
-        resuming: plan.planned.length,
-        // > 0 when the backlog exceeded one pass's cap; the UI offers
-        // Resume again rather than silently dropping them.
-        remaining,
+        resuming: thisPass,
+        // Left after this pass: beyond the per-request cap, or beyond what
+        // the paced pass fits in its time budget. Continued automatically
+        // by the scheduler (broadcast-continue.ts); Resume also works.
+        remaining: remaining + (plan.planned.length - thisPass),
         // Recipients stamped failed up front for want of a phone number.
         unsendable,
       },

@@ -20,7 +20,7 @@ import {
   isRecipientNotAllowedError,
   phoneVariants,
 } from '@/lib/whatsapp/phone-utils'
-import type { TransportCapabilities, WhatsAppTransport } from './types'
+import { budgetTimeout, type TransportCapabilities, type WhatsAppTransport } from './types'
 
 export interface MetaCredentials {
   phoneNumberId: string
@@ -33,6 +33,16 @@ export const META_CAPABILITIES: TransportCapabilities = {
   serviceWindow: true,
   interactive: 'native',
   broadcastDelayMs: 0,
+  // The Cloud API has no idempotency key for sends.
+  idempotentSends: false,
+}
+
+/** Meta sends have no client timeout of their own; a budget caps them. */
+const META_SEND_CAP_MS = 60_000
+
+function budgetSignal(sendBy: number | undefined): AbortSignal | undefined {
+  if (sendBy === undefined) return undefined
+  return AbortSignal.timeout(budgetTimeout(sendBy, META_SEND_CAP_MS))
 }
 
 export function createMetaTransport(creds: MetaCredentials): WhatsAppTransport {
@@ -41,12 +51,13 @@ export function createMetaTransport(creds: MetaCredentials): WhatsAppTransport {
     provider: 'meta',
     capabilities: META_CAPABILITIES,
 
-    async sendText({ to, text, contextMessageId }) {
-      return sendTextMessage({ phoneNumberId, accessToken, to, text, contextMessageId })
+    async sendText({ to, text, contextMessageId, sendBy }) {
+      return sendTextMessage({ phoneNumberId, accessToken, to, text, contextMessageId, signal: budgetSignal(sendBy) })
     },
 
-    async sendMedia({ to, kind, link, caption, filename, contextMessageId }) {
+    async sendMedia({ to, kind, link, caption, filename, contextMessageId, sendBy }) {
       return sendMediaMessage({
+        signal: budgetSignal(sendBy),
         phoneNumberId,
         accessToken,
         to,
@@ -66,8 +77,10 @@ export function createMetaTransport(creds: MetaCredentials): WhatsAppTransport {
       messageParams,
       params,
       contextMessageId,
+      sendBy,
     }) {
       return sendTemplateMessage({
+        signal: budgetSignal(sendBy),
         phoneNumberId,
         accessToken,
         to,

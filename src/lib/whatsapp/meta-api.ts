@@ -351,6 +351,8 @@ export interface SendTextMessageArgs {
   /** Meta's message_id of the message being replied to. Adds a `context` field
    *  so WhatsApp renders the new message as a reply with a quote preview. */
   contextMessageId?: string
+  /** Aborts the request (a broadcast's time budget). */
+  signal?: AbortSignal
 }
 
 /**
@@ -378,6 +380,7 @@ export async function sendTextMessage(
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
+    signal: args.signal,
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
@@ -400,6 +403,8 @@ export interface SendMediaMessageArgs {
   /** Document-only. Shown in the recipient's chat as the file name. Ignored for image/video/audio. */
   filename?: string
   contextMessageId?: string
+  /** Aborts the request (a broadcast's time budget). */
+  signal?: AbortSignal
 }
 
 /**
@@ -443,6 +448,7 @@ export async function sendMediaMessage(
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
+    signal: args.signal,
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
@@ -486,6 +492,8 @@ export interface SendTemplateMessageArgs {
   messageParams?: SendTimeParams
   /** Meta's message_id of the message being replied to. */
   contextMessageId?: string
+  /** Aborts the request (a broadcast's time budget). */
+  signal?: AbortSignal
 }
 
 /**
@@ -560,6 +568,7 @@ export async function sendTemplateMessage(
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
+    signal: args.signal,
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)

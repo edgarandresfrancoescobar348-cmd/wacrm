@@ -182,6 +182,7 @@ describe('Meta transport — wire shape unchanged', () => {
       serviceWindow: true,
       interactive: 'native',
       broadcastDelayMs: 0,
+      idempotentSends: false,
     })
   })
 })
@@ -282,7 +283,83 @@ describe('OpenWA transport — wire shape', () => {
       serviceWindow: false,
       interactive: 'numbered_text',
       broadcastDelayMs: 8000,
+      idempotentSends: true,
     })
     expect(t.transport().recipientVariants('5511912345678')).toEqual(['5511912345678'])
+  })
+})
+
+// G7 (second review): the absolute budget reaches the gateway call and
+// the media download; a repeated send carries the de-duplication key.
+describe('OpenWA transport — time budget and idempotency (G7)', () => {
+  const t = harnesses[1]
+
+  it('aborts the gateway call at sendBy (not at its own 45 s cap)', async () => {
+    fake.override((req) => (req.path.endsWith('send-text') ? undefined : undefined))
+    const slow = vi.fn()
+    // a gateway that takes 2 s to answer
+    const { default: http } = await import('node:http')
+    const server = http.createServer((_req, res) => {
+      slow()
+      setTimeout(() => {
+        res.writeHead(201, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ messageId: 'late', timestamp: 1 }))
+      }, 2000)
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const port = (server.address() as { port: number }).port
+    try {
+      const tr = createOpenWaTransport({
+        accountId: 'a', userId: 'u', baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', sessionId: SESSION,
+        sessionName: null, webhookId: null, webhookSecret: null, engine: null, status: 'ready', phone: null, pushName: null,
+        broadcastDelayMs: 8000,
+      })
+      const started = Date.now()
+      await expect(tr.sendText({ to: '5511912345678', text: 'x', sendBy: started + 300 })).rejects.toThrow()
+      expect(Date.now() - started).toBeLessThan(1500)
+      // and an already-exhausted budget never reaches the gateway
+      await expect(tr.sendText({ to: '5511912345678', text: 'x', sendBy: Date.now() - 1 })).rejects.toThrow(/budget/)
+      expect(slow).toHaveBeenCalledTimes(1)
+    } finally {
+      fake.override(null)
+      server.close()
+    }
+  })
+
+  it('sends the idempotency key as Idempotency-Key', async () => {
+    await t.transport().sendText({ to: '5511912345678', text: 'x', idempotencyKey: 'broadcast-recipient:r1' })
+    expect(fake.requests[0].headers['idempotency-key']).toBe('broadcast-recipient:r1')
+  })
+
+  it('prepareTemplate downloads our own media once; the send reuses it', async () => {
+    const own = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/chat-media/promo.png`
+    const fetched: string[] = []
+    const realFetchFn = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input)
+      if (url === own) {
+        fetched.push(url)
+        return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } })
+      }
+      return realFetchFn(input, init)
+    }))
+    try {
+      const tr = t.transport()
+      const args = {
+        to: '5511912345678',
+        templateName: 'promo',
+        template: { ...TEMPLATE, header_type: 'image' as const, header_content: undefined, header_media_url: own, buttons: [] },
+        params: ['Ana'],
+      }
+      await tr.prepareTemplate!(args)
+      expect(fetched).toHaveLength(1)
+      await tr.sendTemplate(args)
+      await tr.sendTemplate({ ...args, to: '5511900000000' })
+      expect(fetched).toHaveLength(1)
+      expect(t.requests().filter((r) => r.path === '/messages/send-image')).toHaveLength(2)
+    } finally {
+      vi.unstubAllGlobals()
+      installMetaFetch()
+    }
   })
 })

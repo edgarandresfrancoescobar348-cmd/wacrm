@@ -25,13 +25,17 @@ import {
   openWaSend,
   openWaTyping,
   OpenWaError,
+  SEND_TIMEOUT_MS,
 } from '@/lib/whatsapp/openwa/client'
 import type { OpenWaConnection } from '@/lib/whatsapp/openwa/connection'
-import type {
-  MediaKind,
-  SendResult,
-  TransportCapabilities,
-  WhatsAppTransport,
+import {
+  budgetTimeout,
+  type MediaKind,
+  type SendControl,
+  type SendResult,
+  type SendTemplateArgs,
+  type TransportCapabilities,
+  type WhatsAppTransport,
 } from './types'
 
 const t = getT('WhatsAppTransport')
@@ -46,6 +50,8 @@ export function openWaCapabilities(broadcastDelayMs: number): TransportCapabilit
     // engine (docs/29 capability matrix), so the fallback is always on.
     interactive: 'numbered_text',
     broadcastDelayMs,
+    // OpenWA's send routes honour an Idempotency-Key header (24 h).
+    idempotentSends: true,
   }
 }
 
@@ -87,9 +93,12 @@ function ownStoragePrefix(): string | null {
  * fetches it behind its own SSRF guard; we never fetch arbitrary
  * caller-supplied URLs server-side.
  */
-async function mediaSource(
-  link: string,
-): Promise<{ url: string } | { base64: string; mimetype: string }> {
+/** Downloading our own media is bounded too (a broadcast's budget). */
+const MEDIA_FETCH_CAP_MS = 30_000
+
+type MediaSource = { url: string } | { base64: string; mimetype: string }
+
+async function mediaSource(link: string, sendBy?: number): Promise<MediaSource> {
   const prefix = ownStoragePrefix()
   let normalized: string
   try {
@@ -100,7 +109,10 @@ async function mediaSource(
     return { url: link }
   }
   if (!prefix || !normalized.startsWith(prefix)) return { url: link }
-  const res = await fetch(normalized, { redirect: 'manual', signal: AbortSignal.timeout(30_000) })
+  const res = await fetch(normalized, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(budgetTimeout(sendBy, MEDIA_FETCH_CAP_MS)),
+  })
   if (!res.ok) throw new OpenWaError(`Media fetch failed: ${res.status}`, 400, 'media_fetch')
   const bytes = new Uint8Array(await res.arrayBuffer())
   if (bytes.byteLength > MAX_INLINE_MEDIA_BYTES) {
@@ -131,10 +143,28 @@ export function createOpenWaTransport(conn: OpenWaConnection): WhatsAppTransport
   if (!sessionId) throw new OpenWaError('OpenWA session not created', 400, 'no_session')
   const creds = { baseUrl: conn.baseUrl, apiKey: conn.apiKey }
 
-  const sendText = async (to: string, text: string, quoted?: string): Promise<SendResult> => {
+  // Media is prepared once per transport (a broadcast reuses its header
+  // for every recipient) — and can be prepared BEFORE a paced slot is
+  // reserved, so the slot only waits on the gateway (prepareTemplate).
+  const preparedMedia = new Map<string, Promise<MediaSource>>()
+  const source = (link: string, sendBy?: number) => {
+    let p = preparedMedia.get(link)
+    if (!p) {
+      p = mediaSource(link, sendBy)
+      preparedMedia.set(link, p)
+      p.catch(() => preparedMedia.delete(link))
+    }
+    return p
+  }
+  const control = (c: SendControl) => ({
+    timeoutMs: budgetTimeout(c.sendBy, SEND_TIMEOUT_MS),
+    idempotencyKey: c.idempotencyKey,
+  })
+
+  const sendText = async (to: string, text: string, quoted?: string, c: SendControl = {}): Promise<SendResult> => {
     const body: Record<string, unknown> = { chatId: toOpenWaChatId(to), text }
     if (quoted) body.quotedMessageId = quoted
-    const r = await openWaSend(creds, sessionId, 'send-text', body)
+    const r = await openWaSend(creds, sessionId, 'send-text', body, control(c))
     return { messageId: r.messageId }
   }
 
@@ -145,9 +175,9 @@ export function createOpenWaTransport(conn: OpenWaConnection): WhatsAppTransport
     caption?: string
     filename?: string
     contextMessageId?: string
-  }): Promise<SendResult> => {
-    const source = await mediaSource(args.link)
-    const body: Record<string, unknown> = { chatId: toOpenWaChatId(args.to), ...source }
+  } & SendControl): Promise<SendResult> => {
+    const media = await source(args.link, args.sendBy)
+    const body: Record<string, unknown> = { chatId: toOpenWaChatId(args.to), ...media }
     if (args.caption && args.kind !== 'audio') {
       body.caption = args.caption.slice(0, LOCAL_CAPTION_MAX)
     }
@@ -155,39 +185,47 @@ export function createOpenWaTransport(conn: OpenWaConnection): WhatsAppTransport
       body.filename = args.filename || fileNameFromUrl(args.link) || 'file'
     }
     if (args.kind === 'audio') {
-      body.ptt = isVoiceNote(args.link, 'mimetype' in source ? source.mimetype : undefined)
+      body.ptt = isVoiceNote(args.link, 'mimetype' in media ? media.mimetype : undefined)
     }
     if (args.contextMessageId) body.quotedMessageId = args.contextMessageId
-    const r = await openWaSend(creds, sessionId, SEND_ENDPOINT[args.kind], body)
+    const r = await openWaSend(creds, sessionId, SEND_ENDPOINT[args.kind], body, control(args))
     return { messageId: r.messageId }
+  }
+
+  const renderTemplate = (args: SendTemplateArgs) => {
+    if (!args.template) {
+      throw new OpenWaError(t('templateNotFound', { name: args.templateName }), 404, 'template_not_found')
+    }
+    return renderLocalTemplate(args.template, { ...(args.messageParams ?? {}), legacyBody: args.params })
   }
 
   return {
     provider: 'openwa',
     capabilities: openWaCapabilities(conn.broadcastDelayMs),
 
-    sendText: ({ to, text, contextMessageId }) => sendText(to, text, contextMessageId),
+    sendText: ({ to, text, contextMessageId, ...c }) => sendText(to, text, contextMessageId, c),
 
     sendMedia: (args) => sendMedia(args),
 
-    async sendTemplate({ to, templateName, template, messageParams, params, contextMessageId }) {
-      if (!template) {
-        throw new OpenWaError(t('templateNotFound', { name: templateName }), 404, 'template_not_found')
-      }
-      const rendered = renderLocalTemplate(template, {
-        ...(messageParams ?? {}),
-        legacyBody: params,
-      })
+    async prepareTemplate(args) {
+      const rendered = renderTemplate(args)
+      if (rendered.media) await source(rendered.media.url, args.sendBy)
+    },
+
+    async sendTemplate(args) {
+      const rendered = renderTemplate(args)
       if (rendered.media) {
         return sendMedia({
-          to,
+          to: args.to,
           kind: rendered.media.kind,
           link: rendered.media.url,
           caption: rendered.text,
-          contextMessageId,
+          contextMessageId: args.contextMessageId,
+          sendBy: args.sendBy,
+          idempotencyKey: args.idempotencyKey,
         })
       }
-      return sendText(to, rendered.text, contextMessageId)
+      return sendText(args.to, rendered.text, args.contextMessageId, args)
     },
 
     sendInteractive: ({ to, payload, contextMessageId }) =>

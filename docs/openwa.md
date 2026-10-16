@@ -96,11 +96,19 @@ so quoting or reacting to messages from before the switch stops resolving.
 
 - Pacing state is per server process; a multi-instance deployment paces per
   instance.
-- A paced broadcast never runs a request past its time limit: each request
-  only starts sends that can finish inside it. The wizard re-queues what
-  didn't fit into its next batch; an API broadcast or a Resume pass leaves
-  the rest `pending` with the campaign still "Enviando" — press **Resume**
-  on the broadcast to continue from there.
+- A paced broadcast never runs a request past its time limit. Each pass
+  prepares a media header before reserving a paced slot, only starts sends
+  that can finish inside the request (the gateway call is aborted at the
+  budget), and checkpoints each recipient (`send_started_at`) before
+  sending. What doesn't fit stays `pending` and **continues automatically**
+  on the next run of the scheduler you already use for automations
+  (`GET /api/automations/cron`, or the dedicated
+  `GET /api/whatsapp/broadcast/cron`, both with `x-cron-secret`) — also for
+  broadcasts created through the public API. **Resume** still works for an
+  immediate pass. A recipient cut off mid-send is re-sent only where the
+  provider de-duplicates sends (OpenWA, keyed by the recipient); on the
+  official API it is failed as "interrupted" instead of risking a duplicate.
+  Without a configured scheduler, paused broadcasts wait for Resume.
 - Template quick-reply buttons have no reply mapping in QR mode (they are
   rendered as labels).
 - OpenWA has no API to send buttons or lists on either engine, so menus are

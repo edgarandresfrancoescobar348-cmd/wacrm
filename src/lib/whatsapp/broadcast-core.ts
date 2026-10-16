@@ -22,6 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import {
   loadAccountTransport,
+  SendBudgetExceededError,
   sendWithRecipientVariants,
   TransportNotConfiguredError,
   type WhatsAppTransport,
@@ -59,6 +60,8 @@ export interface CreateBroadcastParams {
 
 interface PlannedRecipient {
   recipientRowId: string;
+  /** Provider de-duplication key; defaults to the recipient row. */
+  idempotencyKey?: string;
   phone: string;
   params: string[];
 }
@@ -284,47 +287,86 @@ export async function deliverBroadcast(
   db: SupabaseClient,
   plan: BroadcastPlan,
   opts: {
-    /** Last moment a send may start (broadcastSendDeadline). Recipients
-     *  not reached stay `pending` for a resume pass. */
+    /** Last moment a send may START (broadcastSendDeadline). */
     deadline?: number;
+    /** Absolute moment every provider call must have finished
+     *  (broadcastSendBy); the transports abort at it. */
+    sendBy?: number;
     /** Clock / sleep / jitter injection for tests. */
     pace?: Omit<PaceOptions, 'deadline'>;
   } = {}
-): Promise<{ attempted: number; deferred: number }> {
+): Promise<{ attempted: number; deferred: number; interrupted: boolean }> {
+  const now = opts.pace?.now ?? Date.now;
   let attempted = 0;
+  let interrupted = false;
   for (const recipient of plan.planned) {
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
+    const templateArgs = {
+      to: recipient.phone,
+      templateName: plan.templateName,
+      language: plan.templateLanguage,
+      template: plan.templateRow,
+      params: recipient.params,
+      sendBy: opts.sendBy,
+      // De-duplicated by providers that support it (OpenWA): a recipient
+      // interrupted mid-send can be re-sent by the next pass safely.
+      idempotencyKey: recipient.idempotencyKey ?? `broadcast-recipient:${recipient.recipientRowId}`,
+    };
 
-    // Provider pacing (a no-op on Meta) bounded by the handler's time
-    // budget — see transport/pacing.ts. Out of budget: stop here; the
-    // rest stays `pending` (the checkpoint) and the broadcast stays
-    // `sending`, which is exactly what Resume continues from.
-    const mayStart = await paceBroadcastSend(
-      plan.accountId,
-      plan.transport.capabilities.broadcastDelayMs,
-      { ...opts.pace, deadline: opts.deadline }
-    );
-    if (!mayStart) break;
+    // 1. Slow, send-independent work (a media header to inline) BEFORE a
+    //    paced slot is reserved — the slot then only waits on the
+    //    provider. Cached per transport, so it runs once per pass.
+    try {
+      await plan.transport.prepareTemplate?.(templateArgs);
+    } catch (error) {
+      if (error instanceof SendBudgetExceededError) break;
+      lastError = error instanceof Error ? error.message : 'Unknown error';
+    }
+
+    // 2. Provider pacing (a no-op on Meta) bounded by the time budget,
+    //    re-checked after the wait. Out of budget: stop; the rest stays
+    //    `pending` — the checkpoint the next pass continues from.
+    if (!lastError) {
+      const mayStart = await paceBroadcastSend(
+        plan.accountId,
+        plan.transport.capabilities.broadcastDelayMs,
+        { ...opts.pace, deadline: opts.deadline }
+      );
+      if (!mayStart) break;
+    }
     attempted++;
 
-    try {
-      const { result } = await sendWithRecipientVariants(
-        plan.transport,
-        recipient.phone,
-        true,
-        (to) =>
-          plan.transport.sendTemplate({
-            to,
-            templateName: plan.templateName,
-            language: plan.templateLanguage,
-            template: plan.templateRow,
-            params: recipient.params,
-          })
-      );
-      sentMessageId = result.messageId;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : 'Unknown error';
+    // 3. Checkpoint BEFORE the external effect: a recipient still pending
+    //    with send_started_at set was interrupted mid-send (see
+    //    planBroadcastResume for how the next pass treats it).
+    if (!lastError) {
+      await db
+        .from('broadcast_recipients')
+        .update({ send_started_at: new Date(now()).toISOString() })
+        .eq('id', recipient.recipientRowId);
+
+      try {
+        const { result } = await sendWithRecipientVariants(
+          plan.transport,
+          recipient.phone,
+          true,
+          (to) => plan.transport.sendTemplate({ ...templateArgs, to })
+        );
+        sentMessageId = result.messageId;
+      } catch (error) {
+        // Cut off by the budget (aborted at sendBy): the outcome is
+        // unknown — leave the row pending with its checkpoint and end
+        // the pass; never record it as failed or sent.
+        const budgetHit =
+          error instanceof SendBudgetExceededError ||
+          (opts.sendBy !== undefined && now() >= opts.sendBy - 1000);
+        if (budgetHit) {
+          interrupted = true;
+          break;
+        }
+        lastError = error instanceof Error ? error.message : 'Unknown error';
+      }
     }
 
     if (sentMessageId) {
@@ -348,8 +390,15 @@ export async function deliverBroadcast(
     }
   }
 
+  const deferred = plan.planned.length - attempted + (interrupted ? 1 : 0);
+  // Recipients left by the budget: the cron continuation picks the
+  // broadcast up on its next run (no manual Resume needed).
+  await db
+    .from('broadcasts')
+    .update({ auto_resume_at: deferred > 0 ? new Date(now()).toISOString() : null })
+    .eq('id', plan.broadcastId);
   await finalizeBroadcastStatus(db, plan.broadcastId);
-  return { attempted, deferred: plan.planned.length - attempted };
+  return { attempted, deferred, interrupted };
 }
 
 /**

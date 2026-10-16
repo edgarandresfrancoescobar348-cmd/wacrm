@@ -1,8 +1,13 @@
 import { timingSafeEqual } from 'node:crypto'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { expireAwaitingReplies, resumePendingExecution } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
+import { continuePausedBroadcasts } from '@/lib/whatsapp/broadcast-continue'
+
+// Room for the broadcast continuation run in after() below (paced
+// broadcasts deliver in time-boxed passes).
+export const maxDuration = 300
 
 /**
  * Drain due `automation_pending_executions` rows. Meant to be hit
@@ -16,6 +21,7 @@ import type { AutomationContext } from '@/lib/automations/engine'
  * two-step UPDATE-by-id.
  */
 export async function GET(request: Request) {
+  const startedAt = Date.now()
   const expected = process.env.AUTOMATION_CRON_SECRET
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
@@ -29,6 +35,16 @@ export async function GET(request: Request) {
   ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  // Broadcasts paused by their time budget continue on the scheduler
+  // operators already run for automations — no manual Resume.
+  after(async () => {
+    try {
+      await continuePausedBroadcasts(supabaseAdmin(), { maxDurationSeconds: maxDuration, startedAt })
+    } catch (err) {
+      console.error('[automations cron] broadcast continuation failed:', err)
+    }
+  })
 
   // Close out wait_for_reply runs whose 24h reply window lapsed. The
   // webhook already refuses to resume them; this just settles their

@@ -341,12 +341,22 @@ export function openWaSend(
     | 'send-document'
     | 'send-location',
   body: Record<string, unknown>,
+  opts: {
+    /** ≤ SEND_TIMEOUT_MS; a broadcast passes what its budget has left. */
+    timeoutMs?: number
+    /** OpenWA de-duplicates a repeated send with the same key (24 h). */
+    idempotencyKey?: string
+  } = {},
 ) {
   return openWaRequest<OpenWaSendResult>(
     creds,
     'POST',
     `/sessions/${enc(sessionId)}/messages/${endpoint}`,
-    { body, timeoutMs: SEND_TIMEOUT_MS },
+    {
+      body,
+      timeoutMs: Math.min(opts.timeoutMs ?? SEND_TIMEOUT_MS, SEND_TIMEOUT_MS),
+      idempotencyKey: opts.idempotencyKey,
+    },
   )
 }
 

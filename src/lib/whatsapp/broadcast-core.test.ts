@@ -323,12 +323,13 @@ describe('deliverBroadcast — bounded by the time budget (F8)', () => {
     });
 
     // 0 s, 8 s, 16 s fit; 24 s would start past the deadline.
-    expect(result).toEqual({ attempted: 3, deferred: 2 });
+    expect(result).toEqual({ attempted: 3, deferred: 2, interrupted: false });
     expect(sends).toHaveLength(3);
     expect(sleeps.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(20_000);
     expect(statuses.get('r4')).toBe('pending');
     expect(statuses.get('r5')).toBe('pending');
-    // still pending work → not finalized (stays `sending` for Resume)
-    expect(broadcastUpdates).toEqual([]);
+    // still pending work → not finalized (stays `sending`), and flagged
+    // for the automatic cron continuation
+    expect(broadcastUpdates).toEqual([{ auto_resume_at: new Date(now).toISOString() }]);
   });
 });

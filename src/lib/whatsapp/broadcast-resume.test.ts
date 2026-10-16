@@ -223,11 +223,13 @@ describe('planBroadcastResume', () => {
     expect(plan.planned).toEqual([
       {
         recipientRowId: 'r1',
+        idempotencyKey: 'broadcast-recipient:r1',
         phone: '15551234567',
         params: ['A123', 'Friday'],
       },
       {
         recipientRowId: 'r2',
+        idempotencyKey: 'broadcast-recipient:r2',
         phone: '15559876543',
         params: ['B456', 'Monday'],
       },
@@ -414,5 +416,33 @@ describe('planBroadcastResume', () => {
       'pending',
     );
     expect(plan.templateRow?.language).toBe('en');
+  });
+});
+
+// G7 (second review): a recipient interrupted mid-send (pending with a
+// send checkpoint) has an unknown outcome. On Meta — no send
+// de-duplication — it is failed instead of risking a duplicate.
+describe('planBroadcastResume — interrupted recipients (G7)', () => {
+  it('fails an interrupted recipient on Meta and plans the untouched ones', async () => {
+    const writes: PlanWrites = {};
+    const { plan } = await planBroadcastResume(
+      planDb(
+        {
+          broadcast: BROADCAST,
+          config: CONFIG,
+          recipients: [
+            { ...recipient('r1', '+15551234567'), status: 'pending', send_started_at: '2026-10-15T10:00:00Z' },
+            { ...recipient('r2', '+15559876543'), status: 'pending', send_started_at: null },
+          ],
+        },
+        writes,
+      ),
+      'acct-1',
+      'bc-1',
+      'pending',
+    );
+    expect(writes.failedIds).toEqual(['r1']);
+    expect(String(writes.failedUpdate?.error_message)).toMatch(/Interrupted/);
+    expect(plan.planned.map((p) => p.recipientRowId)).toEqual(['r2']);
   });
 });

@@ -54,6 +54,25 @@ export interface TransportCapabilities {
    * regular number paired by QR.
    */
   broadcastDelayMs: number
+  /**
+   * The provider de-duplicates a send repeated with the same
+   * `idempotencyKey` (OpenWA: 24 h). A broadcast recipient interrupted
+   * mid-send can then be re-sent safely; without it (Meta) it is failed
+   * as "interrupted" rather than risk a duplicate.
+   */
+  idempotentSends: boolean
+}
+
+/** Options every send accepts (broadcast time budget, de-duplication). */
+export interface SendControl {
+  /**
+   * Absolute epoch ms by which the provider call must have finished —
+   * the handler's time budget. The request is aborted at that moment
+   * (and refused if it has already passed).
+   */
+  sendBy?: number
+  /** Provider-side de-duplication key (see idempotentSends). */
+  idempotencyKey?: string
 }
 
 export interface SendResult {
@@ -61,14 +80,14 @@ export interface SendResult {
   messageId: string
 }
 
-export interface SendTextArgs {
+export interface SendTextArgs extends SendControl {
   to: string
   text: string
   /** Provider id of the message being quoted. */
   contextMessageId?: string
 }
 
-export interface SendMediaArgs {
+export interface SendMediaArgs extends SendControl {
   to: string
   kind: MediaKind
   /** Public URL the provider fetches at send time. */
@@ -78,7 +97,7 @@ export interface SendMediaArgs {
   contextMessageId?: string
 }
 
-export interface SendTemplateArgs {
+export interface SendTemplateArgs extends SendControl {
   to: string
   templateName: string
   language?: string
@@ -121,6 +140,12 @@ export interface WhatsAppTransport {
   sendInteractive(args: SendInteractiveArgs): Promise<SendResult>
   sendReaction(args: SendReactionArgs): Promise<void>
   /**
+   * Do the slow, send-independent work for a template send up front
+   * (download a media header that will be inlined) so the paced send
+   * itself only waits on the provider. Optional; cached per transport.
+   */
+  prepareTemplate?(args: SendTemplateArgs): Promise<void>
+  /**
    * Mark the inbound message read and show "typing…". Best-effort —
    * callers swallow failures; the reply that follows is what matters.
    */
@@ -140,6 +165,25 @@ export interface WhatsAppTransport {
 /** Prefix for a provider's send error in logs and API error messages. */
 export function providerErrorLabel(provider: WhatsAppProvider): string {
   return provider === 'meta' ? 'Meta API error' : 'OpenWA error'
+}
+
+/** The send would not finish inside the caller's time budget. */
+export class SendBudgetExceededError extends Error {
+  constructor(message = 'Send aborted: time budget exhausted') {
+    super(message)
+    this.name = 'SendBudgetExceededError'
+  }
+}
+
+/**
+ * Remaining ms before `sendBy`, capped at `cap`. Throws
+ * SendBudgetExceededError when nothing is left.
+ */
+export function budgetTimeout(sendBy: number | undefined, cap: number, now = Date.now()): number {
+  if (sendBy === undefined) return cap
+  const left = sendBy - now
+  if (left <= 0) throw new SendBudgetExceededError()
+  return Math.min(cap, left)
 }
 
 /** No WhatsApp connection usable for sending on this account. */

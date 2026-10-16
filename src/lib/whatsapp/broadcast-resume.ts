@@ -121,6 +121,8 @@ export interface ResumePlan {
 
 interface RecipientRow {
   id: string;
+  status?: string;
+  send_started_at?: string | null;
   template_params: unknown;
   contact: { phone?: string | null } | { phone?: string | null }[] | null;
 }
@@ -166,7 +168,9 @@ export async function planBroadcastResume(
     error: recError,
   } = await db
     .from('broadcast_recipients')
-    .select('id, template_params, contact:contacts(phone)', { count: 'exact' })
+    .select('id, status, send_started_at, template_params, contact:contacts(phone)', {
+      count: 'exact',
+    })
     .eq('broadcast_id', broadcastId)
     .in('status', statuses)
     // Oldest first, so repeated capped passes chew through the backlog
@@ -182,15 +186,35 @@ export async function planBroadcastResume(
 
   const rows = (rawRows ?? []) as RecipientRow[];
 
+  // Loaded up front: how an interrupted recipient is treated depends on
+  // whether the provider de-duplicates sends.
+  const transport = await loadBroadcastTransport(db, accountId);
+
   // A recipient whose contact has no usable phone can never send. Stamp
   // it failed now: leaving it 'pending' would keep the broadcast in
   // 'sending' forever, which is the very symptom being fixed.
   const sendable: RecipientRow[] = [];
   const unsendable: string[] = [];
+  const interrupted: string[] = [];
   for (const row of rows) {
     const sanitized = sanitizePhoneForMeta(contactPhone(row) ?? '');
-    if (isValidE164(sanitized)) sendable.push(row);
-    else unsendable.push(row.id);
+    if (!isValidE164(sanitized)) unsendable.push(row.id);
+    // Pending with a send checkpoint: an earlier pass was cut off
+    // mid-send and the outcome is unknown. Re-send only when the
+    // provider de-duplicates (OpenWA, same idempotency key); otherwise
+    // fail it rather than risk messaging the customer twice.
+    else if (row.status === 'pending' && row.send_started_at && !transport.capabilities.idempotentSends) {
+      interrupted.push(row.id);
+    } else sendable.push(row);
+  }
+  for (const ids of chunk(interrupted)) {
+    await db
+      .from('broadcast_recipients')
+      .update({
+        status: 'failed',
+        error_message: 'Interrupted mid-send; not re-sent to avoid a duplicate message',
+      })
+      .in('id', ids);
   }
   for (const ids of chunk(unsendable)) {
     await db
@@ -215,8 +239,6 @@ export async function planBroadcastResume(
       400
     );
   }
-
-  const transport = await loadBroadcastTransport(db, accountId);
 
   const resolvedTemplate = await resolveTemplateRow(
     db,
@@ -249,6 +271,12 @@ export async function planBroadcastResume(
     templateRow: resolvedTemplate.row,
     planned: slice.map((row) => ({
       recipientRowId: row.id,
+      // A deliberate retry of a FAILED recipient must not be swallowed by
+      // the provider's de-duplication of the earlier attempt.
+      idempotencyKey:
+        row.status === 'failed'
+          ? `broadcast-recipient:${row.id}:retry:${Date.now()}`
+          : `broadcast-recipient:${row.id}`,
       phone: sanitizePhoneForMeta(contactPhone(row) ?? ''),
       params: Array.isArray(row.template_params)
         ? row.template_params.filter((p): p is string => typeof p === 'string')
