@@ -13,14 +13,14 @@ import { OpenWaPanel, type OpenWaApiState } from './openwa-panel';
 export type ConnectionMode = 'meta' | 'openwa';
 
 async function fetchConnectionState(): Promise<OpenWaApiState | null> {
-  const res = await fetch('/api/whatsapp/openwa', { cache: 'no-store' });
+  const res = await fetch('/api/whatsapp/openwa?gateway=1', { cache: 'no-store' });
   return res.ok ? ((await res.json()) as OpenWaApiState) : null;
 }
 
 /**
  * Settings → WhatsApp. Two ways to connect, one active at a time
  * (`whatsapp_config.provider`): Meta's official Cloud API, or a regular
- * number paired by QR code through an OpenWA gateway. The cards pick
+ * number paired by QR code through the embedded OpenWA gateway. The cards pick
  * which panel is shown; a mode becomes ACTIVE when it is saved /
  * connected, or with "Usar este modo" once it is set up. The inactive
  * mode keeps its settings.

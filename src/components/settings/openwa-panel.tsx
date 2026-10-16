@@ -6,12 +6,10 @@ import { toast } from 'sonner';
 import {
   AlertTriangle,
   CheckCircle2,
-  Eye,
-  EyeOff,
+  CloudOff,
   KeyRound,
   Loader2,
   LogOut,
-  PlugZap,
   QrCode,
   RefreshCw,
   RotateCcw,
@@ -42,8 +40,6 @@ export type OpenWaStatus =
 
 export interface OpenWaPublicState {
   configured: boolean;
-  base_url: string | null;
-  has_api_key: boolean;
   engine: string | null;
   session_id: string | null;
   status: OpenWaStatus | null;
@@ -58,21 +54,15 @@ export interface OpenWaPublicState {
   webhook_registered: boolean;
 }
 
+export type OpenWaGatewayState = 'ok' | 'unconfigured' | 'unreachable' | 'auth_failed' | 'error';
+
 export interface OpenWaApiState {
   provider: 'meta' | 'openwa' | null;
   openwa: OpenWaPublicState;
-  defaults: { base_url: string | null; has_api_key: boolean };
+  /** The embedded gateway, probed by `?gateway=1` (null when not asked). */
+  gateway: { state: OpenWaGatewayState; engine: string | null } | null;
 }
 
-interface TestResult {
-  ok: boolean;
-  engine: string | null;
-  role: string | null;
-  version: string | null;
-  role_sufficient: boolean;
-}
-
-const MASKED_KEY = '••••••••••••••••';
 const POLL_MS = 3000;
 const DEFAULT_DELAY_S = 8;
 const POLLING_STATES: OpenWaStatus[] = ['initializing', 'qr_ready', 'authenticating'];
@@ -84,11 +74,11 @@ function formatPhone(digits: string | null): string {
 
 /**
  * Settings → WhatsApp → QR Code. Connects a regular WhatsApp number via
- * the account's OpenWA gateway: gateway URL + API key, "Testar
- * conexão", "Conectar" (session + signed webhook + start), the live QR
+ * the gateway that runs with wacrm (OpenWA, embedded — nothing to
+ * configure): "Conectar" (session + signed webhook + start), the live QR
  * (refreshed every few seconds until it is scanned) or a pairing code,
- * and the connected state with "Desconectar" / "Reiniciar sessão".
- * Every action is a server route; the API key never comes back here.
+ * and the connected state with "Desconectar" / "Reiniciar sessão". When
+ * the gateway is down the card says so instead of offering "Conectar".
  */
 export function OpenWaPanel({
   state,
@@ -104,17 +94,11 @@ export function OpenWaPanel({
   const openwa = state?.openwa ?? null;
   const isActive = state?.provider === 'openwa';
 
-  const [baseUrl, setBaseUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [keyEdited, setKeyEdited] = useState(false);
-  const [showKey, setShowKey] = useState(false);
   const [delayS, setDelayS] = useState(String(DEFAULT_DELAY_S));
   const hydratedRef = useRef(false);
 
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const [testError, setTestError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [checkingGateway, setCheckingGateway] = useState(false);
   const [busy, setBusy] = useState<null | 'connect' | 'restart' | 'logout' | 'activate'>(null);
 
   const [status, setStatus] = useState<OpenWaStatus | null>(null);
@@ -134,9 +118,6 @@ export function OpenWaPanel({
   useEffect(() => {
     if (!state || hydratedRef.current) return;
     hydratedRef.current = true;
-    setBaseUrl(state.openwa.base_url ?? state.defaults.base_url ?? '');
-    setApiKey(state.openwa.has_api_key ? MASKED_KEY : '');
-    setKeyEdited(false);
     setDelayS(
       String(
         state.openwa.broadcast_delay_ms
@@ -202,43 +183,10 @@ export function OpenWaPanel({
   }, [shouldPoll, poll]);
 
   // ---- actions --------------------------------------------------------
-  function formBody(): Record<string, unknown> {
-    const body: Record<string, unknown> = { base_url: baseUrl.trim() };
-    if (keyEdited && apiKey.trim() && apiKey !== MASKED_KEY) body.api_key = apiKey.trim();
-    return body;
-  }
-
-  async function handleTest() {
-    setTesting(true);
-    setTestError(null);
-    setTestResult(null);
-    try {
-      const res = await fetch('/api/whatsapp/openwa/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formBody()),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setTestError(data.error || t('testFailed'));
-        return;
-      }
-      setTestResult(data);
-    } catch {
-      setTestError(t('testFailed'));
-    } finally {
-      setTesting(false);
-    }
-  }
-
   async function handleSave(): Promise<boolean> {
     const seconds = Number(delayS);
     if (!Number.isFinite(seconds) || seconds < 3 || seconds > 120) {
       toast.error(t('delayInvalid'));
-      return false;
-    }
-    if (!baseUrl.trim()) {
-      toast.error(t('urlRequired'));
       return false;
     }
     setSaving(true);
@@ -246,7 +194,7 @@ export function OpenWaPanel({
       const res = await fetch('/api/whatsapp/openwa', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formBody(), broadcast_delay_ms: Math.round(seconds * 1000) }),
+        body: JSON.stringify({ broadcast_delay_ms: Math.round(seconds * 1000) }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -254,10 +202,7 @@ export function OpenWaPanel({
         return false;
       }
       toast.success(t('saved'));
-      setApiKey(MASKED_KEY);
-      setKeyEdited(false);
       setLive(data.openwa);
-      setStatus(data.openwa.status);
       await onChanged();
       return true;
     } catch {
@@ -269,10 +214,6 @@ export function OpenWaPanel({
   }
 
   async function sessionAction(action: 'connect' | 'restart' | 'logout') {
-    if (action === 'connect' && (!live?.configured || keyEdited || baseUrl.trim() !== (live?.base_url ?? ''))) {
-      const ok = await handleSave();
-      if (!ok) return;
-    }
     if (action === 'logout' && !window.confirm(t('logoutConfirm'))) return;
     setBusy(action);
     try {
@@ -283,6 +224,11 @@ export function OpenWaPanel({
       });
       const data = await res.json();
       if (!res.ok) {
+        // Gateway down: re-probe so the card shows why, not just a toast.
+        if (data.code === 'gateway_unavailable') {
+          await onChanged();
+          return;
+        }
         toast.error(data.error || t('actionFailed'), { duration: 10000 });
         return;
       }
@@ -296,6 +242,15 @@ export function OpenWaPanel({
       toast.error(t('actionFailed'));
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function handleCheckGateway() {
+    setCheckingGateway(true);
+    try {
+      await onChanged();
+    } finally {
+      setCheckingGateway(false);
     }
   }
 
@@ -361,6 +316,8 @@ export function OpenWaPanel({
   const current = live ?? openwa;
   const restriction = current?.restriction ?? null;
   const loadingState = !state;
+  const gatewayState = state?.gateway?.state ?? 'ok';
+  const engineInUse = state?.gateway?.engine ?? current?.engine ?? null;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
@@ -406,6 +363,12 @@ export function OpenWaPanel({
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" /> {t('loading')}
             </div>
+          ) : gatewayState !== 'ok' ? (
+            <GatewayDown
+              state={gatewayState}
+              checking={checkingGateway}
+              onRetry={() => void handleCheckGateway()}
+            />
           ) : (
             <ConnectionBody
               status={status}
@@ -435,125 +398,40 @@ export function OpenWaPanel({
           <OpenWaHistoryImport connected={status === 'ready'} canEdit={canEditSettings} />
         ) : null}
 
-        {/* Gateway */}
-        <section aria-labelledby="openwa-gateway" className="space-y-4 rounded-xl bg-surface p-4 sm:p-6">
-          <div>
-            <h3 id="openwa-gateway" className="flex items-center gap-2 text-[15px] font-medium text-foreground">
-              <PlugZap className="size-4 text-muted-foreground" />
-              {t('gatewayTitle')}
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">{t('gatewayDesc')}</p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="openwa-url" className="text-muted-foreground">{t('urlLabel')}</Label>
-            <Input
-              id="openwa-url"
-              placeholder="https://openwa.example.com"
-              value={baseUrl}
-              disabled={!canEditSettings}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              className="bg-muted border-border text-foreground"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="openwa-key" className="text-muted-foreground">{t('keyLabel')}</Label>
-            <div className="relative">
-              <Input
-                id="openwa-key"
-                type={showKey ? 'text' : 'password'}
-                autoComplete="off"
-                placeholder={state?.defaults.has_api_key ? t('keyFromEnv') : t('keyPlaceholder')}
-                value={apiKey}
-                disabled={!canEditSettings}
-                onFocus={() => {
-                  if (apiKey === MASKED_KEY) {
-                    setApiKey('');
-                    setKeyEdited(true);
-                  }
-                }}
-                onChange={(e) => {
-                  setApiKey(e.target.value);
-                  setKeyEdited(true);
-                }}
-                className="bg-muted border-border text-foreground pr-10"
-              />
-              <button
-                type="button"
-                aria-label={showKey ? t('hideKey') : t('showKey')}
-                onClick={() => setShowKey((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
-            <p className="text-xs text-muted-foreground">{t('keyHint')}</p>
-          </div>
-
+        {/* Broadcast pacing */}
+        <section aria-labelledby="openwa-pacing" className="space-y-4 rounded-xl bg-surface p-4 sm:p-6">
+          <h3 id="openwa-pacing" className="text-[15px] font-medium text-foreground">{t('pacingTitle')}</h3>
           <div className="space-y-2">
             <Label htmlFor="openwa-delay" className="text-muted-foreground">{t('delayLabel')}</Label>
-            <Input
-              id="openwa-delay"
-              type="number"
-              min={3}
-              max={120}
-              value={delayS}
-              disabled={!canEditSettings}
-              onChange={(e) => setDelayS(e.target.value)}
-              className="w-32 bg-muted border-border text-foreground"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                id="openwa-delay"
+                type="number"
+                min={3}
+                max={120}
+                value={delayS}
+                disabled={!canEditSettings}
+                onChange={(e) => setDelayS(e.target.value)}
+                className="w-32 bg-muted border-border text-foreground"
+              />
+              {canEditSettings && (
+                <Button variant="outline" onClick={() => void handleSave()} disabled={saving}>
+                  {saving && <Loader2 className="size-4 animate-spin" />}
+                  {t('save')}
+                </Button>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">{t('delayHint')}</p>
           </div>
-
-          {(testResult || testError) && (
-            <div
-              role="status"
-              className={cn(
-                'flex items-start gap-2 rounded-lg px-3 py-2 text-sm',
-                testError ? 'bg-destructive/10 text-destructive' : 'bg-chip-active text-chip-active-foreground',
-              )}
-            >
-              {testError ? (
-                <XCircle className="mt-0.5 size-4 shrink-0" />
-              ) : (
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
-              )}
-              <span>
-                {testError ??
-                  t('testOk', {
-                    version: testResult?.version ?? '?',
-                    engine: testResult?.engine ?? '?',
-                    role: testResult?.role ?? '?',
-                  })}
-                {testResult && !testResult.role_sufficient && (
-                  <span className="block text-amber-600 dark:text-amber-300">{t('roleTooLow')}</span>
-                )}
-              </span>
-            </div>
-          )}
-
-          {canEditSettings && (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={handleTest} disabled={testing || !baseUrl.trim()}>
-                {testing ? <Loader2 className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
-                {t('testConnection')}
-              </Button>
-              <Button variant="outline" onClick={() => void handleSave()} disabled={saving}>
-                {saving && <Loader2 className="size-4 animate-spin" />}
-                {t('save')}
-              </Button>
-            </div>
-          )}
         </section>
 
-        {/* Engine — deployment-wide on OpenWA */}
+        {/* Engine — deployment-wide on the gateway */}
         <section aria-labelledby="openwa-engine" className="rounded-xl bg-surface p-4 sm:p-6">
           <h3 id="openwa-engine" className="text-[15px] font-medium text-foreground">{t('engineTitle')}</h3>
           <p className="mt-1 text-sm text-muted-foreground">{t('engineDesc')}</p>
           <div role="radiogroup" aria-label={t('engineTitle')} className="mt-3 overflow-hidden rounded-xl bg-hover-surface/60">
             {(['whatsapp-web.js', 'baileys'] as const).map((engine) => {
-              const detected = (testResult?.engine ?? current?.engine) === engine;
+              const detected = engineInUse === engine;
               return (
                 <div
                   key={engine}
@@ -836,6 +714,36 @@ function ConnectionBody({
         <Button onClick={onConnect} disabled={busy !== null}>
           {busy === 'connect' && <Loader2 className="size-4 animate-spin" />}
           {t('connect')}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function GatewayDown({
+  state,
+  checking,
+  onRetry,
+}: {
+  state: OpenWaGatewayState;
+  checking: boolean;
+  onRetry: () => void;
+}) {
+  const t = useTranslations('Settings.whatsapp.openwa');
+  const desc =
+    state === 'unconfigured'
+      ? t('gatewayDownUnconfigured')
+      : state === 'auth_failed'
+        ? t('gatewayDownAuth')
+        : t('gatewayDownUnreachable');
+  return (
+    <div role="alert" className="space-y-3" data-testid="openwa-gateway-down">
+      <StatusLine tone="bad" icon={<CloudOff className="size-4" />} text={t('gatewayDownTitle')} />
+      <p className="text-sm text-muted-foreground">{desc}</p>
+      {state !== 'unconfigured' && (
+        <Button variant="outline" onClick={onRetry} disabled={checking}>
+          {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          {t('gatewayRetry')}
         </Button>
       )}
     </div>
