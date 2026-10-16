@@ -375,7 +375,8 @@ async function lookupInternalIdByProviderId(
 async function handleReaction(
   reaction: InboundReaction | null | undefined,
   conversationId: string,
-  contactId: string
+  contactId: string,
+  throwOnFailure = false
 ) {
   if (!reaction?.targetMessageId) return
 
@@ -401,6 +402,7 @@ async function handleReaction(
       .eq('actor_id', contactId)
     if (delError) {
       console.error('[webhook] reaction delete failed:', delError.message)
+      if (throwOnFailure) throw new IngestFailure('reaction delete', delError)
     }
     return
   }
@@ -419,6 +421,7 @@ async function handleReaction(
     )
   if (upsertError) {
     console.error('[webhook] reaction upsert failed:', upsertError.message)
+    if (throwOnFailure) throw new IngestFailure('reaction upsert', upsertError)
   }
 }
 
@@ -494,7 +497,7 @@ export async function ingestInboundMessage(
   // into `messages`, never bump unread_count, never update last_message_text.
   // Done before parseMessageContent so the media-URL fetch is skipped.
   if (inbound.type === 'reaction') {
-    await handleReaction(inbound.reaction, conversation.id, contactRecord.id)
+    await handleReaction(inbound.reaction, conversation.id, contactRecord.id, options.throwOnFailure)
     return
   }
 
@@ -578,7 +581,6 @@ export async function ingestInboundMessage(
     .select('id', { count: 'exact', head: true })
     .eq('conversation_id', conversation.id)
     .eq('sender_type', 'customer')
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
   // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
   // transient 5xx), and each retry replays the exact same message.id. The
@@ -621,46 +623,76 @@ export async function ingestInboundMessage(
     return
   }
 
-  // Replayed delivery: the message already exists, so acknowledge it as a
-  // no-op. Returning here is what keeps a retry from double-bumping unread,
-  // re-advancing flows, re-firing automations, re-invoking AI handling, and
-  // re-dispatching public webhooks (issue #367).
+  // Replayed delivery: the message already exists. If its processing
+  // COMPLETED (migration 053's ingest_completed_at), acknowledge it as a
+  // no-op — that is what keeps a retry from double-bumping unread,
+  // re-advancing flows, re-firing automations, re-invoking AI handling and
+  // re-dispatching public webhooks (issue #367). If it did NOT complete
+  // (a step after the insert failed, or the worker died), this delivery
+  // repairs it: the remaining steps are idempotent and completion is
+  // claimed atomically below, so they run exactly once.
+  let messageRowId: string
+  let repairing = false
   if (!insertedRows || insertedRows.length === 0) {
-    console.info(
-      '[webhook] duplicate inbound message ignored (idempotent replay):',
-      inbound.messageId
-    )
-    return
+    const { data: existing, error: existingErr } = await supabaseAdmin()
+      .from('messages')
+      .select('id, ingest_completed_at')
+      .eq('conversation_id', conversation.id)
+      .eq('message_id', inbound.messageId)
+      .maybeSingle()
+    if (existingErr && options.throwOnFailure) {
+      throw new IngestFailure('replay lookup', existingErr)
+    }
+    if (!existing || existing.ingest_completed_at) {
+      console.info(
+        '[webhook] duplicate inbound message ignored (idempotent replay):',
+        inbound.messageId
+      )
+      return
+    }
+    console.info('[webhook] completing an interrupted inbound message:', inbound.messageId)
+    messageRowId = existing.id
+    repairing = true
+  } else {
+    messageRowId = insertedRows[0].id
   }
+  // The pre-insert count included nothing; on a repair it includes the
+  // message itself.
+  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) - (repairing ? 1 : 0) === 0
 
-  // Update conversation. The unread bump is done DB-side (migration 037's
-  // bump_conversation_on_inbound) rather than as a read-modify-write of the
-  // snapshot loaded above: two inbound messages for the same conversation
-  // can process concurrently, and computing `snapshot + 1` in the app let
-  // both reads see the same value and write the same increment, losing one
-  // (issue #369). The RPC increments in a single UPDATE and refreshes the
-  // last-message summary in the same statement.
-  const { error: convError } = await supabaseAdmin().rpc(
+  // A customer writing again re-opens the thread (issue #409). Kept as a
+  // separate conditional statement gated on the row's CURRENT status in
+  // SQL — see the helper. Idempotent, so it runs before completion.
+  await reopenClosedConversation(supabaseAdmin(), conversation, {
+    throwOnError: options.throwOnFailure,
+  })
+
+  // Update conversation + mark the message complete, atomically and only
+  // once (migration 053's 3-argument bump_conversation_on_inbound). The
+  // unread bump stays DB-side rather than a read-modify-write of the
+  // snapshot loaded above (issue #369). A failure here leaves the message
+  // incomplete, so a redelivery repairs it.
+  const { data: completedNow, error: convError } = await supabaseAdmin().rpc(
     'bump_conversation_on_inbound',
     {
       p_conversation_id: conversation.id,
       p_last_message_text: contentText || `[${inbound.type}]`,
+      p_message_id: messageRowId,
     }
   )
 
   if (convError) {
     console.error('Error updating conversation:', convError)
+    if (options.throwOnFailure) throw new IngestFailure('conversation summary', convError)
   }
-
-  // A customer writing again re-opens the thread (issue #409). Kept as a
-  // separate conditional statement rather than a `status` field on the
-  // update above so the write can be gated on the row's CURRENT status in
-  // SQL — see the helper for why that matters.
-  await reopenClosedConversation(supabaseAdmin(), conversation)
+  // Another delivery of the same message completed it concurrently —
+  // its fan-out is the one that runs.
+  if (completedNow === false) return
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
-  // trigger installed in migration 003).
+  // trigger installed in migration 003). Best-effort analytics, after
+  // completion — never repeated by a redelivery.
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
   // Everything below is fan-out to bots and subscribers. It runs after

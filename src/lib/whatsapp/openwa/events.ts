@@ -568,7 +568,7 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   if (typeof patch.status === 'string' && isOpenWaSessionStatus(patch.status)) {
     // The active-connection flag every reader (inbox banner, overview)
     // uses. Only while QR mode is the active one.
-    await ctx.admin
+    const { error: mirrorErr } = await ctx.admin
       .from('whatsapp_config')
       .update({
         status: configStatusFor(patch.status),
@@ -576,6 +576,11 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
       })
       .eq('account_id', ctx.row.account_id)
       .eq('provider', 'openwa')
+    // Essential: the inbox banner and every sender read this flag. Fail
+    // the delivery so OpenWA redelivers; the session row above is already
+    // at this event, and the newest-wins guard lets the same event apply
+    // again (lte), so the redelivery repairs the mirror.
+    if (mirrorErr) throw new Error(`active-connection mirror failed: ${mirrorErr.message}`)
   }
 }
 

@@ -19,6 +19,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export async function reopenClosedConversation(
   db: SupabaseClient,
   conversation: { id: string; status?: string | null },
+  opts: {
+    /** Throw instead of logging — callers that must not acknowledge a
+     *  delivery whose reopen failed (they redeliver; this is idempotent). */
+    throwOnError?: boolean
+  } = {},
 ): Promise<boolean> {
   // Nothing to do for open/pending threads, which is the common case —
   // skipping the round trip keeps inbound processing as cheap as it was.

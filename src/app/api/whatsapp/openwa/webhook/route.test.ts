@@ -13,6 +13,7 @@ const SESSION = '9f7af9f5-6eb1-4092-8c61-0b1e443958b9'
 type LedgerRowShape = Record<string, unknown> & { idempotency_key: string }
 
 const h = vi.hoisted(() => ({
+  failFinish: false,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handleOpenWaEvent: vi.fn<(...args: any[]) => Promise<string>>(async () => 'ingested'),
   after: [] as (() => Promise<void>)[],
@@ -68,7 +69,10 @@ function ledgerTable() {
       const q = {
         eq: (c: string, v: unknown) => (filters.push([c, v]), q),
         select: async () => ({ data: apply().map((r) => ({ idempotency_key: r.idempotency_key })), error: null }),
-        then: (resolve: (v: unknown) => unknown) => resolve((apply(), { error: null })),
+        then: (resolve: (v: unknown) => unknown) =>
+          h.failFinish && patch.status === 'done'
+            ? resolve({ error: { message: 'connection reset' } })
+            : resolve((apply(), { error: null })),
       }
       return q
     },
@@ -138,6 +142,7 @@ async function post(body: string, headers: Record<string, string> = {}) {
 }
 
 beforeEach(() => {
+  h.failFinish = false
   h.handleOpenWaEvent.mockClear()
   h.after.length = 0
   h.ledger.clear()
@@ -335,5 +340,16 @@ describe('OpenWA webhook — replay guards (F4)', () => {
     const res = await post(body, { 'x-openwa-signature': sign(body) })
     expect(res.body).toEqual({ status: 'received' })
     expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(1)
+  })
+})
+
+// G5 (second review): processed but not recorded as done must not be a 2xx.
+describe('OpenWA webhook — ledger finish failure (G5)', () => {
+  it('answers 503 when marking the delivery done fails; the redelivery re-claims it', async () => {
+    h.failFinish = true
+    const body = delivery()
+    const res = await post(body, { 'x-openwa-signature': sign(body) })
+    expect(res.status).toBe(503)
+    expect(h.ledger.get('acct-1|msg_key_1')).toMatchObject({ status: 'processing' })
   })
 })

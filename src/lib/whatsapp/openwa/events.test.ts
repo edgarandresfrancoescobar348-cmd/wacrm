@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   updates: [] as { table: string; patch: Record<string, unknown> }[],
   orFilters: [] as string[],
   staleSession: false,
+  failMirror: false,
 }))
 
 vi.mock('@/lib/whatsapp/inbound/ingest', () => ({
@@ -44,7 +45,8 @@ const admin = {
         or: (f: string) => (h.orFilters.push(f), chain),
         // A stale session event matches no row (status_event_at is newer).
         select: async () => ({ data: h.staleSession ? [] : [{ id: 'row' }], error: null }),
-        then: (r: (v: unknown) => unknown) => r({ error: null }),
+        then: (r: (v: unknown) => unknown) =>
+          r({ error: table === 'whatsapp_config' && h.failMirror ? { message: 'connection reset' } : null }),
       }
       return chain
     },
@@ -72,6 +74,7 @@ beforeEach(() => {
   h.updates.length = 0
   h.orFilters.length = 0
   h.staleSession = false
+  h.failMirror = false
 })
 
 describe('classification helpers', () => {
@@ -299,5 +302,15 @@ describe('session events are newest-wins (F4)', () => {
     h.staleSession = true
     await handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx())
     expect(h.updates.filter((u) => u.table === 'whatsapp_config')).toHaveLength(0)
+  })
+})
+
+// G5 (second review): the active-connection mirror is essential.
+describe('session mirror failure (G5)', () => {
+  it('fails the delivery so OpenWA redelivers', async () => {
+    h.failMirror = true
+    await expect(
+      handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx()),
+    ).rejects.toThrow(/mirror/)
   })
 })

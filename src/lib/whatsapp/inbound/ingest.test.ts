@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   failInsertOn: null as string | null,
   rpcCalls: [] as { name: string; args: Record<string, unknown> }[],
   rpcError: null as { message: string } | null,
+  bumps: 0,
   dispatchInboundToFlows: vi.fn(async () => ({ consumed: false })),
 }))
 
@@ -98,7 +99,16 @@ vi.mock('@/lib/flows/admin-client', () => ({
     from: (n: string) => table(n),
     rpc: async (name: string, args: Record<string, unknown>) => {
       h.rpcCalls.push({ name, args })
-      return { error: h.rpcError }
+      if (h.rpcError) return { data: null, error: h.rpcError }
+      // Migration 053's completion: mark + bump only if not complete yet.
+      if (name === 'bump_conversation_on_inbound' && args.p_message_id) {
+        const msg = (h.tables.messages ?? []).find((m) => m.id === args.p_message_id)
+        if (!msg || msg.ingest_completed_at) return { data: false, error: null }
+        msg.ingest_completed_at = new Date().toISOString()
+        h.bumps += 1
+        return { data: true, error: null }
+      }
+      return { data: null, error: null }
     },
   }),
 }))
@@ -139,6 +149,7 @@ beforeEach(() => {
   h.failInsertOn = null
   h.rpcCalls = []
   h.rpcError = null
+  h.bumps = 0
   h.dispatchInboundToFlows.mockClear()
 })
 
@@ -293,5 +304,43 @@ describe('F7 — a quoted reply maps only against the quoted menu', () => {
     const msg = inbound({ body: '1', contextMessageId: 'prov-unknown' })
     await ingestInboundMessage(msg, ACCOUNT, 'owner', { mapNumberedMenuReplies: true, runBots: false })
     expect(inserted(msg.messageId)).toMatchObject({ content_type: 'text', interactive_reply_id: null })
+  })
+})
+
+// G5 (second review): the delivery is only done once the essential
+// writes after the insert succeeded; a redelivery repairs what failed.
+describe('G5 — essential post-insert writes, repaired on redelivery', () => {
+  it('a failed conversation update throws, and the redelivery completes it exactly once', async () => {
+    const msg = inbound()
+    h.rpcError = { message: 'connection reset' }
+    await expect(ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true })).rejects.toBeInstanceOf(IngestFailure)
+    expect(h.tables.messages).toHaveLength(1)
+    expect(h.tables.messages[0].ingest_completed_at).toBeUndefined()
+
+    h.rpcError = null
+    const deferred: (() => Promise<void>)[] = []
+    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => deferred.push(t) })
+    expect(h.bumps).toBe(1)
+    expect(h.tables.messages[0].ingest_completed_at).toBeTruthy()
+    // the repaired delivery also gets its bot fan-out
+    expect(deferred).toHaveLength(1)
+
+    // a third delivery of the now complete message is a no-op
+    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => deferred.push(t) })
+    expect(h.bumps).toBe(1)
+    expect(deferred).toHaveLength(1)
+  })
+
+  it('a reaction write failure propagates instead of being acknowledged', async () => {
+    h.tables.messages.push({ id: 'target', conversation_id: 'conv-1', message_id: 'prov-target', sender_type: 'agent' })
+    h.failInsertOn = 'message_reactions'
+    await expect(
+      ingestInboundMessage(
+        inbound({ type: 'reaction', reaction: { targetMessageId: 'prov-target', emoji: '❤️' } }),
+        ACCOUNT,
+        'owner',
+        { throwOnFailure: true, runBots: false },
+      ),
+    ).rejects.toBeInstanceOf(IngestFailure)
   })
 })

@@ -156,10 +156,19 @@ export async function POST(request: Request) {
     })
   } catch (err) {
     console.error(`[openwa webhook] ${envelope.event} failed; OpenWA will redeliver:`, err)
-    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, error: err })
+    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, error: err }).catch(
+      (finishErr) => console.error('[openwa webhook] could not record the failure:', finishErr),
+    )
     return NextResponse.json({ error: 'Processing failed, retry' }, { status: 503 })
   }
-  await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id })
+  try {
+    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id })
+  } catch (err) {
+    // Processed but not recorded as done: answer non-2xx; the redelivery
+    // re-claims the stale claim and finds every write already applied.
+    console.error('[openwa webhook] ledger finish failed:', err)
+    return NextResponse.json({ error: 'Ledger failed, retry' }, { status: 503 })
+  }
 
   after(async () => {
     for (const task of deferred) {

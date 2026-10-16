@@ -90,5 +90,7 @@ export async function finishDelivery(
     })
     .eq('idempotency_key', args.key)
     .eq('account_id', args.accountId)
-  if (error) console.error('[openwa webhook] ledger finish failed:', error.message)
+  // Not recording the outcome must not look like success: the caller
+  // answers non-2xx and the redelivery re-claims the (stale) row.
+  if (error) throw new Error(`ledger finish failed: ${error.message}`)
 }
