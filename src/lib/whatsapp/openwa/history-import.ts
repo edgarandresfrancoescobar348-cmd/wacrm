@@ -417,7 +417,17 @@ async function chatMessages(
   return out
 }
 
-/** Import one chat. Returns the number of messages inserted, or null if skipped. */
+/** Why a chat imported nothing (its checkpoint row says so). */
+export const SKIP_NO_PHONE = 'no phone number for this chat'
+export const SKIP_NO_MESSAGES = 'no messages to import'
+
+/**
+ * Import one chat. Returns the number of messages inserted, or the
+ * reason it was skipped. A chat whose history has nothing renderable
+ * (only WhatsApp's content-less placeholders, or only messages newer than
+ * the import the webhooks own) creates no contact and no conversation —
+ * an empty "Nenhuma mensagem ainda" row helps nobody.
+ */
 async function importChat(
   admin: SupabaseClient,
   job: HistoryImportJob,
@@ -425,7 +435,7 @@ async function importChat(
   creds: OpenWaCredentials,
   chat: ChatRow,
   ctx: RunCtx,
-): Promise<number | null> {
+): Promise<number | { skipped: string }> {
   const phone =
     phoneFromChatId(chat.chat_id) ??
     (chat.chat_id.endsWith('@lid')
@@ -433,7 +443,18 @@ async function importChat(
           r.phone ? normalizePhone(r.phone) || null : null,
         )
       : null)
-  if (!phone) return null
+  if (!phone) return { skipped: SKIP_NO_PHONE }
+
+  // The history first: nothing to show, nothing to create.
+  const startedAtSec = Math.floor(Date.parse(job.started_at) / 1000)
+  const history = (await chatMessages(admin, job, creds, chat.chat_id, ctx)).filter(
+    (m) =>
+      m.id &&
+      !isContentlessPlaceholder(m) &&
+      // Newer than the job: the live webhooks own it.
+      (typeof m.timestamp !== 'number' || m.timestamp < startedAtSec),
+  )
+  if (!history.length) return { skipped: SKIP_NO_MESSAGES }
 
   const name = chat.name && !/^\+?[\d\s()-]+$/.test(chat.name) ? chat.name : ''
   const contactOutcome = await findOrCreateContact(job.account_id, row.user_id, {
@@ -461,15 +482,6 @@ async function importChat(
   const conv = await findOrCreateConversation(job.account_id, row.user_id, contactOutcome.contact.id)
   if (!conv) throw new HistoryStoreError('conversation')
   const conversationId = conv.conversation.id as string
-
-  const startedAtSec = Math.floor(Date.parse(job.started_at) / 1000)
-  const history = (await chatMessages(admin, job, creds, chat.chat_id, ctx)).filter(
-    (m) =>
-      m.id &&
-      !isContentlessPlaceholder(m) &&
-      // Newer than the job: the live webhooks own it.
-      (typeof m.timestamp !== 'number' || m.timestamp < startedAtSec),
-  )
 
   const now = new Date().toISOString()
   const rows = history.map((m) => {
@@ -587,7 +599,13 @@ async function requeueTransientFailures(admin: SupabaseClient, job: HistoryImpor
     if (upErr) throw new HistoryStoreError('requeue', upErr)
   }
   // They were counted as errors when they failed; they aren't.
-  job.errors = Math.max(0, job.errors - ids.length)
+  const { count: failed, error: countErr } = await admin
+    .from('whatsapp_history_import_chats')
+    .select('chat_id', { count: 'exact', head: true })
+    .eq('account_id', job.account_id)
+    .eq('status', 'failed')
+  if (countErr) throw new HistoryStoreError('failed count', countErr)
+  job.errors = failed ?? 0
   await updateJob(admin, job.account_id, {
     errors: job.errors,
     ...(job.errors === 0 ? { last_error: null } : {}),
@@ -679,7 +697,23 @@ export async function runHistoryImport(
         return job
       }
       if (!chat) {
-        await updateJob(admin, job.account_id, { status: 'done', finished_at: new Date().toISOString(), lease_until: null })
+        // The final count: chats that are still failed now (a chat that
+        // failed and was requeued and imported is not an error), and no
+        // stale reason on the card when there are none.
+        const { count: failed, error: countErr } = await admin
+          .from('whatsapp_history_import_chats')
+          .select('chat_id', { count: 'exact', head: true })
+          .eq('account_id', job.account_id)
+          .eq('status', 'failed')
+        if (countErr) throw new HistoryStoreError('failed count', countErr)
+        job.errors = failed ?? 0
+        await updateJob(admin, job.account_id, {
+          status: 'done',
+          finished_at: new Date().toISOString(),
+          lease_until: null,
+          errors: job.errors,
+          ...(job.errors === 0 ? { last_error: null } : {}),
+        })
         log(
           job.account_id,
           `done: ${job.chats_done} chats, ${job.messages_imported} messages, ${job.chats_skipped} skipped, ${job.errors} errors`,
@@ -688,10 +722,10 @@ export async function runHistoryImport(
       }
       try {
         const n = await importChat(admin, job, row, creds, chat, ctx)
-        if (n === null) {
+        if (typeof n !== 'number') {
           job.chats_skipped++
           await admin.from('whatsapp_history_import_chats')
-            .update({ status: 'skipped', error: 'no phone number for this chat', updated_at: new Date().toISOString() })
+            .update({ status: 'skipped', error: n.skipped, updated_at: new Date().toISOString() })
             .eq('account_id', job.account_id).eq('chat_id', chat.chat_id)
         } else {
           job.chats_done++
@@ -711,11 +745,13 @@ export async function runHistoryImport(
             .eq('account_id', job.account_id).eq('chat_id', chat.chat_id)
           continue
         }
-        job.errors++
+        // `errors` counts chats that failed for good, not attempts.
+        const gaveUp = chat.attempts + 1 >= MAX_CHAT_ATTEMPTS
+        if (gaveUp) job.errors++
         const message = err instanceof Error ? err.message : String(err)
         await admin.from('whatsapp_history_import_chats')
           .update({
-            status: chat.attempts + 1 >= MAX_CHAT_ATTEMPTS ? 'failed' : 'pending',
+            status: gaveUp ? 'failed' : 'pending',
             attempts: chat.attempts + 1,
             error: message.slice(0, 300),
             updated_at: new Date().toISOString(),

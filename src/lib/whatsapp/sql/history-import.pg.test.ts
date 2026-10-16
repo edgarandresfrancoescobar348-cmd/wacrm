@@ -356,4 +356,42 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(importCallIntervalMs({})).toBe(9_000) // stock 1000/h → 6.7/h-min × 0.4
     expect(importCallIntervalMs({ OPENWA_RATE_LIMIT_PER_MIN: '600', OPENWA_RATE_LIMIT_PER_HOUR: '36000' })).toBe(250)
   })
+
+  // Phase 5c (real account): 91 of 498 conversations were created empty —
+  // their history held only content-less `unknown` placeholders.
+  it('a chat with nothing renderable creates no contact and no conversation (skipped)', async () => {
+    const ANA_ID = CHATS[0].id
+    historyHook = (chatId) =>
+      chatId === ANA_ID
+        ? [200, [msg(ANA_ID, 'ph-1', { type: 'unknown', body: '' }), msg(ANA_ID, 'ph-2', { type: 'unknown', body: '', timestamp: T0 + 5 })], 0, {}]
+        : undefined
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    expect((await run())?.status).toBe('done')
+    expect(await count(`SELECT count(*) FROM public.contacts WHERE phone = '5511911110001'`)).toBe(0)
+    expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(1) // Bruno only
+    expect(await count(`SELECT count(*) FROM public.conversations WHERE last_message_at IS NULL`)).toBe(0)
+    expect(await pg.sql(`SELECT status || '|' || error || '|' || (conversation_id IS NULL) FROM public.whatsapp_history_import_chats WHERE chat_id = '${ANA_ID}'`)).toBe(
+      'skipped|no messages to import|true',
+    )
+    expect(await pg.sql(`SELECT chats_done || '|' || chats_skipped || '|' || errors FROM public.whatsapp_history_imports`)).toBe('1|1|0')
+  })
+
+  // Phase 5c (real account): 8 chats reimported after 429s, yet the job ended
+  // done with errors=24 (one per attempt) and a stale ThrottlerException.
+  it('errors counts the chats still failed at the end, not attempts; none → no last_error', async () => {
+    const ANA_ID = CHATS[0].id
+    let calls = 0
+    // Fails twice (a non-transient 400), then works: not an error in the end.
+    historyHook = (chatId) => (chatId === ANA_ID && calls++ < 2 ? [400, { message: 'Bad chat state' }, 0, {}] : undefined)
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    expect((await run())?.status).toBe('done')
+    expect(await pg.sql(`SELECT chats_done || '|' || errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('2|0|null')
+
+    // One that fails for good: errors = 1 (not 3 attempts), its reason kept.
+    historyHook = (chatId) => (chatId === ANA_ID ? [400, { message: 'Bad chat state' }, 0, {}] : undefined)
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    expect((await run())?.status).toBe('done')
+    expect(await pg.sql(`SELECT errors || '|' || last_error FROM public.whatsapp_history_imports`)).toBe('1|Bad chat state')
+    expect(await pg.sql(`SELECT status || ':' || attempts FROM public.whatsapp_history_import_chats WHERE chat_id = '${ANA_ID}'`)).toBe('failed:3')
+  })
 })

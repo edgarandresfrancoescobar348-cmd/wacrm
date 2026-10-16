@@ -84,6 +84,12 @@ export async function startFakeOpenWa(apiKey = 'test-openwa-key'): Promise<FakeO
     override: (fn) => {
       overrideFn = fn
     },
-    close: () => new Promise((resolve) => server.close(() => resolve())),
+    // Drop open sockets too (keep-alive, a delayed answer still pending):
+    // close() alone waits for them and can outlive a test hook's timeout.
+    close: () =>
+      new Promise((resolve) => {
+        server.close(() => resolve())
+        server.closeAllConnections()
+      }),
   }
 }
