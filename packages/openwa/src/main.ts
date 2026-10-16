@@ -254,7 +254,14 @@ async function bootstrap() {
   );
 
   const port = process.env.PORT || 2785;
-  await app.listen(port);
+  // wacrm patch: LISTEN_HOST binds one interface (wacrm's dev/start runner uses 127.0.0.1 so the
+  // admin API is not reachable from the network). Unset keeps the upstream all-interfaces bind.
+  const listenHost = process.env.LISTEN_HOST?.trim();
+  if (listenHost) {
+    await app.listen(port, listenHost);
+  } else {
+    await app.listen(port);
+  }
 
   // Advertise the configured public URL, matching the AuthService banner (auth.service.ts). A bare
   // `localhost` literal here contradicted that banner and read as "the UI is pinned to localhost",
