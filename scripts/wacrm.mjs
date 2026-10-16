@@ -70,9 +70,21 @@ function sha256File(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
 }
 
-/** `npm ci` in packages/openwa when its lockfile changed since the last install. */
+/**
+ * What an install depends on: the lockfile and the `allowScripts` policy
+ * (npm 11 skips install scripts it doesn't cover, so a policy change must
+ * reinstall — an install made before it may lack Chrome).
+ */
+function installStamp() {
+  const lock = sha256File(path.join(OPENWA_DIR, 'package-lock.json'))
+  const pkg = JSON.parse(fs.readFileSync(path.join(OPENWA_DIR, 'package.json'), 'utf8'))
+  const policy = crypto.createHash('sha256').update(JSON.stringify(pkg.allowScripts ?? null)).digest('hex')
+  return `${lock}:${policy}`
+}
+
+/** `npm ci` in packages/openwa when its lockfile or script policy changed since the last install. */
 function ensureOpenWaInstalled({ force = false } = {}) {
-  const stamp = sha256File(path.join(OPENWA_DIR, 'package-lock.json'))
+  const stamp = installStamp()
   const current = fs.existsSync(INSTALL_STAMP) ? fs.readFileSync(INSTALL_STAMP, 'utf8').trim() : ''
   if (!force && current === stamp) return
   log('installing the WhatsApp gateway dependencies (packages/openwa, first run only)…')
@@ -80,6 +92,45 @@ function ensureOpenWaInstalled({ force = false } = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('npm_config_')))
   run('npm', ['ci', '--no-audit', '--no-fund'], { cwd: OPENWA_DIR, env })
   fs.writeFileSync(INSTALL_STAMP, stamp + '\n')
+}
+
+/**
+ * The native pieces the gateway can't run without, which only exist when
+ * their install scripts ran (packages/openwa/package.json `allowScripts`):
+ * the Chrome puppeteer downloads (whatsapp-web.js engine) and
+ * better-sqlite3's binding. Throws with the fix when one is missing.
+ */
+function verifyOpenWaRuntime() {
+  const probe = (code) =>
+    spawnSync(process.execPath, ['-e', code], { cwd: OPENWA_DIR, encoding: 'utf8', env: process.env })
+  const problems = []
+
+  const sqlite = probe("new (require('better-sqlite3'))(':memory:').close()")
+  if (sqlite.status !== 0) {
+    const reason = (sqlite.stderr || '').split('\n').find((l) => /Error/.test(l)) ?? 'it does not load'
+    problems.push(
+      `better-sqlite3's native binding is missing (${reason.trim()}). ` +
+        'Its install script did not run: check `allowScripts` in packages/openwa/package.json, then `npm run openwa:install`.',
+    )
+  }
+
+  const engine = process.env.OPENWA_ENGINE_TYPE?.trim() || 'whatsapp-web.js'
+  if (engine === 'whatsapp-web.js') {
+    const chrome = probe("process.stdout.write(process.env.PUPPETEER_EXECUTABLE_PATH || require('puppeteer').executablePath())")
+    const chromePath = chrome.status === 0 ? chrome.stdout.trim() : ''
+    if (!chromePath || !fs.existsSync(chromePath)) {
+      problems.push(
+        `the gateway's Chrome is missing${chromePath ? ` (${chromePath})` : ''}. ` +
+          "puppeteer's install script did not run (npm 11 blocks scripts not in `allowScripts`). " +
+          'Run `npm run openwa:install`, or download it with `cd packages/openwa && node node_modules/puppeteer/install.mjs`. ' +
+          'A system Chrome works too: PUPPETEER_EXECUTABLE_PATH=/path/to/chrome.',
+      )
+    }
+  }
+
+  if (problems.length) {
+    throw new Error(`the WhatsApp gateway can't start:\n  - ${problems.join('\n  - ')}`)
+  }
 }
 
 function newestMtime(dir) {
@@ -213,6 +264,7 @@ async function serve(mode, nextArgs) {
   if (embedded.on) {
     ensureOpenWaInstalled()
     ensureOpenWaBuilt()
+    verifyOpenWaRuntime()
     const dir = dataDir()
     const { key, keyFile, source } = ensureGatewayKey(dir)
     const gwPort = Number(process.env.OPENWA_PORT) || 2785
@@ -263,6 +315,7 @@ function build(nextArgs) {
   if (embedded.on) {
     ensureOpenWaInstalled()
     ensureOpenWaBuilt()
+    verifyOpenWaRuntime()
   } else {
     log(`skipping the WhatsApp gateway build: ${embedded.why}`)
   }
@@ -281,6 +334,8 @@ try {
       break
     case 'openwa:install':
       ensureOpenWaInstalled({ force: true })
+      verifyOpenWaRuntime()
+      log('gateway dependencies installed; Chrome and the SQLite binding are in place')
       break
     case 'openwa:build':
       ensureOpenWaInstalled()
