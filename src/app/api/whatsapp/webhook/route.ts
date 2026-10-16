@@ -55,9 +55,16 @@ interface WhatsAppMessage {
   image?: { id: string; mime_type: string; caption?: string }
   video?: { id: string; mime_type: string; caption?: string }
   document?: { id: string; mime_type: string; filename?: string; caption?: string }
-  audio?: { id: string; mime_type: string }
+  audio?: { id: string; mime_type: string; voice?: boolean }
   sticker?: { id: string; mime_type: string }
-  location?: { latitude: number; longitude: number; name?: string; address?: string }
+  location?: { latitude: number; longitude: number; name?: string; address?: string; url?: string }
+  /** A shared contact card (one message can carry several). */
+  contacts?: Array<{
+    name?: { formatted_name?: string; first_name?: string; last_name?: string }
+    phones?: Array<{ phone?: string; wa_id?: string }>
+  }>
+  /** A cart sent from the business's catalog. */
+  order?: { catalog_id?: string; text?: string; product_items?: unknown[] }
   reaction?: { message_id: string; emoji: string }
   /**
    * Set when the customer taps a button or list row on an interactive
@@ -515,6 +522,7 @@ async function parseMessageContent(
             message.document.filename
           ),
           mediaType: message.document.mime_type,
+          meta: { kind: 'document' as const, filename: message.document.filename ?? null, sizeBytes: null },
         }
       }
       return empty
@@ -525,6 +533,8 @@ async function parseMessageContent(
           ...empty,
           mediaUrl: await verifyAndBuildUrl(message.audio.id),
           mediaType: message.audio.mime_type,
+          // A voice note (push-to-talk) vs. an audio file — as on QR (A2).
+          meta: message.audio.voice ? { kind: 'voice' as const } : null,
         }
       }
       return empty
@@ -538,6 +548,8 @@ async function parseMessageContent(
           ...empty,
           mediaUrl: await verifyAndBuildUrl(message.sticker.id),
           mediaType: message.sticker.mime_type,
+          contentType: 'image',
+          meta: { kind: 'sticker' as const },
         }
       }
       return empty
@@ -545,10 +557,19 @@ async function parseMessageContent(
     case 'location':
       if (message.location) {
         const loc = message.location
-        const locationText = [loc.name, loc.address, `${loc.latitude},${loc.longitude}`]
-          .filter(Boolean)
-          .join(' - ')
-        return { ...empty, contentText: locationText }
+        const locationText = [loc.name, loc.address].filter(Boolean).join(' - ') || `${loc.latitude},${loc.longitude}`
+        return {
+          ...empty,
+          contentText: locationText,
+          meta: {
+            kind: 'location' as const,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            name: loc.name ?? null,
+            address: loc.address ?? null,
+            url: loc.url ?? null,
+          },
+        }
       }
       return empty
 
@@ -595,6 +616,34 @@ async function parseMessageContent(
         interactiveReplyId: payload || label,
       }
     }
+
+    case 'contacts': {
+      // The same card the QR mode shows for a shared vCard (A2).
+      const contacts = (message.contacts ?? []).map((c) => ({
+        name:
+          c.name?.formatted_name ||
+          [c.name?.first_name, c.name?.last_name].filter(Boolean).join(' ') ||
+          null,
+        phones: (c.phones ?? []).map((ph) => ph.phone || ph.wa_id || '').filter(Boolean),
+      }))
+      return {
+        ...empty,
+        contentText: contacts.map((c) => c.name).filter(Boolean).join(', ') || null,
+        meta: { kind: 'contact' as const, contacts },
+      }
+    }
+
+    case 'order':
+      return {
+        ...empty,
+        contentText: message.order?.text || null,
+        meta: {
+          kind: 'order' as const,
+          orderId: null,
+          itemCount: Array.isArray(message.order?.product_items) ? message.order!.product_items!.length : null,
+          text: message.order?.text || null,
+        },
+      }
 
     default:
       return {

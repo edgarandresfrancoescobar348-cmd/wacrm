@@ -26,6 +26,7 @@ import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import type { WhatsAppProvider } from '@/lib/whatsapp/transport/types'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
+import { previewFor, type ContentMeta } from '@/lib/whatsapp/message-content'
 import { matchNumberedMenuReply } from './numbered-menu'
 import { runFanoutForMessage, type InboundFanoutPayload } from './fanout'
 
@@ -41,6 +42,10 @@ export interface InboundContent {
    * tap with the right affordance. Null for everything else.
    */
   interactiveReplyId: string | null
+  /** Overrides the content_type derived from the provider type. */
+  contentType?: string
+  /** Kind-specific structure (message-content.ts, migration 062). */
+  meta?: ContentMeta | null
 }
 
 export interface InboundReaction {
@@ -536,7 +541,9 @@ export async function ingestInboundMessage(
     'text', 'image', 'document', 'audio', 'video',
     'location', 'template', 'interactive',
   ])
-  let contentType = ALLOWED_CONTENT_TYPES.has(inbound.type)
+  let contentType = parsed.contentType && ALLOWED_CONTENT_TYPES.has(parsed.contentType)
+    ? parsed.contentType
+    : ALLOWED_CONTENT_TYPES.has(inbound.type)
     ? inbound.type
     : inbound.type === 'sticker'
       ? 'image'         // stickers are images
@@ -592,7 +599,10 @@ export async function ingestInboundMessage(
   // it fails after the provider was acknowledged, the cron completes it
   // from here (complete_stale_inbound_messages) — the fan-out then runs
   // from the outbox, never from a side channel.
-  const lastMessageText = contentText || `[${inbound.type}]`
+  // The list preview like WhatsApp's ("📷 Photo", "👤 Name"…) — the same
+  // tokens for both connection modes (message-content.ts).
+  const contentMeta: ContentMeta | null = parsed.meta ?? null
+  const lastMessageText = previewFor(contentType, contentMeta, contentText)
   const storedFanout: InboundFanoutPayload = {
     accountId,
     configOwnerUserId,
@@ -613,6 +623,7 @@ export async function ingestInboundMessage(
     .upsert(
       {
         ingest_fanout: storedFanout,
+        content_meta: contentMeta,
         conversation_id: conversation.id,
         sender_type: 'customer',
         content_type: contentType,
@@ -813,9 +824,12 @@ export async function recordOutboundEcho(
     .maybeSingle()
   if (existing) return 'duplicate'
 
-  const { contentText, mediaUrl, mediaType } = await echo.resolveContent({ accountId })
+  const echoContent = await echo.resolveContent({ accountId })
+  const { contentText, mediaUrl, mediaType } = echoContent
   const ALLOWED = new Set(['text', 'image', 'document', 'audio', 'video', 'location'])
-  const contentType = ALLOWED.has(echo.type)
+  const contentType = echoContent.contentType && ALLOWED.has(echoContent.contentType)
+    ? echoContent.contentType
+    : ALLOWED.has(echo.type)
     ? echo.type
     : echo.type === 'sticker'
       ? 'image'
@@ -840,6 +854,7 @@ export async function recordOutboundEcho(
         status: 'sent',
         created_at: new Date(parseInt(echo.timestamp) * 1000).toISOString(),
         reply_to_message_id: replyTo,
+        content_meta: echoContent.meta ?? null,
       },
       { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
     )
@@ -853,7 +868,7 @@ export async function recordOutboundEcho(
   await supabaseAdmin()
     .from('conversations')
     .update({
-      last_message_text: contentText || `[${echo.type}]`,
+      last_message_text: previewFor(contentType, echoContent.meta ?? null, contentText),
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -972,7 +987,7 @@ function contactIdentityPatch(
   return Object.keys(patch).length > 0 ? patch : null
 }
 
-async function findOrCreateContact(
+export async function findOrCreateContact(
   accountId: string,
   configOwnerUserId: string,
   identity: WaIdentity
@@ -1072,7 +1087,7 @@ async function findOrCreateContact(
   return { contact: newContact, wasCreated: true }
 }
 
-async function findOrCreateConversation(
+export async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,

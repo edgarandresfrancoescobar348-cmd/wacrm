@@ -34,6 +34,10 @@ export interface NotifiableMessage {
   sender_type: SenderType;
   content_type: ContentType;
   content_text?: string | null;
+  /** History imported from the phone (A1) never notifies. */
+  imported_at?: string | null;
+  /** Structured kind (A2) — the body names it like the list preview. */
+  content_meta?: { kind: string } | null;
 }
 
 export interface ShouldNotifyOptions {
@@ -65,6 +69,7 @@ export function shouldNotifyForMessage(
   opts: ShouldNotifyOptions,
 ): boolean {
   if (msg.sender_type !== "customer") return false;
+  if (msg.imported_at) return false;
 
   const now = opts.now ?? Date.now();
   for (const [id, at] of opts.seen) {
@@ -96,6 +101,8 @@ export interface NotificationLabels {
   document: string;
   location: string;
   template: string;
+  /** Labels for structured kinds (contact, poll, call, masked…; A2). */
+  kinds?: Record<string, string>;
 }
 
 export const DEFAULT_NOTIFICATION_LABELS: NotificationLabels = {
@@ -136,6 +143,12 @@ export function buildNotificationContent(
   const text = msg.content_text?.trim() ?? "";
 
   let body: string;
+  const kind = msg.content_meta?.kind;
+  const kindLabel = kind ? labels.kinds?.[kind] : undefined;
+  if (kindLabel) {
+    body = text ? `${kindLabel} · ${text}` : kindLabel;
+    return { title, body: truncateBody(body) };
+  }
   switch (msg.content_type) {
     case "image":
     case "audio":

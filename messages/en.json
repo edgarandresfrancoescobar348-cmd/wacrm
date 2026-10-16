@@ -380,6 +380,34 @@
       "quickReplies": "Quick replies",
       "pipelines": "Pipelines",
       "reconnectQr": "Reconnect WhatsApp (QR code)"
+    },
+    "kinds": {
+      "photo": "Photo",
+      "video": "Video",
+      "audio": "Audio",
+      "voice": "Voice message",
+      "document": "Document",
+      "sticker": "Sticker",
+      "location": "Location",
+      "openMap": "Open in Maps",
+      "contact": "Contact",
+      "addContact": "Add contact",
+      "contactAdded": "Contact added",
+      "contactExists": "This contact already exists",
+      "poll": "Poll",
+      "pollMultiple": "Poll · several answers",
+      "voiceCall": "Voice call",
+      "videoCall": "Video call",
+      "voiceCallMissed": "Missed voice call",
+      "videoCallMissed": "Missed video call",
+      "voiceCallUnanswered": "Voice call · no answer",
+      "videoCallUnanswered": "Video call · no answer",
+      "order": "Order",
+      "orderItems": "{count, plural, one {# item} other {# items}}",
+      "product": "Product",
+      "masked": "Message not available on this device",
+      "template": "Template",
+      "message": "Message"
     }
   },
   "Contacts": {
@@ -1979,7 +2007,31 @@
         "howMenus": "Buttons and lists become a numbered menu; the contact's reply (number or title) triggers the same option.",
         "howWindow": "There's no 24 h window: you can reply at any time.",
         "howGroups": "Group and status messages are ignored.",
-        "cancelConnect": "Cancel connection"
+        "cancelConnect": "Cancel connection",
+        "history": {
+          "title": "Chat history",
+          "desc": "Imports the conversations and messages the linked phone holds. Imported messages don't trigger bots or notifications and don't count as unread.",
+          "run": "Import history",
+          "runAgain": "Import again",
+          "started": "History import started",
+          "startFailed": "Could not start the import",
+          "conversations": "Conversations",
+          "messages": "Messages",
+          "skipped": "Skipped",
+          "errors": "Errors",
+          "limited": "This engine (Baileys) can't read the phone's history: only the messages the gateway stored were imported.",
+          "lastError": "Last error: {error}",
+          "notStarted": "Not imported yet.",
+          "connectFirst": "Connect the QR code first — the history comes from the linked phone.",
+          "status": {
+            "queued": "Queued",
+            "listing": "Listing conversations…",
+            "importing": "Importing…",
+            "waiting_session": "Waiting for the session to reconnect",
+            "done": "Done",
+            "failed": "Stopped"
+          }
+        }
       }
     },
     "sections": {

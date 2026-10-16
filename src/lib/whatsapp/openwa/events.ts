@@ -31,6 +31,7 @@ import {
 } from './client'
 import type { OpenWaConnectionRow } from './connection'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { parseVcards, type ContentMeta } from '@/lib/whatsapp/message-content'
 import { reconcileAttemptFromEcho } from '@/lib/whatsapp/broadcast-attempts'
 
 export interface OpenWaEnvelope {
@@ -88,10 +89,14 @@ interface OpenWaMessageData {
     longitude?: number
     description?: string
     address?: string
+    url?: string
   }
   /** Baileys only: a tapped button / list row. */
   button?: { id?: string; text?: string }
-  poll?: { name?: string }
+  poll?: { name?: string; options?: string[]; allowMultipleAnswers?: boolean }
+  call?: { video?: boolean; missed?: boolean }
+  order?: { orderId?: string; token?: string }
+  product?: { productId?: string; title?: string; description?: string }
 }
 
 /**
@@ -148,53 +153,125 @@ export function phoneFromChatId(chatId: string | undefined | null): string | nul
   return m ? m[1] : null
 }
 
-/** OpenWA message type → the ingestion vocabulary (Meta's). */
-export function toIngestType(data: OpenWaMessageData): string {
-  if (data.button?.id) return 'interactive'
+/**
+ * One OpenWA message (live `message.received`/`message.sent`, or a
+ * history row — same shape) → the shared message structure: the stored
+ * `content_type`, the text, and the kind-specific `content_meta`
+ * (message-content.ts) — exactly what the official API webhook writes
+ * for the same kind (owner adjustment A2).
+ */
+export interface MappedOpenWaMessage {
+  contentType: string
+  contentText: string | null
+  meta: ContentMeta | null
+  /** Media to fetch/mirror (image, video, audio, voice, document, sticker). */
+  hasMedia: boolean
+  /** `revoked`: a deleted message (history) — stored with revoked_at. */
+  revoked: boolean
+}
+
+export function mapOpenWaMessage(data: OpenWaMessageData): MappedOpenWaMessage {
+  const body = data.body?.trim() ? data.body : null
+  const base = { contentText: body, meta: null, hasMedia: false, revoked: false }
   switch (data.type) {
-    case 'voice':
-      return 'audio'
     case 'text':
+      return { ...base, contentType: 'text' }
     case 'image':
     case 'video':
     case 'audio':
-    case 'document':
+      return { ...base, contentType: data.type, hasMedia: !!data.media }
+    case 'voice':
+      return { ...base, contentType: 'audio', meta: { kind: 'voice' }, hasMedia: !!data.media }
     case 'sticker':
-    case 'location':
-      return data.type
+      return { ...base, contentType: 'image', meta: { kind: 'sticker' }, contentText: null, hasMedia: !!data.media }
+    case 'document':
+      return {
+        ...base,
+        contentType: 'document',
+        contentText: body ?? data.media?.filename ?? null,
+        meta: { kind: 'document', filename: data.media?.filename ?? null, sizeBytes: data.media?.sizeBytes ?? null },
+        hasMedia: !!data.media,
+      }
+    case 'location': {
+      const loc = data.location
+      if (!loc || typeof loc.latitude !== 'number' || typeof loc.longitude !== 'number') {
+        return { ...base, contentType: 'location' }
+      }
+      const name = loc.description || null
+      return {
+        ...base,
+        contentType: 'location',
+        contentText: [name, loc.address].filter(Boolean).join(' - ') || `${loc.latitude},${loc.longitude}`,
+        meta: { kind: 'location', latitude: loc.latitude, longitude: loc.longitude, name, address: loc.address ?? null, url: loc.url ?? null },
+      }
+    }
+    case 'contact': {
+      const contacts = parseVcards(data.body)
+      return {
+        ...base,
+        contentType: 'text',
+        contentText: contacts.map((c) => c.name).filter(Boolean).join(', ') || null,
+        meta: { kind: 'contact', contacts },
+      }
+    }
+    case 'poll':
+      return {
+        ...base,
+        contentType: 'text',
+        contentText: data.poll?.name ?? body,
+        meta: {
+          kind: 'poll',
+          question: data.poll?.name ?? body ?? '',
+          options: data.poll?.options ?? [],
+          multiple: !!data.poll?.allowMultipleAnswers,
+        },
+      }
+    case 'call':
+      return {
+        ...base,
+        contentType: 'text',
+        contentText: null,
+        meta: { kind: 'call', video: !!data.call?.video, missed: data.call?.missed !== false },
+      }
+    case 'order':
+      return {
+        ...base,
+        contentType: 'text',
+        meta: { kind: 'order', orderId: data.order?.orderId ?? null, text: body },
+      }
+    case 'product':
+      return {
+        ...base,
+        contentType: 'text',
+        contentText: data.product?.title ?? body,
+        meta: {
+          kind: 'product',
+          productId: data.product?.productId ?? null,
+          title: data.product?.title ?? null,
+          description: data.product?.description ?? null,
+        },
+      }
+    case 'masked':
+      return { ...base, contentType: 'text', contentText: null, meta: { kind: 'masked' } }
+    case 'revoked':
+      return { ...base, contentType: 'text', contentText: null, revoked: true }
     default:
-      // contact, poll, call, order, product, unknown → text
-      return 'text'
+      // unknown with content (placeholders without any are dropped before).
+      return { ...base, contentType: data.media ? 'document' : 'text', hasMedia: !!data.media }
   }
 }
 
-function vcardName(body: string): string | null {
-  const fn = body.match(/^FN:(.+)$/m)
-  return fn ? fn[1].trim() : null
+/** OpenWA message type → the stored content_type. */
+export function toIngestType(data: OpenWaMessageData): string {
+  if (data.button?.id) return 'interactive'
+  return mapOpenWaMessage(data).contentType
 }
 
 /** Text the inbox shows for non-media OpenWA messages. */
 export function textContentFor(data: OpenWaMessageData): string | null {
-  switch (data.type) {
-    case 'location': {
-      const loc = data.location
-      if (!loc) return data.body || null
-      return [loc.description, loc.address, `${loc.latitude},${loc.longitude}`]
-        .filter(Boolean)
-        .join(' - ')
-    }
-    case 'contact': {
-      const name = vcardName(data.body ?? '')
-      return name ? `👤 ${name}` : data.body || null
-    }
-    case 'poll':
-      return data.poll?.name ? `📊 ${data.poll.name}` : data.body || null
-    default:
-      return data.body || null
-  }
+  return mapOpenWaMessage(data).contentText
 }
 
-const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'voice', 'document', 'sticker'])
 
 /** Stable digits-only media id for the mirror path (see mirrorFileName). */
 export function mirrorMediaId(messageId: string): string {
@@ -241,21 +318,21 @@ async function resolveOpenWaContent(
     }
   }
 
-  if (!data.type || !MEDIA_TYPES.has(data.type) || !data.media) {
-    return { ...empty, contentText: textContentFor(data) }
+  const mapped = mapOpenWaMessage(data)
+  if (!mapped.hasMedia || !data.media) {
+    return { ...empty, contentType: mapped.contentType, contentText: mapped.contentText, meta: mapped.meta }
   }
 
   const sessionId = ctx.row.session_id!
   const chatId = data.chatId ?? data.from ?? ''
   const messageId = data.id ?? ''
   const mimeType = data.media.mimetype ?? null
-  const caption = data.type === 'document'
-    ? data.body || data.media.filename || null
-    : data.body || null
+  const caption = mapped.contentText
   const proxyUrl = openWaMediaProxyUrl(chatId, messageId)
 
+  const shape = { contentType: mapped.contentType, meta: mapped.meta }
   if (!ctx.mirrorMedia) {
-    return { ...empty, contentText: caption, mediaUrl: proxyUrl, mediaType: mimeType }
+    return { ...empty, ...shape, contentText: caption, mediaUrl: proxyUrl, mediaType: mimeType }
   }
 
   const mirrored = await mirrorInboundMedia({
@@ -286,6 +363,7 @@ async function resolveOpenWaContent(
 
   return {
     ...empty,
+    ...shape,
     contentText: caption,
     mediaUrl: mirrored ?? proxyUrl,
     mediaType: mimeType,
@@ -626,6 +704,7 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   }
   if (!Array.isArray(applied) || applied.length === 0) {
     console.info(`[openwa] ignored ${env.event} older than the current session state`)
+    return
   }
   // The active-connection flag (whatsapp_config.status) is NOT written
   // here: migration 058 derives it from this row in the same statement,

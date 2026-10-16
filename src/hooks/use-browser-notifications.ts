@@ -52,6 +52,7 @@ export function useBrowserNotifications(): void {
   const enabled = useBrowserNotifyPref();
   const router = useRouter();
   const t = useTranslations("Settings.browserNotifications.labels");
+  const tKinds = useTranslations("Inbox.kinds");
 
   // Translated labels, read inside the async Realtime callback. Kept in
   // a ref (assigned in an effect, not during render) so a locale change
@@ -66,6 +67,17 @@ export function useBrowserNotifications(): void {
       document: t("document"),
       location: t("location"),
       template: t("template"),
+      kinds: {
+        contact: tKinds("contact"),
+        poll: tKinds("poll"),
+        call: tKinds("voiceCall"),
+        masked: tKinds("masked"),
+        sticker: tKinds("sticker"),
+        voice: tKinds("voice"),
+        order: tKinds("order"),
+        product: tKinds("product"),
+        location: tKinds("location"),
+      },
     };
   });
 

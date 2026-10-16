@@ -12,17 +12,11 @@ import type { Conversation, ConversationStatus, Tag } from "@/types";
 import {
   ChevronDown,
   EllipsisVertical,
-  FileText,
-  Image as ImageIcon,
   LayoutTemplate,
-  MapPin,
-  Mic,
   Plug,
   UserPlus,
-  Video,
   X,
   Zap,
-  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
@@ -43,7 +37,8 @@ import {
   WaSearchPill,
   WaUnreadBadge,
 } from "@/components/layout/wa-panel";
-import { formatListTime, mediaPlaceholderType } from "./wa-format";
+import { formatListTime } from "./wa-format";
+import { usePreviewParts } from "./message-preview";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -67,30 +62,6 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: "bg-muted-foreground",
 };
 
-/** Icon for the media placeholders stored in `last_message_text`. */
-const MEDIA_PREVIEW_ICONS: Record<string, LucideIcon> = {
-  image: ImageIcon,
-  sticker: ImageIcon,
-  video: Video,
-  audio: Mic,
-  voice: Mic,
-  document: FileText,
-  location: MapPin,
-  template: LayoutTemplate,
-};
-
-/** `Inbox.bubble` label key for each media placeholder type. */
-const MEDIA_PREVIEW_LABELS: Record<string, string> = {
-  image: "photo",
-  sticker: "photo",
-  video: "video",
-  audio: "audio",
-  voice: "audio",
-  document: "document",
-  location: "locationShared",
-  template: "template",
-};
-
 type InboxFilter = ConversationStatus | "all" | "unread";
 
 export function ConversationList({
@@ -102,7 +73,6 @@ export function ConversationList({
   banner,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
-  const tBubble = useTranslations("Inbox.bubble");
   const tThread = useTranslations("Inbox.messageThread");
   const locale = useLocale();
   
@@ -444,7 +414,6 @@ export function ConversationList({
               isActive={conv.id === activeConversationId}
               onSelect={handleSelect}
               t={t}
-              tBubble={tBubble}
               locale={locale}
               yesterdayLabel={tThread("yesterday")}
             />
@@ -460,7 +429,6 @@ interface ConversationItemProps {
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
-  tBubble: ReturnType<typeof useTranslations>;
   locale: string;
   yesterdayLabel: string;
 }
@@ -470,10 +438,10 @@ function ConversationItem({
   isActive,
   onSelect,
   t,
-  tBubble,
   locale,
   yesterdayLabel,
 }: ConversationItemProps) {
+  const previewOf = usePreviewParts();
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
   const unread = conversation.unread_count > 0;
@@ -486,12 +454,9 @@ function ConversationItem({
     ? formatListTime(conversation.last_message_at, locale, yesterdayLabel)
     : "";
 
-  // `[image]`-style placeholders become icon + label, like WA's
-  // "📷 Photo" preview line.
-  const mediaType = mediaPlaceholderType(conversation.last_message_text);
-  const MediaIcon = mediaType ? MEDIA_PREVIEW_ICONS[mediaType] : undefined;
-  const mediaLabelKey = mediaType ? MEDIA_PREVIEW_LABELS[mediaType] : undefined;
-  const mediaLabel = mediaLabelKey ? tBubble(mediaLabelKey) : null;
+  // Preview tokens become icon + label, like WA's "📷 Photo" line (A2).
+  const preview = previewOf(conversation.last_message_text, t("noMessagesYet"));
+  const MediaIcon = preview.icon;
 
   return (
     <WaListRow
@@ -504,10 +469,7 @@ function ConversationItem({
       subtitle={
         <>
           {MediaIcon ? <MediaIcon className="size-4 shrink-0" /> : null}
-          <span className="truncate">
-            {mediaLabel ??
-              (conversation.last_message_text || t("noMessagesYet"))}
-          </span>
+          <span className="truncate">{preview.label}</span>
         </>
       }
       trailing={

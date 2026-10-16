@@ -23,6 +23,7 @@ import {
   MediaVideoBubble,
 } from "./message-media";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
+import { KindContent } from "./message-kind";
 import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
@@ -130,6 +131,24 @@ function MessageContent({
   // Passed to the media bubbles as a no-arg callback; `undefined` when the
   // parent wired up no viewer, which is what makes them non-clickable.
   const openMedia = onOpenMedia ? () => onOpenMedia(message.id) : undefined;
+
+  // Structured kinds (location, shared contact, poll, call, order,
+  // product, masked) render the same in both connection modes (A2).
+  const kind = message.content_meta ?? null;
+  if (kind && kind.kind !== "sticker" && kind.kind !== "voice" && kind.kind !== "document") {
+    const rendered = (
+      <KindContent message={message} meta={kind} inlineMeta={meta} metaBlock={metaBlock} />
+    );
+    if (rendered) return rendered;
+  }
+  if (kind?.kind === "sticker" && message.media_url) {
+    // A sticker: the image alone, no bubble caption, at sticker size.
+    return (
+      <div className="w-40">
+        <MediaImageBubble message={message} onOpen={openMedia} t={t} overlay={metaOverlay} />
+      </div>
+    );
+  }
 
   switch (message.content_type) {
     case "text":

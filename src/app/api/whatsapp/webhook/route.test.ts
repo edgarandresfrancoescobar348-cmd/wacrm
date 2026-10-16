@@ -1087,3 +1087,31 @@ describe('inbound webhook: automation waiting for a reply', () => {
     expect(h.resumeAwaitingReply).not.toHaveBeenCalled()
   })
 })
+
+// A2: the official API writes the same structure the QR mode does for
+// the same kind (and the same list preview) — one rendering for both.
+describe('inbound webhook: message kinds match the QR mode (A2)', () => {
+  const base = { from: '5511988887777', id: 'wamid.KIND', timestamp: '1792100000' }
+  it.each([
+    [
+      'contacts',
+      { type: 'contacts', contacts: [{ name: { formatted_name: 'Maria Silva' }, phones: [{ phone: '+55 11 91234-5678', wa_id: '5511912345678' }] }] },
+      'text',
+      { kind: 'contact', contacts: [{ name: 'Maria Silva', phones: ['+55 11 91234-5678'] }] },
+      '[contact:Maria Silva]',
+    ],
+    [
+      'location',
+      { type: 'location', location: { latitude: -23.5, longitude: -46.6, name: 'Escritório', address: 'Av. Paulista' } },
+      'location',
+      { kind: 'location', latitude: -23.5, longitude: -46.6, name: 'Escritório', address: 'Av. Paulista', url: null },
+      '[location:Escritório]',
+    ],
+    ['order', { type: 'order', order: { catalog_id: 'c', text: 'ok', product_items: [{}, {}] } }, 'text',
+      { kind: 'order', orderId: null, itemCount: 2, text: 'ok' }, '[order:ok]'],
+  ])('%s', async (_name, message, contentType, meta, preview) => {
+    await runWebhook({ ...base, ...message })
+    expect(h.state.upsertCalls[0].row).toMatchObject({ content_type: contentType, content_meta: meta })
+    expect(h.state.rpcCalls.find((c) => c.name === 'complete_inbound_message')?.args.p_last_message_text).toBe(preview)
+  })
+})

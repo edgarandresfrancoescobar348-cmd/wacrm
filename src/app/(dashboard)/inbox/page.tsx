@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useWhatsAppStatus } from "@/hooks/use-whatsapp-status";
+import { previewFor } from "@/lib/whatsapp/message-content";
 import {
   CONVERSATION_SELECT,
   normalizeConversation,
@@ -209,18 +210,25 @@ function InboxPageInner() {
         // the preview and triggering a hydrate — see the comment on
         // knownConvIdsRef for why a closure flag inside the updater would
         // always read false here.
+        // Imported history (A1) is old: it never moves the preview or
+        // the unread badge — the conversation's own UPDATE carries those.
+        if (newMsg.imported_at) return;
         if (knownConvIdsRef.current.has(newMsg.conversation_id)) {
           setConversations((prev) =>
             prev.map((c) =>
               c.id === newMsg.conversation_id
                 ? {
                     ...c,
-                    last_message_text: newMsg.content_text ?? "",
+                    last_message_text: previewFor(newMsg.content_type, newMsg.content_meta ?? null, newMsg.content_text),
                     last_message_at: newMsg.created_at,
+                    // Only a customer message adds to unread (our own sends
+                    // and the phone's echoes don't).
                     unread_count:
                       activeConversation?.id === newMsg.conversation_id
                         ? 0
-                        : c.unread_count + 1,
+                        : newMsg.sender_type === "customer"
+                          ? c.unread_count + 1
+                          : c.unread_count,
                   }
                 : c,
             ),

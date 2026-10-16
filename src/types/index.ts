@@ -262,6 +262,11 @@ export interface Message {
    * 'interactive'` and `sender_type` is agent/bot. Migration 035.
    */
   interactive_payload?: InteractiveMessagePayload;
+  /** Kind-specific structure — location, shared contact, poll, call,
+   *  order/product, sticker, voice, document, masked (migration 062). */
+  content_meta?: import('@/lib/whatsapp/message-content').ContentMeta | null;
+  /** Set on messages imported from the phone's history (migration 063). */
+  imported_at?: string | null;
   /**
    * True when the AI auto-reply bot generated + sent this message (as
    * opposed to a human agent or a deterministic Flow/automation send,

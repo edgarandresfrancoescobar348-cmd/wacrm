@@ -380,6 +380,34 @@
       "quickReplies": "Respostas rápidas",
       "pipelines": "Pipelines",
       "reconnectQr": "Reconectar o WhatsApp (QR Code)"
+    },
+    "kinds": {
+      "photo": "Foto",
+      "video": "Vídeo",
+      "audio": "Áudio",
+      "voice": "Mensagem de voz",
+      "document": "Documento",
+      "sticker": "Figurinha",
+      "location": "Localização",
+      "openMap": "Abrir no mapa",
+      "contact": "Contato",
+      "addContact": "Adicionar contato",
+      "contactAdded": "Contato adicionado",
+      "contactExists": "Este contato já existe",
+      "poll": "Enquete",
+      "pollMultiple": "Enquete · várias respostas",
+      "voiceCall": "Chamada de voz",
+      "videoCall": "Chamada de vídeo",
+      "voiceCallMissed": "Chamada de voz perdida",
+      "videoCallMissed": "Chamada de vídeo perdida",
+      "voiceCallUnanswered": "Chamada de voz · não atendida",
+      "videoCallUnanswered": "Chamada de vídeo · não atendida",
+      "order": "Pedido",
+      "orderItems": "{count, plural, one {# item} other {# itens}}",
+      "product": "Produto",
+      "masked": "Mensagem não disponível neste aparelho",
+      "template": "Modelo",
+      "message": "Mensagem"
     }
   },
   "Contacts": {
@@ -1979,7 +2007,31 @@
         "howMenus": "Botões e listas viram um menu numerado; a resposta do contato (número ou título) aciona a mesma opção.",
         "howWindow": "Não existe janela de 24 h: você pode responder a qualquer momento.",
         "howGroups": "Mensagens de grupos e status são ignoradas.",
-        "cancelConnect": "Cancelar conexão"
+        "cancelConnect": "Cancelar conexão",
+        "history": {
+          "title": "Histórico de conversas",
+          "desc": "Importa as conversas e mensagens que o celular vinculado guarda. Mensagens importadas não disparam bots nem notificações e não contam como não lidas.",
+          "run": "Importar histórico",
+          "runAgain": "Importar de novo",
+          "started": "Importação do histórico iniciada",
+          "startFailed": "Não foi possível iniciar a importação",
+          "conversations": "Conversas",
+          "messages": "Mensagens",
+          "skipped": "Ignoradas",
+          "errors": "Erros",
+          "limited": "Este motor (Baileys) não lê o histórico do celular: só as mensagens que o gateway guardou foram importadas.",
+          "lastError": "Último erro: {error}",
+          "notStarted": "Ainda não importado.",
+          "connectFirst": "Conecte o QR Code primeiro — o histórico vem do celular vinculado.",
+          "status": {
+            "queued": "Na fila",
+            "listing": "Listando conversas…",
+            "importing": "Importando…",
+            "waiting_session": "Aguardando a sessão reconectar",
+            "done": "Concluída",
+            "failed": "Interrompida"
+          }
+        }
       }
     },
     "sections": {

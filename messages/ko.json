@@ -380,6 +380,34 @@
       "quickReplies": "빠른 답장",
       "pipelines": "파이프라인",
       "reconnectQr": "WhatsApp 다시 연결 (QR 코드)"
+    },
+    "kinds": {
+      "photo": "사진",
+      "video": "동영상",
+      "audio": "오디오",
+      "voice": "음성 메시지",
+      "document": "문서",
+      "sticker": "스티커",
+      "location": "위치",
+      "openMap": "지도에서 열기",
+      "contact": "연락처",
+      "addContact": "연락처 추가",
+      "contactAdded": "연락처를 추가했습니다",
+      "contactExists": "이미 있는 연락처입니다",
+      "poll": "투표",
+      "pollMultiple": "투표 · 복수 선택",
+      "voiceCall": "음성 통화",
+      "videoCall": "영상 통화",
+      "voiceCallMissed": "부재중 음성 통화",
+      "videoCallMissed": "부재중 영상 통화",
+      "voiceCallUnanswered": "음성 통화 · 응답 없음",
+      "videoCallUnanswered": "영상 통화 · 응답 없음",
+      "order": "주문",
+      "orderItems": "{count}개 항목",
+      "product": "상품",
+      "masked": "이 기기에서 볼 수 없는 메시지",
+      "template": "템플릿",
+      "message": "메시지"
     }
   },
   "Contacts": {
@@ -1979,7 +2007,31 @@
         "howMenus": "버튼과 목록은 번호가 매겨진 메뉴로 바뀌며, 연락처가 답장한 번호나 제목으로 같은 옵션이 실행됩니다.",
         "howWindow": "24시간 창이 없으므로 언제든지 답장할 수 있습니다.",
         "howGroups": "그룹 및 상태 메시지는 무시됩니다.",
-        "cancelConnect": "연결 취소"
+        "cancelConnect": "연결 취소",
+        "history": {
+          "title": "채팅 기록",
+          "desc": "연결된 휴대폰에 있는 대화와 메시지를 가져옵니다. 가져온 메시지는 봇이나 알림을 실행하지 않으며 읽지 않음으로 계산되지 않습니다.",
+          "run": "기록 가져오기",
+          "runAgain": "다시 가져오기",
+          "started": "기록 가져오기를 시작했습니다",
+          "startFailed": "가져오기를 시작할 수 없습니다",
+          "conversations": "대화",
+          "messages": "메시지",
+          "skipped": "건너뜀",
+          "errors": "오류",
+          "limited": "이 엔진(Baileys)은 휴대폰 기록을 읽을 수 없어 게이트웨이에 저장된 메시지만 가져왔습니다.",
+          "lastError": "마지막 오류: {error}",
+          "notStarted": "아직 가져오지 않았습니다.",
+          "connectFirst": "먼저 QR 코드를 연결하세요. 기록은 연결된 휴대폰에서 가져옵니다.",
+          "status": {
+            "queued": "대기 중",
+            "listing": "대화 목록 확인 중…",
+            "importing": "가져오는 중…",
+            "waiting_session": "세션 재연결 대기 중",
+            "done": "완료",
+            "failed": "중단됨"
+          }
+        }
       }
     },
     "sections": {

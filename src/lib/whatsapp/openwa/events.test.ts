@@ -123,7 +123,7 @@ describe('classification helpers', () => {
 
   it('maps OpenWA types onto the ingestion vocabulary', () => {
     expect(toIngestType({ type: 'voice' })).toBe('audio')
-    expect(toIngestType({ type: 'sticker' })).toBe('sticker')
+    expect(toIngestType({ type: 'sticker' })).toBe('image') // stored as an image with content_meta {kind: 'sticker'} (A2)
     expect(toIngestType({ type: 'contact' })).toBe('text')
     expect(toIngestType({ type: 'text', button: { id: 'b1' } })).toBe('interactive')
   })
@@ -165,7 +165,7 @@ describe('message.received', () => {
     })
     expect(options).toMatchObject({ runBots: true, mapNumberedMenuReplies: true })
     const content = await (inbound.resolveContent as (c: { accountId: string }) => Promise<unknown>)({ accountId: 'acct-1' })
-    expect(content).toEqual({ contentText: text.body, mediaUrl: null, mediaType: null, interactiveReplyId: null })
+    expect(content).toEqual({ contentText: text.body, mediaUrl: null, mediaType: null, interactiveReplyId: null, contentType: 'text', meta: null })
   })
 
   it('stores but does not run bots when QR is not the active mode', async () => {
