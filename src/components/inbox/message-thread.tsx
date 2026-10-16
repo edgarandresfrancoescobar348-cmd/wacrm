@@ -927,7 +927,7 @@ export function MessageThread({
 
   const baseName = isGroup ? conversation.group_name || t("group") : displayNameOf(contact!);
   // Your own chat, like WhatsApp: "Guilherme Varela (Você)" (avatars keep the bare name).
-  const displayName = conversation.is_self ? `${baseName} ${t("you")}` : baseName;
+  const displayName = conversation.is_self ? `${baseName} ${t("selfSuffix")}` : baseName;
   const messageGroups = groupMessagesByDate(messages);
   // A voice note's photo: the contact (or the group member), or — yours —
   // the agent who sent it, else you.

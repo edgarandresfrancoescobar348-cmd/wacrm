@@ -498,7 +498,7 @@ function ConversationItem({
     ? conversation.group_name || t("group")
     : (contact && contactDisplayName(contact)) || t("unknown");
   // Your own chat, like WhatsApp: "Guilherme Varela (Você)".
-  const displayName = conversation.is_self ? `${baseName} ${t("you")}` : baseName;
+  const displayName = conversation.is_self ? `${baseName} ${t("selfSuffix")}` : baseName;
   const unread = conversation.unread_count > 0;
 
   const handleClick = useCallback(() => {
