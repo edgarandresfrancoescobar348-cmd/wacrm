@@ -172,7 +172,10 @@ export function OpenWaPanel({
     }
   }, [onChanged]);
 
-  const shouldPoll = canEditSettings && !!status && POLLING_STATES.includes(status);
+  // A linked number shown disconnected is usually the gateway restoring it
+  // after a restart (AUTO_START_SESSIONS): follow it until it is back.
+  const restoring = status === 'disconnected' && !!live?.phone;
+  const shouldPoll = canEditSettings && !!status && (POLLING_STATES.includes(status) || restoring);
   useEffect(() => {
     if (!shouldPoll) return;
     void poll();
@@ -709,7 +712,11 @@ function ConnectionBody({
           {t('reconnectLoop', { attempts: state.reconnect_attempts })}
         </p>
       ) : null}
-      <p className="text-sm text-muted-foreground">{t('disconnectedDesc')}</p>
+      <p className="text-sm text-muted-foreground">
+        {status === 'disconnected' && state.phone
+          ? t('restoringDesc', { phone: formatPhone(state.phone) })
+          : t('disconnectedDesc')}
+      </p>
       {canEdit && (
         <Button onClick={onConnect} disabled={busy !== null}>
           {busy === 'connect' && <Loader2 className="size-4 animate-spin" />}

@@ -115,6 +115,10 @@ services:
       RATE_LIMIT_SHORT_LIMIT: 20
       RATE_LIMIT_MEDIUM_LIMIT: 600
       RATE_LIMIT_LONG_LIMIT: 36000
+      # Restart the sessions that were linked when the container stopped
+      # (opt-in upstream); without it every restart leaves the number
+      # disconnected until someone starts it by hand.
+      AUTO_START_SESSIONS: ${OPENWA_AUTO_START_SESSIONS:-true}
     # The provisioned key seeds OpenWA's admin key on its first boot
     # (API_MASTER_KEY; an existing data volume keeps the key it has —
     # openwa-key adopts it).

@@ -305,7 +305,7 @@ function nextPort(args) {
 }
 
 /** OpenWA gets a short, explicit environment — not Next's (PORT, DATABASE_*, …). */
-function openWaEnv({ mode, port, key }) {
+export function openWaEnv({ mode, port, key }) {
   const pass = ['PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME']
   const env = {}
   for (const k of pass) if (process.env[k] !== undefined) env[k] = process.env[k]
@@ -325,6 +325,12 @@ function openWaEnv({ mode, port, key }) {
     RATE_LIMIT_SHORT_LIMIT: String(GATEWAY_RATE_LIMITS.perSecond),
     RATE_LIMIT_MEDIUM_LIMIT: String(GATEWAY_RATE_LIMITS.perMinute),
     RATE_LIMIT_LONG_LIMIT: String(GATEWAY_RATE_LIMITS.perHour),
+    // Restart the sessions that were linked when the gateway went down
+    // (OpenWA: phone known, status disconnected, not stopped by an
+    // operator) — otherwise every `npm run dev` restart leaves the number
+    // disconnected until someone starts it by hand. Opt-in upstream.
+    // A session that never finished pairing (qr_ready) is not restarted.
+    AUTO_START_SESSIONS: process.env.OPENWA_AUTO_START_SESSIONS?.trim() === 'false' ? 'false' : 'true',
   }
 }
 

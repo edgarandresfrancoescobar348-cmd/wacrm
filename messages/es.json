@@ -1938,6 +1938,7 @@
         "statusActionRequired": "Se requiere una acción en el gateway",
         "waitDesc": "Esto toma unos segundos. La página se actualiza sola.",
         "disconnectedDesc": "Haz clic en Conectar para obtener un nuevo código QR.",
+        "restoringDesc": "Si el servidor acaba de reiniciarse, el gateway reconecta {phone} solo y esta página se actualiza. Si no vuelve en unos minutos, haz clic en Conectar.",
         "gatewayDownTitle": "Gateway de WhatsApp no disponible",
         "gatewayDownUnconfigured": "Este servidor funciona sin el gateway de WhatsApp, así que el modo Código QR no está disponible aquí. El gateway arranca junto con wacrm en npm run dev, npm run start y docker compose; los hostings serverless (como Vercel) solo ofrecen el modo API oficial.",
         "gatewayDownUnreachable": "El gateway de WhatsApp no responde. Se ejecuta junto con wacrm: reinicia el servidor y vuelve a comprobar. Las conversaciones ya recibidas siguen en el inbox.",

@@ -10,7 +10,7 @@ import path from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { CRON_ENDPOINTS, cronTick, ensureCronSecret, startScheduler } from '../../../scripts/wacrm.mjs'
+import { CRON_ENDPOINTS, cronTick, ensureCronSecret, openWaEnv, startScheduler } from '../../../scripts/wacrm.mjs'
 
 type Hit = { path: string; secret: string | undefined }
 
@@ -123,5 +123,42 @@ describe('cron secret (scripts/wacrm.mjs)', () => {
     expect(first.secret).toMatch(/^[0-9a-f]{64}$/)
     expect(fs.statSync(path.join(root, 'cron.secret')).mode & 0o777).toBe(0o600)
     expect(ensureCronSecret(root, 'dev', root)).toEqual({ secret: first.secret, source: 'existing' })
+  })
+})
+
+// Phase 5c: after restarting `npm run dev` the real account's session
+// came back 'disconnected' — OpenWA only restores linked sessions on boot
+// with AUTO_START_SESSIONS=true (opt-in upstream), and the runner didn't set it.
+describe('gateway environment (scripts/wacrm.mjs)', () => {
+  const savedFlag = process.env.OPENWA_AUTO_START_SESSIONS
+  afterEach(() => {
+    if (savedFlag === undefined) delete process.env.OPENWA_AUTO_START_SESSIONS
+    else process.env.OPENWA_AUTO_START_SESSIONS = savedFlag
+  })
+
+  it.each(['dev', 'start'])('%s restores linked sessions on boot (AUTO_START_SESSIONS=true)', (mode) => {
+    delete process.env.OPENWA_AUTO_START_SESSIONS
+    const env = openWaEnv({ mode, port: 2785, key: 'k' })
+    expect(env.AUTO_START_SESSIONS).toBe('true')
+    // …next to the rest of what the managed gateway needs.
+    expect(env).toMatchObject({
+      API_MASTER_KEY: 'k',
+      PORT: '2785',
+      LISTEN_HOST: '127.0.0.1',
+      SERVE_DASHBOARD: 'false',
+      RATE_LIMIT_MEDIUM_LIMIT: '600',
+      NODE_ENV: mode === 'dev' ? 'development' : 'production',
+    })
+  })
+
+  it('an operator can turn it off with OPENWA_AUTO_START_SESSIONS=false', () => {
+    process.env.OPENWA_AUTO_START_SESSIONS = 'false'
+    expect(openWaEnv({ mode: 'dev', port: 2785, key: 'k' }).AUTO_START_SESSIONS).toBe('false')
+  })
+
+  it('docker-compose.yml turns it on for the openwa service too', () => {
+    const compose = fs.readFileSync(path.join(__dirname, '../../../docker-compose.yml'), 'utf8')
+    const openwa = compose.slice(compose.indexOf('\n  openwa:\n'), compose.indexOf('\n  openwa-key:\n'))
+    expect(openwa).toMatch(/AUTO_START_SESSIONS: \$\{OPENWA_AUTO_START_SESSIONS:-true\}/)
   })
 })
