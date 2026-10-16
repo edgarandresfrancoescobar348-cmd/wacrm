@@ -114,4 +114,38 @@ describe.skipIf(!pgAvailable())('mode switch vs session change (K6)', () => {
     const [session, , flag] = (await state()).split('|')
     expect(flag).toBe(session === 'ready' ? 'connected' : 'disconnected')
   })
+
+  // Phase 5e (real account): after a restart the session came back ready at
+  // 20:26:19; the gateway then redelivered, from its outbox, the shutdown's
+  // `disconnected` (occurred 20:25:08) in an envelope stamped 20:26:23 — and
+  // it overwrote ready. The event time is the one in its signed key.
+  it('a late redelivery of an older session event never overwrites newer state', async () => {
+    await pg.sql(`UPDATE public.whatsapp_config SET provider = 'openwa'; UPDATE public.whatsapp_openwa_config SET status = 'disconnected', status_event_at = '2026-10-16T20:25:08.386Z'`)
+    const event = (status: string, envelopeAt: string, occurredAt: string) =>
+      handleOpenWaEvent(
+        {
+          event: 'session.status',
+          sessionId: 'sess-1',
+          timestamp: envelopeAt,
+          idempotencyKey: `sess_sess-1_${status}_${occurredAt}`,
+          data: { sessionId: 'sess-1', status },
+        },
+        {
+          admin: db.asClient(),
+          row: { account_id: ACCT, user_id: USER, session_id: 'sess-1', connected_at: null } as never,
+          creds: { baseUrl: 'http://127.0.0.1:9', apiKey: 'k' },
+          activeProvider: 'openwa',
+          mirrorMedia: false,
+        },
+      )
+    await event('ready', '2026-10-16T20:26:19.100Z', '2026-10-16T20:26:19.050Z')
+    expect(await state()).toBe('ready|openwa|connected')
+    // The shutdown's disconnected, out of the outbox after the restart.
+    await event('disconnected', '2026-10-16T20:26:23.900Z', '2026-10-16T20:25:08.386Z')
+    expect(await state()).toBe('ready|openwa|connected')
+    expect(await pg.sql(`SELECT status_event_at AT TIME ZONE 'UTC' FROM public.whatsapp_openwa_config`)).toBe('2026-10-16 20:26:19.05')
+    // A genuinely newer disconnect still applies.
+    await event('disconnected', '2026-10-16T20:30:00.000Z', '2026-10-16T20:29:59.000Z')
+    expect(await state()).toBe('disconnected|openwa|disconnected')
+  })
 })
