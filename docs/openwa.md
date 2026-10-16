@@ -54,6 +54,17 @@ QR card says so (with **Verificar de novo**) instead of offering **Conectar**.
 | `npm run build` / `npm run start` | `build` also builds the gateway; `start` runs it next to `next start` (`NODE_ENV=production`) | same | same |
 | `docker compose up` | The `openwa` service, built from `./packages/openwa`. Its port is **not published**; only `app` reaches it at `http://openwa:2785` | The one-shot `openwa-key` service writes it into the `gateway-key` volume, mounted read-only by `app` (`OPENWA_API_KEY_FILE`) and `openwa` | `http://app:3000` |
 
+The gateway needs two native pieces that come from install scripts: the
+Chrome that `puppeteer` downloads (whatsapp-web.js engine) and
+`better-sqlite3`'s binding. npm 11 runs a dependency's install scripts only
+when `allowScripts` covers it, so `packages/openwa/package.json` approves
+exactly those (plus `msgpackr-extract` and Baileys' engine check) and denies
+the rest — `@scarf/scarf` telemetry included. Before starting, the runner
+checks that Chrome and the SQLite binding exist and stops with the fix
+(`npm run openwa:install`, or `PUPPETEER_EXECUTABLE_PATH` for a system Chrome)
+when they don't. Changing `allowScripts` reinstalls the gateway's
+dependencies on the next start.
+
 In dev/start, Ctrl-C (or either process exiting) stops both. `npm run dev -- -p 4000`
 passes arguments to Next; the webhook URL follows the port.
 

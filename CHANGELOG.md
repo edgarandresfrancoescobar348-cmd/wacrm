@@ -51,6 +51,9 @@ now ships inside wacrm, next to the official Meta Cloud API.
   run it with the app. Its admin key is generated on first run and handed
   to both sides; nobody types a URL or key. QR mode needs a long-running
   host — serverless hosts (Vercel) get the official API mode only.
+  `allowScripts` (npm 11) approves only the install scripts the app and the
+  gateway need (Chrome download, SQLite binding) and denies telemetry; the
+  start script stops with a clear message when Chrome or SQLite is missing.
 - **Settings → WhatsApp: two modes.** "API oficial" (unchanged) or "QR Code":
   "Conectar" (session + signed
   webhook + live QR that refreshes until scanned), pairing code, connected
