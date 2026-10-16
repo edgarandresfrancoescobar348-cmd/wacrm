@@ -9,6 +9,7 @@ import {
   MessageContact,
   MessageReaction,
   MessageResult,
+  OnDemandMedia,
   PollInput,
   Quotable,
 } from '../interfaces/whatsapp-engine.interface';
@@ -64,12 +65,16 @@ export function extractWwebjsCall(msg: Message): { video: boolean; missed: boole
  * budget is spent, or the download fails/times out.
  */
 export function declaredOnlyMedia(msg: Message): IncomingMessage['media'] {
-  const data = (msg as unknown as { _data?: { size?: number; mimetype?: string; filename?: string } })._data;
+  const data = (msg as unknown as { _data?: { size?: number; mimetype?: string; filename?: string; duration?: unknown } })
+    ._data;
+  // wacrm patch: the length WhatsApp declares for audio/video (seconds, sometimes a numeric string).
+  const duration = Number(data?.duration);
   return {
     mimetype: data?.mimetype ?? '',
     filename: data?.filename || undefined,
     omitted: true,
     sizeBytes: coerceDeclaredSize(data?.size),
+    ...(Number.isFinite(duration) && duration > 0 ? { durationSeconds: Math.round(duration) } : {}),
   };
 }
 
@@ -981,6 +986,12 @@ export class WwebjsMessaging {
           this.host.logger.warn(`Failed to resolve quoted message for ${msg.id._serialized}: ${String(error)}`);
         }
       }
+      // wacrm patch: a metadata-only read (includeMedia off — always the case for deep history) still
+      // says the message HAS media and what it is, so a client can show it and fetch it later through
+      // the media route (downloadMessageMedia). Before, such rows carried no `media` at all.
+      if (!includeMedia && msg.hasMedia) {
+        out.media = declaredOnlyMedia(msg);
+      }
       if (includeMedia && msg.hasMedia) {
         if (mediaBudget <= 0) {
           out.media = declaredOnlyMedia(msg);
@@ -1004,6 +1015,33 @@ export class WwebjsMessaging {
       results.push(out);
     }
     return results;
+  }
+
+  /**
+   * wacrm patch: one message's media, downloaded from WhatsApp now (see the engine interface). Uses
+   * the same page-side download as live media (downloadMediaInPage: mimetype fix, decrypted-size
+   * cap), addressed by message id, so it works for a message read through getChatHistory that was
+   * never archived. `null` from the page = message unknown or re-uploading; `undefined` = WhatsApp's
+   * media server no longer has it (or the download stage errored) — reported as expired.
+   */
+  async downloadMessageMedia(chatId: string, messageId: string, maxBytes: number): Promise<OnDemandMedia> {
+    this.host.ensureReady();
+    const page = await this.withPage('downloadMessageMedia', async () => {
+      const { pupPage } = this.client() as unknown as {
+        pupPage: { evaluate: <T, A>(fn: (arg: A) => Promise<T>, arg: A) => Promise<T> };
+      };
+      return pupPage.evaluate(downloadMediaInPage, { msgId: messageId, maxBytes });
+    });
+    if (page === null) return { status: 'not_found' };
+    if (page === undefined) return { status: 'expired' };
+    if (!page.data) return { status: 'too_large', sizeBytes: page.sizeBytes };
+    return {
+      status: 'ok',
+      mimetype: page.mimetype,
+      ...(page.filename ? { filename: page.filename } : {}),
+      data: page.data,
+      sizeBytes: page.sizeBytes,
+    };
   }
 
   async deleteMessage(chatId: string, messageId: string, forEveryone: boolean = true): Promise<void> {

@@ -34,6 +34,7 @@ import {
   LabelInput,
   CustomLinkPreview,
   GroupJoinInfo,
+  OnDemandMedia,
 } from '../interfaces/whatsapp-engine.interface';
 import { EngineNotSupportedError } from '../../common/errors/engine-not-supported.error';
 import { resolveAuthTimeoutMs } from '../engine-init-timeout';
@@ -759,6 +760,11 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
     signal?: AbortSignal,
   ): Promise<IncomingMessage[]> {
     return this.messaging.getChatHistory(chatId, limit, includeMedia, mediaMaxBytes, signal);
+  }
+
+  /** wacrm patch: see WwebjsMessaging.downloadMessageMedia. */
+  downloadMessageMedia(chatId: string, messageId: string, maxBytes: number): Promise<OnDemandMedia> {
+    return this.messaging.downloadMessageMedia(chatId, messageId, maxBytes);
   }
 
   starMessage(chatId: string, messageId: string, star: boolean): Promise<void> {

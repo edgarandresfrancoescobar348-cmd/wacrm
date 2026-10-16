@@ -1,4 +1,13 @@
-import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  GatewayTimeoutException,
+  GoneException,
+  NotFoundException,
+  Optional,
+  PayloadTooLargeException,
+} from '@nestjs/common';
+import { inboundMediaMaxBytes } from '../../engine/adapters/inbound-media-cap';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { EngineRegistry } from '../../engine/engine-registry.service';
@@ -599,9 +608,65 @@ export class MessageService implements PluginMessagePort {
       // base64 would serve garbage, so report it as absent. Same discriminator as the send path.
       /^https?:\/\//i.test(inline.data)
     ) {
+      // wacrm patch: nothing stored here (a message read through the chat history, never archived) —
+      // ask WhatsApp for it now. A revoked message stays gone.
+      const fetched = row?.type === 'revoked' ? null : await this.downloadMediaOnDemand(sessionId, chatId, messageId, row);
+      if (fetched) return fetched;
       throw new NotFoundException('No media stored for this message');
     }
     return { buffer: Buffer.from(inline.data, 'base64'), mimetype: inertMimetype(inline.mimetype) };
+  }
+
+  /** wacrm patch: bound on one on-demand media download (decrypting a large video takes a while). */
+  private static readonly ON_DEMAND_MEDIA_TIMEOUT_MS = 60_000;
+
+  /**
+   * wacrm patch: download a message's media from WhatsApp through the engine (whatsapp-web.js),
+   * archive it when this gateway archives chat media and the message has a row here, and serve it
+   * like stored media (inert mimetype). Null when the engine cannot (Baileys, session not running)
+   * or does not know the message — the caller's 404 stands. WhatsApp no longer having the file is a
+   * 410, over the inbound media cap a 413, no answer in time a 504.
+   */
+  private async downloadMediaOnDemand(
+    sessionId: string,
+    chatId: string,
+    messageId: string,
+    row: Message | null | undefined,
+  ): Promise<{ buffer: Buffer; mimetype: string } | null> {
+    const engine = this.engines.get(sessionId);
+    if (!engine?.downloadMessageMedia) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>(resolve => {
+      timer = setTimeout(() => resolve('timeout'), MessageService.ON_DEMAND_MEDIA_TIMEOUT_MS);
+    });
+    let result: Awaited<ReturnType<NonNullable<typeof engine.downloadMessageMedia>>> | 'timeout';
+    try {
+      result = await Promise.race([engine.downloadMessageMedia(chatId, messageId, inboundMediaMaxBytes()), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (result === 'timeout') throw new GatewayTimeoutException('WhatsApp did not deliver the media in time');
+    switch (result.status) {
+      case 'expired':
+        throw new GoneException('This media is no longer available on WhatsApp');
+      case 'too_large':
+        throw new PayloadTooLargeException(`Media is ${result.sizeBytes} bytes, over the download cap`);
+      case 'not_found':
+        return null;
+    }
+    if (row && this.chatMediaArchive) {
+      // Best-effort: archive() never throws, and a miss only means the next read downloads again.
+      await this.chatMediaArchive.archive({
+        id: row.id,
+        sessionId,
+        mediaPath: row.mediaPath,
+        metadata: {
+          ...((row.metadata as Record<string, unknown> | null) ?? {}),
+          media: { mimetype: result.mimetype, data: result.data, sizeBytes: result.sizeBytes, filename: result.filename },
+        },
+      });
+    }
+    return { buffer: Buffer.from(result.data, 'base64'), mimetype: inertMimetype(result.mimetype) };
   }
 
   /** Maximum messages a single getChatHistory call may request from the engine. */

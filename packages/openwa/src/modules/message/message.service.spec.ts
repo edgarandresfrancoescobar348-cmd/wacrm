@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { FindOperator, In, Repository } from 'typeorm';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { MessageService, spendInlineMediaBudget } from './message.service';
 import { MessageSendService } from './message-send.service';
 import { Message } from './entities/message.entity';
@@ -1053,6 +1053,93 @@ describe('MessageService', () => {
     it('does not swallow a genuine storage fault as a 404', async () => {
       const svc = build(archived('image/png'), { getFile: jest.fn().mockRejectedValue(new Error('S3 500')) });
       await expect(svc.getChatMedia('sess-1', 'c@c.us', 'wa-1')).rejects.toThrow('S3 500');
+    });
+
+    // ── wacrm patch: on-demand download for never-archived media ─────────
+    // A message read through the chat history was never archived or persisted with its bytes: the
+    // media route used to 404 on every one of them. It now asks the engine to download it.
+    describe('on-demand download (wacrm patch)', () => {
+      const nothingStored = () => {
+        (repository.findOne as jest.Mock).mockResolvedValue(null);
+        return { getMedia: jest.fn().mockResolvedValue(null) };
+      };
+      afterEach(() => {
+        delete (mockEngine as Record<string, unknown>).downloadMessageMedia;
+      });
+
+      it('serves what the engine downloads, with an inert mimetype', async () => {
+        (mockEngine as Record<string, unknown>).downloadMessageMedia = jest.fn().mockResolvedValue({
+          status: 'ok',
+          mimetype: 'audio/ogg; codecs=opus',
+          data: Buffer.from('OGG').toString('base64'),
+          sizeBytes: 3,
+        });
+        const svc = build(nothingStored(), storage());
+        await expect(svc.getChatMedia('sess-1', 'c@c.us', 'wa-1')).resolves.toEqual({
+          buffer: Buffer.from('OGG'),
+          mimetype: 'audio/ogg',
+        });
+        expect((mockEngine as Record<string, jest.Mock>).downloadMessageMedia).toHaveBeenCalledWith(
+          'c@c.us',
+          'wa-1',
+          expect.any(Number),
+        );
+      });
+
+      it('archives it when the message has a row here', async () => {
+        const archive = { getMedia: jest.fn().mockResolvedValue(null), archive: jest.fn().mockResolvedValue('k') };
+        (repository.findOne as jest.Mock).mockResolvedValue({ id: 'row-1', type: 'image', metadata: { body: 'x' } });
+        (mockEngine as Record<string, unknown>).downloadMessageMedia = jest.fn().mockResolvedValue({
+          status: 'ok',
+          mimetype: 'image/jpeg',
+          data: Buffer.from('JPG').toString('base64'),
+          sizeBytes: 3,
+        });
+        const svc = build(archive, storage());
+        await svc.getChatMedia('sess-1', 'c@c.us', 'wa-1');
+        expect(archive.archive).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'row-1',
+            sessionId: 'sess-1',
+            metadata: expect.objectContaining({ body: 'x', media: expect.objectContaining({ mimetype: 'image/jpeg' }) }),
+          }),
+        );
+      });
+
+      it('answers 410 when WhatsApp no longer has the file', async () => {
+        (mockEngine as Record<string, unknown>).downloadMessageMedia = jest.fn().mockResolvedValue({ status: 'expired' });
+        const svc = build(nothingStored(), storage());
+        await expect(svc.getChatMedia('sess-1', 'c@c.us', 'wa-1')).rejects.toThrow(GoneException);
+      });
+
+      it('answers 413 over the download cap', async () => {
+        (mockEngine as Record<string, unknown>).downloadMessageMedia = jest
+          .fn()
+          .mockResolvedValue({ status: 'too_large', sizeBytes: 999 });
+        const svc = build(nothingStored(), storage());
+        await expect(svc.getChatMedia('sess-1', 'c@c.us', 'wa-1')).rejects.toThrow(PayloadTooLargeException);
+      });
+
+      it('keeps the 404 when the engine does not know the message, or cannot download (Baileys)', async () => {
+        (mockEngine as Record<string, unknown>).downloadMessageMedia = jest.fn().mockResolvedValue({ status: 'not_found' });
+        await expect(build(nothingStored(), storage()).getChatMedia('sess-1', 'c@c.us', 'wa-1')).rejects.toThrow(
+          NotFoundException,
+        );
+        delete (mockEngine as Record<string, unknown>).downloadMessageMedia;
+        await expect(build(nothingStored(), storage()).getChatMedia('sess-1', 'c@c.us', 'wa-1')).rejects.toThrow(
+          NotFoundException,
+        );
+      });
+
+      it('never downloads a revoked message', async () => {
+        const download = jest.fn();
+        (mockEngine as Record<string, unknown>).downloadMessageMedia = download;
+        (repository.findOne as jest.Mock).mockResolvedValue({ id: 'r', type: 'revoked', metadata: {} });
+        await expect(
+          build({ getMedia: jest.fn().mockResolvedValue(null) }, storage()).getChatMedia('sess-1', 'c@c.us', 'wa-1'),
+        ).rejects.toThrow(NotFoundException);
+        expect(download).not.toHaveBeenCalled();
+      });
     });
 
     // ── inline fallback (sent-message media, #1165) ──────────────────

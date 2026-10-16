@@ -196,6 +196,8 @@ export interface IncomingMessage {
     omitted?: boolean;
     /** Decoded byte size of the media; always set when `omitted` is true. */
     sizeBytes?: number;
+    /** wacrm patch: audio/video length in seconds, when the engine reports it (history markers). */
+    durationSeconds?: number;
   };
   quotedMessage?: {
     id: string;
@@ -1241,7 +1243,22 @@ export interface ChatHistoryCapability {
     mediaMaxBytes?: number,
     signal?: AbortSignal,
   ): Promise<IncomingMessage[]>;
+
+  /**
+   * wacrm patch: download one message's media from WhatsApp on demand — for a message this gateway
+   * never archived (e.g. one read through getChatHistory). Optional: an engine without it keeps the
+   * media route's 404. `expired` means WhatsApp no longer serves the file; `not_found` that the
+   * message is unknown to the engine (or its media is being re-uploaded by the phone).
+   */
+  downloadMessageMedia?(chatId: string, messageId: string, maxBytes: number): Promise<OnDemandMedia>;
 }
+
+/** wacrm patch: the outcome of {@link ChatHistoryCapability.downloadMessageMedia}. */
+export type OnDemandMedia =
+  | { status: 'ok'; mimetype: string; filename?: string; data: string; sizeBytes: number }
+  | { status: 'too_large'; sizeBytes: number }
+  | { status: 'expired' }
+  | { status: 'not_found' };
 
 /**
  * Contacts and the account's addressbook: reads, number/identity resolution, the blocklist, and

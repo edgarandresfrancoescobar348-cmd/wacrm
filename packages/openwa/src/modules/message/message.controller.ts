@@ -751,6 +751,10 @@ export class MessageController {
       '(the gateway stores none of those bytes, though on whatsapp-web.js the own-send echo may), or ' +
       'the message is not in this gateway’s history.',
   })
+  // wacrm patch: media this gateway never stored is downloaded from WhatsApp on demand.
+  @ApiResponse({ status: 410, description: 'WhatsApp no longer has this media (expired); it cannot be downloaded.' })
+  @ApiResponse({ status: 413, description: 'The media is over the inbound download cap (MEDIA_DOWNLOAD_MAX_BYTES).' })
+  @ApiResponse({ status: 504, description: 'WhatsApp did not deliver the media in time; retry.' })
   async getChatMedia(
     @Param('sessionId') sessionId: string,
     @Param('chatId') chatId: string,
