@@ -6,7 +6,7 @@ import { MentionText } from "./mention-text";
 import { contactDisplayName } from "@/lib/whatsapp/phone-display";
 import { createClient } from "@/lib/supabase/client";
 import {
-  CONVERSATION_SELECT,
+  fetchAllConversations,
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
@@ -124,24 +124,18 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
-
-      if (cancelled) return;
-
-      if (error) {
-        // Supabase errors have non-enumerable properties — log fields explicitly
-        console.error("Failed to fetch conversations:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
+      // Every page: one select stops at PostgREST's max_rows (1000).
+      let data;
+      try {
+        data = await fetchAllConversations(supabase);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to fetch conversations:", error);
         setLoading(false);
         return;
       }
+
+      if (cancelled) return;
 
       onConversationsLoadedRef.current(normalizeConversations(data ?? []));
       setLoading(false);

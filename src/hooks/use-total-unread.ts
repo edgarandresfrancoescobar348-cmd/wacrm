@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllConversations } from "@/lib/inbox/conversations";
 import type { Conversation } from "@/types";
 
 /**
@@ -26,10 +27,12 @@ export function useTotalUnread(): number {
     // Initial load. RLS scopes this to the signed-in user automatically —
     // no explicit user_id filter needed here.
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select("id, unread_count");
-      if (cancelled || error || !data) return;
+      // Every page: one select stops at PostgREST's max_rows (1000).
+      const data = await fetchAllConversations<{ id: string; unread_count: number }>(
+        supabase,
+        "id, unread_count",
+      ).catch(() => null);
+      if (cancelled || !data) return;
 
       const map = new Map<string, number>();
       let sum = 0;

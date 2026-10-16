@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  fetchAllConversations,
   matchesContactFilters,
   normalizeConversation,
 } from "./conversations";
@@ -141,5 +142,42 @@ describe("normalizeConversation", () => {
     };
     // A contactless row passes through untouched (consumers use `?.`).
     expect(normalizeConversation(raw).contact).toBeNull();
+  });
+});
+
+// Phase 5f, real account: 1401 chats, the list and "Não lidas" saw the
+// first 1000 only (PostgREST max_rows) — 102 unread instead of 224.
+describe("fetchAllConversations", () => {
+  it("reads past PostgREST's max_rows cap, every row once, ordered with no-time chats last", async () => {
+    const rows = Array.from({ length: 1401 }, (_, i) => ({ id: `c${String(i).padStart(4, "0")}`, unread_count: i % 6 === 0 ? 1 : 0 }));
+    const calls: { orders: unknown[][]; range: number[] }[] = [];
+    const supabase = {
+      from: () => {
+        const call = { orders: [] as unknown[][], range: [] as number[] };
+        calls.push(call);
+        const q = {
+          select: () => q,
+          order: (...a: unknown[]) => (call.orders.push(a), q),
+          range: async (from: number, to: number) => {
+            call.range = [from, to];
+            return { data: rows.slice(from, Math.min(to + 1, from + 1000)), error: null };
+          },
+        };
+        return q;
+      },
+    };
+    const got = await fetchAllConversations<{ id: string; unread_count: number }>(supabase as never, "id, unread_count");
+    expect(got.map((r) => r.id)).toEqual(rows.map((r) => r.id));
+    expect(got.filter((r) => r.unread_count > 0)).toHaveLength(rows.filter((r) => r.unread_count > 0).length);
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls[0].orders).toEqual([
+      ["last_message_at", { ascending: false, nullsFirst: false }],
+      ["id", { ascending: true }],
+    ]);
+  });
+
+  it("throws on an error, so the list doesn't show a partial inbox as complete", async () => {
+    const q = { select: () => q, order: () => q, range: async () => ({ data: null, error: { message: "boom" } }) };
+    await expect(fetchAllConversations({ from: () => q } as never)).rejects.toThrow("boom");
   });
 });

@@ -1,3 +1,6 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { fetchAllPages } from "@/lib/supabase/paged-query";
 import type { Conversation, Contact, Tag } from "@/types";
 
 /**
@@ -68,4 +71,26 @@ export function matchesContactFilters(
   }
 
   return true;
+}
+
+/**
+ * Every conversation the user can see, page by page. A single select is
+ * cut at PostgREST's `max_rows` (1000 by default): an account with 1401
+ * chats got the first 1000 only, so the list missed chats and the "Não
+ * lidas" count was 102 instead of 224 (phase 5f, real account). Ordered
+ * by last message, the ones without one last, then by id, so pages
+ * don't overlap.
+ */
+export async function fetchAllConversations<T = RawConversation>(
+  supabase: Pick<SupabaseClient, "from">,
+  select: string = CONVERSATION_SELECT,
+): Promise<T[]> {
+  return fetchAllPages<T>((from, to) =>
+    supabase
+      .from("conversations")
+      .select(select)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
+      .range(from, to) as unknown as PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  );
 }
