@@ -409,7 +409,11 @@
       "masked": "Mensaje no disponible en este dispositivo",
       "template": "Plantilla",
       "message": "Mensaje",
-      "revokedEmpty": "Se eliminó este mensaje"
+      "revokedEmpty": "Se eliminó este mensaje",
+      "voiceWithDuration": "Mensaje de voz ({duration})",
+      "pages": "{count, plural, one {# página} other {# páginas}}",
+      "revoked": "Mensaje eliminado",
+      "album": "{count} fotos"
     }
   },
   "Contacts": {

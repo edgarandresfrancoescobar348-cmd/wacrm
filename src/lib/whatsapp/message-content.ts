@@ -88,9 +88,17 @@ export function previewFor(
   contentType: string,
   meta: ContentMeta | null | undefined,
   text: string | null | undefined,
+  /**
+   * QR mode (phase 5e), like the phone's list: a voice note's length
+   * ("Mensagem de voz (0:09)"), a document's pages ("x.pdf · 1 página"),
+   * a deleted message, an album of photos ("4 fotos").
+   */
+  extra?: { durationSeconds?: number | null; pageCount?: number | null; revoked?: boolean; albumCount?: number | null },
 ): string {
   const t = (text ?? '').trim().replace(/\s+/g, ' ')
-  const detail = (d: string | null | undefined) => (d ? `:${d.replace(/[\]\n]/g, ' ').slice(0, 120)}` : '')
+  const detail = (d: string | null | undefined) => (d ? `:${d.replace(/[\]\n|]/g, ' ').slice(0, 120)}` : '')
+  if (extra?.revoked) return '[revoked]'
+  if (extra?.albumCount && extra.albumCount > 1) return `[album:${extra.albumCount}]`
   if (meta) {
     switch (meta.kind) {
       case 'location':
@@ -110,9 +118,9 @@ export function previewFor(
       case 'sticker':
         return '[sticker]'
       case 'voice':
-        return '[voice]'
+        return extra?.durationSeconds ? `[voice:${formatDuration(extra.durationSeconds)}]` : '[voice]'
       case 'document':
-        return `[document${detail(t || meta.filename)}]`
+        return `[document${detail(t || meta.filename)}${extra?.pageCount ? `|${extra.pageCount}` : ''}]`
     }
   }
   switch (contentType) {
@@ -121,7 +129,7 @@ export function previewFor(
     case 'audio':
       return `[${contentType}${detail(t)}]`
     case 'document':
-      return `[document${detail(t)}]`
+      return `[document${detail(t)}${extra?.pageCount ? `|${extra.pageCount}` : ''}]`
     case 'location':
       return `[location${detail(t)}]`
     case 'template':
@@ -129,6 +137,38 @@ export function previewFor(
     default:
       return t || '[message]'
   }
+}
+
+/** WhatsApp shows 4+ photos sent together as one album ("4 fotos"). */
+export const ALBUM_MIN = 4
+const ALBUM_GAP_MS = 60_000
+
+/**
+ * How many photos end the conversation as one album: the newest message
+ * and the ones right before it that are photos (not stickers) from the
+ * same side, each within a minute of the next. 0 when fewer than
+ * ALBUM_MIN. Rows newest first.
+ */
+export function trailingAlbumCount(
+  newestFirst: { content_type: string; content_meta?: ContentMeta | null; sender_type: string; created_at: string }[],
+): number {
+  const first = newestFirst[0]
+  const isPhoto = (r: (typeof newestFirst)[number]) => r.content_type === 'image' && r.content_meta?.kind !== 'sticker'
+  if (!first || !isPhoto(first)) return 0
+  let n = 1
+  for (let i = 1; i < newestFirst.length; i++) {
+    const r = newestFirst[i]
+    if (!isPhoto(r) || r.sender_type !== first.sender_type) break
+    if (Date.parse(newestFirst[i - 1].created_at) - Date.parse(r.created_at) > ALBUM_GAP_MS) break
+    n++
+  }
+  return n >= ALBUM_MIN ? n : 0
+}
+
+/** 9 → "0:09", 75 → "1:15", like WhatsApp. */
+export function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
 /** `[kind]` / `[kind:detail]` → its parts; null for plain text. */

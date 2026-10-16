@@ -89,6 +89,20 @@ describe('previewFor / previewParts — like WhatsApp, never "[text]" or empty',
   it('older bare tokens keep working', () => {
     expect(previewParts('[image]', '', t).label).toBe('<photo>')
   })
+  // Phase 5e: the phone's preview lines.
+  it('voice with its length, document with its pages, deleted, albums', () => {
+    const tt = (k: string, v?: Record<string, string | number>) => (v ? `<${k} ${JSON.stringify(v)}>` : `<${k}>`)
+    expect(previewFor('audio', { kind: 'voice' }, null, { durationSeconds: 9 })).toBe('[voice:0:09]')
+    expect(previewParts('[voice:0:09]', '', tt).label).toBe('<voiceWithDuration {"duration":"0:09"}>')
+    expect(previewFor('document', { kind: 'document', filename: '3 ANTECEDENTES.pdf' }, '3 ANTECEDENTES.pdf', { pageCount: 1 })).toBe('[document:3 ANTECEDENTES.pdf|1]')
+    expect(previewParts('[document:3 ANTECEDENTES.pdf|1]', '', tt).label).toBe('3 ANTECEDENTES.pdf · <pages {"count":1}>')
+    expect(previewFor('document', { kind: 'document', filename: 'a|b.pdf' }, null)).toBe('[document:a b.pdf]')
+    expect(previewFor('text', null, null, { revoked: true })).toBe('[revoked]')
+    expect(previewParts('[revoked]', '', tt).label).toBe('<revoked>')
+    expect(previewFor('image', null, null, { albumCount: 4 })).toBe('[album:4]')
+    expect(previewParts('[album:4]', '', tt).label).toBe('<album {"count":4}>')
+    expect(previewFor('image', null, null, { albumCount: 1 })).toBe('[image]')
+  })
   it('maps link', () => {
     expect(mapsUrl({ latitude: -23.5, longitude: -46.6 })).toBe('https://www.google.com/maps/search/?api=1&query=-23.5,-46.6')
   })

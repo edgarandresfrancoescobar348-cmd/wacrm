@@ -86,7 +86,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
         ADD CONSTRAINT messages_conv_msg UNIQUE (conversation_id, message_id);
       CREATE TABLE public.profiles(user_id uuid, account_id uuid);
       CREATE SCHEMA IF NOT EXISTS auth; CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULL::uuid $$;`)
-    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql']) await pg.migrate(m)
+    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql', '067_whatsapp_parity.sql']) await pg.migrate(m)
     db = new PgSupabase(pg)
     h.db = db.asClient()
     gw = await startFakeOpenWa()
@@ -167,7 +167,8 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     // no bots, no automations, no AI, no webhooks, no fan-out tasks
     expect([h.flows, h.autos, h.ai, h.hooks]).toEqual([0, 0, 0, 0])
     expect(await count(`SELECT count(*) FROM public.inbound_fanout_tasks`)).toBe(0)
-    expect(await pg.sql(`SELECT chats_total || '|' || chats_done || '|' || messages_imported FROM public.whatsapp_history_imports`)).toBe('2|2|8')
+    // 3 listed (Ana, Bruno and — phase 5e — the group, which has no history here: skipped).
+    expect(await pg.sql(`SELECT chats_total || '|' || chats_done || '|' || messages_imported FROM public.whatsapp_history_imports`)).toBe('3|2|8')
   })
 
   it('is idempotent: a re-run imports nothing twice', async () => {
@@ -315,7 +316,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(Number(nextIn)).toBeGreaterThan(3500) // the gateway's hour, not a guess
     expect(leased).toBe('false')
     expect(lastError).toMatch(/rate-limiting/)
-    expect(await pg.sql(`SELECT string_agg(status || ':' || attempts, ',') FROM public.whatsapp_history_import_chats`)).toBe('pending:0,pending:0')
+    expect(await pg.sql(`SELECT string_agg(status || ':' || attempts, ',') FROM public.whatsapp_history_import_chats`)).toBe('pending:0,pending:0,pending:0')
     // The limit lifts: the next tick imports everything.
     historyHook = null
     __resetImportPacingForTests()
@@ -335,7 +336,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     const job = await run()
     expect(job?.status).toBe('done')
     expect(await pg.sql(`SELECT errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('0|null')
-    expect(await pg.sql(`SELECT string_agg(DISTINCT status, ',') FROM public.whatsapp_history_import_chats`)).toBe('done')
+    expect(await pg.sql(`SELECT string_agg(DISTINCT status, ',' ORDER BY status) FROM public.whatsapp_history_import_chats`)).toBe('done,skipped')
     expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
   })
 
@@ -373,7 +374,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(await pg.sql(`SELECT status || '|' || error || '|' || (conversation_id IS NULL) FROM public.whatsapp_history_import_chats WHERE chat_id = '${ANA_ID}'`)).toBe(
       'skipped|no messages to import|true',
     )
-    expect(await pg.sql(`SELECT chats_done || '|' || chats_skipped || '|' || errors FROM public.whatsapp_history_imports`)).toBe('1|1|0')
+    expect(await pg.sql(`SELECT chats_done || '|' || chats_skipped || '|' || errors FROM public.whatsapp_history_imports`)).toBe('1|2|0') // + the empty group
   })
 
   // Phase 5c (real account): 8 chats reimported after 429s, yet the job ended
@@ -393,5 +394,87 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect((await run())?.status).toBe('done')
     expect(await pg.sql(`SELECT errors || '|' || last_error FROM public.whatsapp_history_imports`)).toBe('1|Bad chat state')
     expect(await pg.sql(`SELECT status || ':' || attempts FROM public.whatsapp_history_import_chats WHERE chat_id = '${ANA_ID}'`)).toBe('failed:3')
+  })
+
+  // Phase 5e: WhatsApp parity.
+  it('groups come in like on the phone: no CRM contact, sender per message, unread from the list, no bots', async () => {
+    const GROUP = CHATS[2].id
+    historyHook = (chatId) =>
+      chatId === GROUP
+        ? [
+            200,
+            [
+              msg(GROUP, 'g-1', { author: '5511944443333@c.us', contact: { name: 'Luciana Alves', isMyContact: true }, body: 'Bom dia, grupo', timestamp: T0 + 400 }),
+              msg(GROUP, 'g-2', { author: '5511955552222@c.us', contact: { pushName: 'Vitor' }, body: 'Já vamos ver', timestamp: T0 + 410 }),
+              msg(GROUP, 'g-3', { fromMe: true, body: 'Combinado', timestamp: T0 + 420, ack: 3 }),
+            ],
+            0,
+            {},
+          ]
+        : undefined
+    const contactsBefore = 0
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    expect((await run())?.status).toBe('done')
+    const [isGroup, contactId, name, unread, preview, sender, chatId] = (
+      await pg.sql(`SELECT is_group || '|' || coalesce(contact_id::text, 'NULL') || '|' || group_name || '|' || unread_count || '|' || last_message_text || '|' || coalesce(last_message_sender, 'NULL') || '|' || wa_chat_id FROM public.conversations WHERE is_group`)
+    ).split('|')
+    expect([isGroup, contactId, name, unread, chatId]).toEqual(['true', 'NULL', 'Grupo', '5', GROUP])
+    expect([preview, sender]).toEqual(['Combinado', 'NULL']) // the newest is ours
+    expect(await pg.sql(`SELECT string_agg(coalesce(m.sender_name, '(eu)') || ':' || m.sender_type || ':' || m.status, ',' ORDER BY m.created_at) FROM public.messages m JOIN public.conversations c ON c.id = m.conversation_id WHERE c.is_group`)).toBe(
+      'Luciana Alves:customer:delivered,~Vitor:customer:delivered,(eu):agent:read',
+    )
+    // Not CRM contacts, and nothing ran for them.
+    expect(await count(`SELECT count(*) FROM public.contacts WHERE phone IN ('5511944443333', '5511955552222')`)).toBe(contactsBefore)
+    expect([h.flows, h.autos, h.ai, h.hooks]).toEqual([0, 0, 0, 0])
+    expect(await count(`SELECT count(*) FROM public.inbound_fanout_tasks`)).toBe(0)
+  })
+
+  it('imports the ticks, "forwarded", media details and the chat state (archived/pinned) the phone shows', async () => {
+    const ANA_ID = CHATS[0].id
+    historyHook = (chatId) =>
+      chatId === ANA_ID
+        ? [
+            200,
+            [
+              msg(ANA_ID, 'p-1', { fromMe: true, body: 'lido', ack: 3, timestamp: T0 + 10 }),
+              msg(ANA_ID, 'p-2', { fromMe: true, body: 'entregue', ack: 2, timestamp: T0 + 11 }),
+              msg(ANA_ID, 'p-3', {
+                fromMe: true,
+                type: 'document',
+                body: '3 ANTECEDENTES.pdf',
+                isForwarded: true,
+                forwardingScore: 1,
+                ack: 3,
+                media: { mimetype: 'application/pdf', filename: '3 ANTECEDENTES.pdf', sizeBytes: 2_097_152, pageCount: 1, thumbnail: '/9j/AAAA', omitted: true },
+                timestamp: T0 + 12,
+              }),
+              msg(ANA_ID, 'p-4', { type: 'voice', media: { mimetype: 'audio/ogg', durationSeconds: 9, omitted: true }, timestamp: T0 + 13 }),
+            ],
+            0,
+            {},
+          ]
+        : undefined
+    gw.override((req) => {
+      const p = req.path
+      if (/\/chats\?/.test(p)) return [200, [{ ...CHATS[0], archived: true, pinned: false }, { ...CHATS[1], pinned: true }]]
+      const hist = p.match(/\/messages\/([^/]+)\/history/)
+      if (hist) return historyHook?.(decodeURIComponent(hist[1])) ?? [200, HISTORY[decodeURIComponent(hist[1])] ?? []]
+      if (/\/contacts\/248335327858691/.test(p)) return [200, { contactId: CHATS[1].id, phone: '5511922220002' }]
+      if (/profile-picture/.test(p)) return [200, { url: null }]
+      return undefined
+    })
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    expect((await run())?.status).toBe('done')
+    expect(await pg.sql(`SELECT string_agg(message_id || ':' || status || ':' || is_forwarded || ':' || coalesce(media_meta::text, '-'), ' | ' ORDER BY message_id) FROM public.messages WHERE message_id LIKE 'p-%'`)).toBe(
+      [
+        'p-1:read:false:-',
+        'p-2:delivered:false:-',
+        'p-3:read:true:{"mimetype": "application/pdf", "pageCount": 1, "sizeBytes": 2097152, "thumbnail": "/9j/AAAA"}',
+        'p-4:delivered:false:{"mimetype": "audio/ogg", "durationSeconds": 9}',
+      ].join(' | '),
+    )
+    expect(await pg.sql(`SELECT string_agg(ct.phone || ':' || c.archived || ':' || (c.pinned_at IS NOT NULL) || ':' || c.wa_chat_id, ',' ORDER BY ct.phone) FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id`)).toBe(
+      `5511911110001:true:false:${CHATS[0].id},5511922220002:false:true:${CHATS[1].id}`,
+    )
   })
 })

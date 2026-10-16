@@ -51,7 +51,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
-import { previewFor } from '@/lib/whatsapp/message-content'
+import { previewFor, trailingAlbumCount } from '@/lib/whatsapp/message-content'
+import type { MediaMeta } from '@/types'
 import {
   findOrCreateContact,
   findOrCreateConversation,
@@ -74,6 +75,10 @@ import {
   phoneFromChatId,
 } from './events'
 import { requireOpenWaGateway } from './gateway'
+import { findOrCreateGroupConversation, groupMessageRow } from './groups'
+import { forwardFlags, mediaMetaFor, statusFromAck } from './parity'
+import { nameFromWhatsApp } from '@/lib/whatsapp/contact-name'
+import type { ContentMeta } from '@/lib/whatsapp/message-content'
 import type { OpenWaConnectionRow } from './connection'
 
 /** Longer than any run (cron deadline 280 s + one in-flight call), short
@@ -148,6 +153,10 @@ interface ChatRow {
   unread_count: number
   chat_timestamp: number | null
   attempts: number
+  /** The chat list's state (migration 067), applied to the conversation. */
+  is_group?: boolean
+  archived?: boolean
+  pinned?: boolean
 }
 
 /** A message as OpenWA serves it from history (IncomingMessage shape). */
@@ -218,6 +227,15 @@ export function isIndividualChat(chat: Pick<OpenWaChatSummary, 'id' | 'isGroup' 
   if (chat.isGroup) return false
   if (chat.kind && chat.kind !== 'individual') return false
   return /@(c\.us|s\.whatsapp\.net|lid)$/.test(chat.id) && chat.id !== 'status@broadcast'
+}
+
+/**
+ * The chats the inbox mirrors, like the phone's list (phase 5e): one-to-one
+ * chats and groups. Status, broadcast lists and channels stay out.
+ */
+export function isImportableChat(chat: Pick<OpenWaChatSummary, 'id' | 'isGroup' | 'kind'>): boolean {
+  if (isIndividualChat(chat)) return true
+  return chat.id.endsWith('@g.us') && (!chat.kind || chat.kind === 'group')
 }
 
 /** A stored-message row (Baileys fallback) in the history shape. */
@@ -361,7 +379,7 @@ async function listChats(
       if (err instanceof OpenWaError && err.code === 'timeout') throw new GatewayWarming(window)
       throw err
     }
-    const individual = (page ?? []).filter(isIndividualChat)
+    const individual = (page ?? []).filter(isImportableChat)
     if (individual.length) {
       const { error } = await admin.from('whatsapp_history_import_chats').upsert(
         individual.map((c) => ({
@@ -370,6 +388,9 @@ async function listChats(
           name: c.name || null,
           unread_count: c.unreadCount ?? 0,
           chat_timestamp: c.timestamp ?? null,
+          is_group: c.id.endsWith('@g.us'),
+          archived: Boolean(c.archived),
+          pinned: Boolean(c.pinned),
           updated_at: new Date().toISOString(),
         })),
         { onConflict: 'account_id,chat_id' },
@@ -436,14 +457,17 @@ async function importChat(
   chat: ChatRow,
   ctx: RunCtx,
 ): Promise<number | { skipped: string }> {
-  const phone =
-    phoneFromChatId(chat.chat_id) ??
-    (chat.chat_id.endsWith('@lid')
-      ? await withRetry(() => getOpenWaContactPhone(creds, job.session_id, chat.chat_id), ctx).then((r) =>
-          r.phone ? normalizePhone(r.phone) || null : null,
-        )
-      : null)
-  if (!phone) return { skipped: SKIP_NO_PHONE }
+  // A group (phase 5e): listed like on the phone, but not a CRM contact.
+  const isGroup = Boolean(chat.is_group) || chat.chat_id.endsWith('@g.us')
+  const phone = isGroup
+    ? null
+    : (phoneFromChatId(chat.chat_id) ??
+      (chat.chat_id.endsWith('@lid')
+        ? await withRetry(() => getOpenWaContactPhone(creds, job.session_id, chat.chat_id), ctx).then((r) =>
+            r.phone ? normalizePhone(r.phone) || null : null,
+          )
+        : null))
+  if (!isGroup && !phone) return { skipped: SKIP_NO_PHONE }
 
   // The history first: nothing to show, nothing to create.
   const startedAtSec = Math.floor(Date.parse(job.started_at) / 1000)
@@ -456,37 +480,76 @@ async function importChat(
   )
   if (!history.length) return { skipped: SKIP_NO_MESSAGES }
 
-  const name = chat.name && !/^\+?[\d\s()-]+$/.test(chat.name) ? chat.name : ''
-  const contactOutcome = await findOrCreateContact(job.account_id, row.user_id, {
-    phone,
-    name,
-    waUserId: null,
-    waParentUserId: null,
-    waUsername: null,
-  })
-  if (!contactOutcome) throw new HistoryStoreError('contact')
-  if (contactOutcome.wasCreated) {
-    try {
-      await pace(ctx)
-      const pic = await getOpenWaProfilePicture(creds, job.session_id, chat.chat_id)
-      if (pic.url) {
-        await admin.from('contacts').update({ avatar_url: pic.url }).eq('id', contactOutcome.contact.id).eq('account_id', job.account_id)
-      }
-    } catch (err) {
-      // Cosmetic — but a 429 still holds the next calls back.
-      if (err instanceof OpenWaError && err.status === 429) {
-        nextCallAt = Math.max(nextCallAt, ctx.now() + (err.retryAfterMs ?? THROTTLE_FALLBACK_MS))
+  let conversationId: string
+  let conversationCreated: boolean
+  if (isGroup) {
+    await pace(ctx)
+    const group = await findOrCreateGroupConversation(admin, {
+      accountId: job.account_id,
+      userId: row.user_id,
+      chatId: chat.chat_id,
+      name: chat.name,
+      creds,
+      sessionId: job.session_id,
+    })
+    conversationId = group.id
+    conversationCreated = !group.last_message_at
+  } else {
+    // The name the phone shows (contact-name.ts): the chat list's title is
+    // the address-book name when the contact is saved; the contact's own
+    // messages carry the verified and push names.
+    const incoming = history.find((m) => !m.fromMe && m.contact)?.contact
+    const best = nameFromWhatsApp({
+      chatTitle: chat.name,
+      savedName: incoming?.name,
+      isMyContact: incoming?.isMyContact,
+      verifiedName: incoming?.verifiedName,
+      pushName: incoming?.pushName,
+    })
+    const contactOutcome = await findOrCreateContact(job.account_id, row.user_id, {
+      phone: phone!,
+      name: best?.name ?? '',
+      ...(best ? { nameSource: best.source } : {}),
+      pushName: incoming?.pushName ?? null,
+      waUserId: null,
+      waParentUserId: null,
+      waUsername: null,
+    })
+    if (!contactOutcome) throw new HistoryStoreError('contact')
+    if (contactOutcome.wasCreated) {
+      try {
+        await pace(ctx)
+        const pic = await getOpenWaProfilePicture(creds, job.session_id, chat.chat_id)
+        if (pic.url) {
+          await admin.from('contacts').update({ avatar_url: pic.url }).eq('id', contactOutcome.contact.id).eq('account_id', job.account_id)
+        }
+      } catch (err) {
+        // Cosmetic — but a 429 still holds the next calls back.
+        if (err instanceof OpenWaError && err.status === 429) {
+          nextCallAt = Math.max(nextCallAt, ctx.now() + (err.retryAfterMs ?? THROTTLE_FALLBACK_MS))
+        }
       }
     }
+    const conv = await findOrCreateConversation(job.account_id, row.user_id, contactOutcome.contact.id)
+    if (!conv) throw new HistoryStoreError('conversation')
+    conversationId = conv.conversation.id as string
+    conversationCreated = conv.created
   }
-  const conv = await findOrCreateConversation(job.account_id, row.user_id, contactOutcome.contact.id)
-  if (!conv) throw new HistoryStoreError('conversation')
-  const conversationId = conv.conversation.id as string
+  // The phone's state of the chat: its id, archived, pinned (the
+  // chat-state sync keeps them current afterwards).
+  await applyChatState(admin, job.account_id, conversationId, chat)
 
   const now = new Date().toISOString()
   const rows = history.map((m) => {
-    const mapped = mapOpenWaMessage(m)
     const at = typeof m.timestamp === 'number' ? new Date(m.timestamp * 1000).toISOString() : now
+    if (isGroup) {
+      return {
+        ...(groupMessageRow(m, conversationId, chat.chat_id, at) as MessageRow),
+        imported_at: now,
+        ingest_completed_at: now,
+      }
+    }
+    const mapped = mapOpenWaMessage(m)
     return {
       conversation_id: conversationId,
       sender_type: m.fromMe ? 'agent' : 'customer',
@@ -496,9 +559,13 @@ async function importChat(
       media_url: mapped.hasMedia ? openWaMediaProxyUrl(chat.chat_id, m.id!) : null,
       media_type: mapped.hasMedia ? (m.media?.mimetype ?? null) : null,
       message_id: m.id!,
-      status: m.fromMe ? 'sent' : 'delivered',
+      // The ticks the phone shows (WhatsApp's ack), not a flat "sent".
+      status: m.fromMe ? statusFromAck(m.ack) : 'delivered',
       created_at: at,
       revoked_at: mapped.revoked ? at : null,
+      ...forwardFlags(m),
+      media_meta: mediaMetaFor(m),
+      sender_name: null as string | null,
       imported_at: now,
       ingest_completed_at: now,
     }
@@ -553,9 +620,15 @@ async function importChat(
       const { error } = await admin
         .from('conversations')
         .update({
-          last_message_text: previewFor(newest.content_type, newest.content_meta, newest.content_text),
+          last_message_text: previewFor(newest.content_type, newest.content_meta, newest.content_text, {
+            durationSeconds: (newest as { media_meta?: MediaMeta | null }).media_meta?.durationSeconds,
+            pageCount: (newest as { media_meta?: MediaMeta | null }).media_meta?.pageCount,
+            revoked: Boolean(newest.revoked_at),
+            albumCount: trailingAlbumCount([...rows].sort((x, y) => (x.created_at < y.created_at ? 1 : -1))),
+          }),
           last_message_at: newest.created_at,
-          ...(conv.created || !currentAt ? { unread_count: chat.unread_count } : {}),
+          ...(isGroup ? { last_message_sender: newest.sender_name ?? null } : {}),
+          ...(conversationCreated || !currentAt ? { unread_count: chat.unread_count } : {}),
         })
         .eq('id', conversationId)
         .eq('account_id', job.account_id)
@@ -576,6 +649,54 @@ async function importChat(
     .eq('chat_id', chat.chat_id)
   if (chatErr) throw new HistoryStoreError('chat checkpoint', chatErr)
   return inserted
+}
+
+type MessageRow = {
+  conversation_id: string
+  sender_type: string
+  content_type: string
+  content_text: string | null
+  content_meta: ContentMeta | null
+  media_url: string | null
+  media_type: string | null
+  message_id: string
+  status: string
+  created_at: string
+  revoked_at: string | null
+  sender_name: string | null
+}
+
+/**
+ * The phone's state of a chat on its conversation: the chat id, archived,
+ * pinned (pinned_at kept while pinned, so the order among pinned chats is
+ * stable). Shared with the chat-state sync (chat-state.ts).
+ */
+export async function applyChatState(
+  admin: SupabaseClient,
+  accountId: string,
+  conversationId: string,
+  chat: { chat_id: string; archived?: boolean; pinned?: boolean },
+): Promise<void> {
+  const { data: current } = await admin
+    .from('conversations')
+    .select('wa_chat_id, archived, pinned_at')
+    .eq('id', conversationId)
+    .maybeSingle()
+  const c = current as { wa_chat_id: string | null; archived: boolean; pinned_at: string | null } | null
+  const patch: Record<string, unknown> = {}
+  if (!c?.wa_chat_id) patch.wa_chat_id = chat.chat_id
+  if (Boolean(chat.archived) !== Boolean(c?.archived)) patch.archived = Boolean(chat.archived)
+  if (chat.pinned && !c?.pinned_at) patch.pinned_at = new Date().toISOString()
+  if (!chat.pinned && c?.pinned_at) patch.pinned_at = null
+  if (!Object.keys(patch).length) return
+  const { error } = await admin.from('conversations').update(patch).eq('id', conversationId).eq('account_id', accountId)
+  // The chat id can belong to another row already (a duplicate contact): keep the rest.
+  if (error && error.code === '23505' && 'wa_chat_id' in patch) {
+    delete patch.wa_chat_id
+    if (Object.keys(patch).length) await admin.from('conversations').update(patch).eq('id', conversationId)
+  } else if (error) {
+    throw new HistoryStoreError('chat state', error)
+  }
 }
 
 /** Put chats that failed for a transient reason back in the queue. */
@@ -682,7 +803,7 @@ export async function runHistoryImport(
     while (now() < opts.deadline) {
       const { data: next, error: nextErr } = await admin
         .from('whatsapp_history_import_chats')
-        .select('account_id, chat_id, name, unread_count, chat_timestamp, attempts')
+        .select('account_id, chat_id, name, unread_count, chat_timestamp, attempts, is_group, archived, pinned')
         .eq('account_id', job.account_id)
         .eq('status', 'pending')
         .order('chat_timestamp', { ascending: false })

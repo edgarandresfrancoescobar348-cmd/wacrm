@@ -531,6 +531,11 @@ export async function downloadOpenWaMedia(
   return { bytes, mimeType: res.headers.get('content-type') }
 }
 
+/** GET /groups/:groupId — the group's subject (name). */
+export function getOpenWaGroup(creds: OpenWaCredentials, sessionId: string, groupId: string) {
+  return openWaRequest<{ id: string; name: string }>(creds, 'GET', `/sessions/${enc(sessionId)}/groups/${enc(groupId)}`)
+}
+
 export function getOpenWaContactPhone(
   creds: OpenWaCredentials,
   sessionId: string,

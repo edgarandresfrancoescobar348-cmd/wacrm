@@ -234,13 +234,20 @@ export async function sendMessageToConversation(
 
   const contact = conversation.contact;
 
+  // A WhatsApp group (QR mode, phase 5e): sent to the group's chat id —
+  // no contact, no phone variants, QR-code connection only.
+  const groupChatId: string | null = conversation.is_group ? conversation.wa_chat_id ?? null : null;
+  if (conversation.is_group && !groupChatId) {
+    throw new SendMessageError('bad_request', 'Group has no WhatsApp chat id', 400);
+  }
+
   // A contact is addressable by phone number OR by business-scoped user
   // ID. Meta withholds the phone number for a customer who has adopted
   // a WhatsApp username, so those contacts carry only a BSUID and are
   // reached through Meta's `recipient` field instead of `to` (issue
   // #519). Phone stays preferred when we have one: only it supports the
   // trunk-prefix variant retry below.
-  const resolvedTarget = resolveContactSendTarget(contact);
+  const resolvedTarget = groupChatId ? { target: groupChatId, isPhone: false } : resolveContactSendTarget(contact);
   if (!resolvedTarget) {
     throw new SendMessageError(
       'bad_request',
@@ -270,6 +277,9 @@ export async function sendMessageToConversation(
       );
     }
     throw err;
+  }
+  if (groupChatId && transport.provider !== 'openwa') {
+    throw new SendMessageError('bad_request', 'WhatsApp groups are reachable only on the QR-code connection', 400);
   }
 
   // Resolve the reply target to its Meta message_id. The parent must
@@ -408,7 +418,7 @@ export async function sendMessageToConversation(
     throw new SendMessageError('meta_error', `${label}: ${message}`, 502);
   }
 
-  if (hasValidPhone && workingPhone !== sanitizedPhone) {
+  if (contact && hasValidPhone && workingPhone !== sanitizedPhone) {
     console.log(
       `[send-message] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
     );
@@ -481,8 +491,9 @@ export async function sendMessageToConversation(
     .eq('id', conversationId);
 
   // Pause any active Flow run for this contact — the agent stepping in
-  // is the strongest "yield, human is here" signal. Best-effort.
-  try {
+  // is the strongest "yield, human is here" signal. Best-effort. Groups
+  // never run flows.
+  if (contact) try {
     const { error: pauseErr } = await supabaseAdmin()
       .from('flow_runs')
       .update({

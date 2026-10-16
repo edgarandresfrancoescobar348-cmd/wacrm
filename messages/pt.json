@@ -409,7 +409,11 @@
       "masked": "Mensagem não disponível neste aparelho",
       "template": "Modelo",
       "message": "Mensagem",
-      "revokedEmpty": "Esta mensagem foi apagada"
+      "revokedEmpty": "Esta mensagem foi apagada",
+      "voiceWithDuration": "Mensagem de voz ({duration})",
+      "pages": "{count, plural, one {# página} other {# páginas}}",
+      "revoked": "Mensagem apagada",
+      "album": "{count} fotos"
     }
   },
   "Contacts": {

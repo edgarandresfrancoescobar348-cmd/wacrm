@@ -409,7 +409,11 @@
       "masked": "Message not available on this device",
       "template": "Template",
       "message": "Message",
-      "revokedEmpty": "This message was deleted"
+      "revokedEmpty": "This message was deleted",
+      "voiceWithDuration": "Voice message ({duration})",
+      "pages": "{count, plural, one {# page} other {# pages}}",
+      "revoked": "This message was deleted",
+      "album": "{count} photos"
     }
   },
   "Contacts": {

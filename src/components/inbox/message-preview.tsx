@@ -9,6 +9,7 @@
 
 import { useTranslations } from "next-intl";
 import {
+  Ban,
   BarChart3,
   EyeOff,
   FileText,
@@ -56,9 +57,20 @@ export function previewParts(
     case "audio":
       return { icon: Headphones, label: d || t("audio") };
     case "voice":
-      return { icon: Mic, label: t("voice") };
-    case "document":
-      return { icon: FileText, label: d || t("document") };
+      // "Mensagem de voz (0:09)" when the length is known (phase 5e).
+      return { icon: Mic, label: d ? t("voiceWithDuration", { duration: d }) : t("voice") };
+    case "document": {
+      // "3 ANTECEDENTES.pdf · 1 página" — `name|pages`.
+      const sep = d?.lastIndexOf("|") ?? -1;
+      const name = sep >= 0 ? d!.slice(0, sep).trim() : d;
+      const pages = sep >= 0 ? Number(d!.slice(sep + 1)) : NaN;
+      const label = name || t("document");
+      return { icon: FileText, label: Number.isFinite(pages) && pages > 0 ? `${label} · ${t("pages", { count: pages })}` : label };
+    }
+    case "revoked":
+      return { icon: Ban, label: t("revoked") };
+    case "album":
+      return { icon: ImageIcon, label: t("album", { count: Number(d) || 2 }) };
     case "sticker":
       return { icon: Sticker, label: t("sticker") };
     case "location":
