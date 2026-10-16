@@ -36,7 +36,7 @@ describe('openWaSend — one absolute deadline (H2)', () => {
   it('the fetch only gets what the guard left of the deadline', async () => {
     guardDelayMs = 200
     fetchSpy.mockImplementation(
-      (_url, init) =>
+      (_url: unknown, init: unknown) =>
         new Promise((_, reject) => {
           const signal = (init as RequestInit).signal!
           signal.addEventListener('abort', () => reject(signal.reason))
