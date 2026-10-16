@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
     conversation: { id: 'conv-1', unread_count: 0, account_id: 'acc-1' },
     upsertCalls: [] as { row: Record<string, unknown>; options: unknown }[],
     rpcCalls: [] as { name: string; args: Record<string, unknown> }[],
+    fanoutProgress: {} as object,
     fanoutTasks: [] as { id: string; message_id: unknown; payload: unknown; attempts: number; progress: object; claimed: boolean }[],
     afterCallbacks: [] as (() => Promise<void> | void)[],
     automationStarted: 0,
@@ -221,10 +222,15 @@ vi.mock('@supabase/supabase-js', () => ({
           }
         // The fan-out outbox (migration 057): the runner records each step.
         case 'inbound_fanout_tasks': {
+          // Writes return the row's progress, like the real UPDATE … RETURNING.
+          let patch: Record<string, unknown> = {}
           const chain: Record<string, unknown> = {
-            update: () => chain,
+            update: (p: Record<string, unknown>) => ((patch = p), chain),
             eq: () => chain,
-            select: () => Promise.resolve({ data: [{ id: 'task-1' }], error: null }),
+            select: () => {
+              if (patch.progress) h.state.fanoutProgress = patch.progress as object
+              return Promise.resolve({ data: [{ id: 'task-1', progress: h.state.fanoutProgress }], error: null })
+            },
           }
           return chain
         }
@@ -300,6 +306,11 @@ vi.mock('@/lib/whatsapp/template-webhook', () => ({
 vi.mock('@/lib/automations/engine', () => ({
   runAutomationsForTrigger: h.runAutomationsForTrigger,
   resumeAwaitingReply: h.resumeAwaitingReply,
+  // The outbox worker uses the outcome-reporting variant (K4).
+  resumeAwaitingReplyOutcome: async (input: unknown) => ({
+    consumed: Boolean(await h.resumeAwaitingReply(input)),
+    effect: 'ok',
+  }),
 }))
 vi.mock('@/lib/flows/engine', () => ({
   dispatchInboundToFlows: h.dispatchInboundToFlows,
@@ -400,6 +411,7 @@ beforeEach(() => {
   h.state.upsertCalls = []
   h.state.rpcCalls = []
   h.state.fanoutTasks = []
+  h.state.fanoutProgress = {}
   h.state.afterCallbacks = []
   h.state.automationStarted = 0
   h.state.automationCompleted = 0
@@ -429,7 +441,7 @@ beforeEach(() => {
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
   h.resumeAwaitingReply.mockResolvedValue(false)
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
-  h.dispatchWebhookEvent.mockResolvedValue(undefined)
+  h.dispatchWebhookEvent.mockResolvedValue({ effect: 'ok', failedEndpointIds: [], deliveryId: 'd-1', occurredAt: '2026-10-16T00:00:00Z' })
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
     return new Promise<void>((resolve) => {

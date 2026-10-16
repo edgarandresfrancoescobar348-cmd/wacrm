@@ -1,3 +1,4 @@
+import type { EffectOutcome } from '@/lib/effects'
 import type {
   Automation,
   AutomationLogStepResult,
@@ -68,7 +69,10 @@ export interface DispatchInput {
  * All errors are caught and logged; per-automation failures are
  * recorded into automation_logs with status='failed'.
  */
-export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
+export async function runAutomationsForTrigger(input: DispatchInput): Promise<EffectOutcome> {
+  // Set once the first automation starts executing: a failure from then
+  // on may follow sent messages (K4).
+  let started = false
   try {
     const db = supabaseAdmin()
 
@@ -88,11 +92,11 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
         .maybeSingle()
       if (ownErr) {
         console.error('[automations] contact ownership check failed:', ownErr)
-        return
+        return 'retry'
       }
       if (!owned) {
         console.warn('[automations] contact not in account, refusing dispatch', input.contactId)
-        return
+        return 'noop'
       }
     }
 
@@ -111,14 +115,14 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
         .maybeSingle()
       if (convErr) {
         console.error('[automations] conversation ownership check failed:', convErr)
-        return
+        return 'retry'
       }
       if (!conv) {
         console.warn(
           '[automations] conversation not in account, refusing dispatch',
           input.context.conversation_id,
         )
-        return
+        return 'noop'
       }
     }
 
@@ -131,20 +135,29 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
 
     if (error) {
       console.error('[automations] fetch failed:', error)
-      return
+      return 'retry'
     }
-    if (!automations || automations.length === 0) return
+    if (!automations || automations.length === 0) return 'noop'
 
+    let ran = false
+    let uncertain = false
     for (const automation of automations as Automation[]) {
       if (!triggerMatches(automation, input.context)) continue
+      started = true
+      ran = true
       try {
         await executeAutomation(automation, input)
       } catch (err) {
+        // The run keeps its own log; whether its steps went out is not
+        // known here — never re-run the whole trigger blindly.
         console.error('[automations] execute failed:', automation.id, err)
+        uncertain = true
       }
     }
+    return uncertain ? 'uncertain' : ran ? 'ok' : 'noop'
   } catch (err) {
     console.error('[automations] dispatch failed:', err)
+    return started ? 'uncertain' : 'retry'
   }
 }
 
@@ -222,6 +235,17 @@ export interface AwaitingReplyInput {
  * Must never throw — it runs inside the webhook's `after()` block.
  */
 export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<boolean> {
+  return (await resumeAwaitingReplyOutcome(input)).consumed
+}
+
+/**
+ * {@link resumeAwaitingReply} with what happened (K4): `retry` when the
+ * lookup failed before anything was claimed, `uncertain` when a claimed
+ * run failed part-way (its steps may have sent).
+ */
+export async function resumeAwaitingReplyOutcome(
+  input: AwaitingReplyInput,
+): Promise<{ consumed: boolean; effect: EffectOutcome }> {
   let claimedId: string | null = null
   try {
     const db = supabaseAdmin()
@@ -240,21 +264,22 @@ export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<bo
       .limit(1)
     if (error) {
       console.error('[automations] awaiting-reply lookup failed:', error)
-      return false
+      return { consumed: false, effect: 'retry' }
     }
     const pending = rows?.[0] as PendingRow | undefined
-    if (!pending) return false
+    if (!pending) return { consumed: false, effect: 'noop' }
 
     // Claim it. Gated on the CURRENT status so two deliveries racing on
     // the same parked run can't both resume it.
-    const { data: claim } = await db
+    const { data: claim, error: claimErr } = await db
       .from('automation_pending_executions')
       .update({ status: 'running' })
       .eq('id', pending.id)
       .eq('status', 'awaiting_reply')
       .select('id')
       .maybeSingle()
-    if (!claim) return false
+    if (claimErr) return { consumed: false, effect: 'retry' }
+    if (!claim) return { consumed: false, effect: 'noop' }
     claimedId = pending.id
 
     const { data: automation } = await db
@@ -268,7 +293,7 @@ export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<bo
       // message go through the normal triggers instead.
       await markPending(pending.id, 'expired')
       await setLogError(pending.log_id, tErr('pausedWhileWaitingForReply'))
-      return false
+      return { consumed: false, effect: 'ok' }
     }
 
     await runResumed({
@@ -289,16 +314,16 @@ export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<bo
       triggerEvent: 'resumed_reply',
     })
     await markPending(pending.id, 'done')
-    return true
+    return { consumed: true, effect: 'ok' }
   } catch (err) {
     console.error('[automations] awaiting-reply resume failed:', err)
     if (claimedId) {
       // The message was already taken by the claim; report it consumed so
       // it doesn't ALSO fan out to other automations.
       await markPending(claimedId, 'failed').catch(() => {})
-      return true
+      return { consumed: true, effect: 'uncertain' }
     }
-    return false
+    return { consumed: false, effect: 'retry' }
   }
 }
 

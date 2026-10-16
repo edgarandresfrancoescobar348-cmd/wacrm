@@ -18,6 +18,7 @@
 //     route's duration budget without a real durability guarantee.
 // ============================================================
 
+import type { EffectOutcome } from '@/lib/effects';
 import { randomUUID } from 'node:crypto';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -39,47 +40,74 @@ interface EndpointRow {
   secret: string;
 }
 
+export interface WebhookDispatchResult {
+  /** ok: every targeted endpoint accepted it · noop: none subscribed ·
+   *  retry: the lookup failed, or some endpoints didn't accept it. */
+  effect: EffectOutcome;
+  /** Endpoints that didn't accept it (all of them when the lookup failed: null). */
+  failedEndpointIds: string[] | null;
+  /** The delivery's identity — resend it with the same id (K4). */
+  deliveryId: string;
+  occurredAt: string;
+}
+
 /**
  * Deliver `event` (+ `data`) to every active endpoint of `accountId`
- * subscribed to it. Never throws.
+ * subscribed to it. Never throws; says what happened.
+ *
+ * A durable caller (the inbound fan-out outbox) passes back
+ * `deliveryId`/`occurredAt` and `endpointIds` to re-deliver the SAME
+ * delivery to the endpoints that didn't take it — receivers dedupe on
+ * the id (deliveries are at-least-once).
  */
 export async function dispatchWebhookEvent(
   db: SupabaseClient,
   accountId: string,
   event: WebhookEvent,
-  data: unknown
-): Promise<void> {
+  data: unknown,
+  opts: { deliveryId?: string; occurredAt?: string; endpointIds?: string[] } = {}
+): Promise<WebhookDispatchResult> {
+  const deliveryId = opts.deliveryId ?? randomUUID();
+  const occurredAt = opts.occurredAt ?? new Date().toISOString();
   try {
-    const { data: rows, error } = await db
+    let query = db
       .from('webhook_endpoints')
       .select('id, url, secret')
       .eq('account_id', accountId)
       .eq('is_active', true)
       .contains('events', [event]);
+    if (opts.endpointIds) query = query.in('id', opts.endpointIds);
+    const { data: rows, error } = await query;
 
-    if (error || !rows || rows.length === 0) return;
+    if (error) return { effect: 'retry', failedEndpointIds: null, deliveryId, occurredAt };
+    if (!rows || rows.length === 0) return { effect: 'noop', failedEndpointIds: [], deliveryId, occurredAt };
 
     // Sign the exact bytes we send so a receiver can recompute the
     // HMAC over the raw request body. `id` is a per-delivery uuid the
     // receiver can dedupe on (deliveries are at-least-once and may
     // repeat / arrive out of order).
     const payload = JSON.stringify({
-      id: randomUUID(),
+      id: deliveryId,
       event,
-      occurred_at: new Date().toISOString(),
+      occurred_at: occurredAt,
       account_id: accountId,
       data,
     });
     const tsSeconds = Math.floor(Date.now() / 1000);
 
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       (rows as EndpointRow[]).map((row) =>
         deliverOne(db, row, event, payload, tsSeconds)
       )
     );
+    const failed = (rows as EndpointRow[])
+      .filter((_, i) => results[i].status !== 'fulfilled' || (results[i] as PromiseFulfilledResult<boolean | null>).value === false)
+      .map((row) => row.id);
+    return { effect: failed.length ? 'retry' : 'ok', failedEndpointIds: failed, deliveryId, occurredAt };
   } catch (err) {
     // Never let a delivery problem bubble into the webhook response.
     console.error('[webhooks] dispatch failed:', err);
+    return { effect: 'retry', failedEndpointIds: null, deliveryId, occurredAt };
   }
 }
 
@@ -89,14 +117,16 @@ async function deliverOne(
   event: WebhookEvent,
   payload: string,
   tsSeconds: number
-): Promise<void> {
+): Promise<boolean | null> {
+  // true: accepted · false: not accepted (retry later) · null: the
+  // endpoint can't be delivered to at all (counted, never retried).
   // SSRF guard: refuse to POST to a host that resolves to a private /
   // loopback / link-local address. Counts as a failure so a
   // misconfigured internal URL surfaces and eventually auto-disables.
   if (!(await isDeliverableUrl(row.url))) {
     console.warn('[webhooks] refusing non-public delivery target for', row.id);
     await recordFailure(db, row);
-    return;
+    return null;
   }
 
   let secret: string;
@@ -107,7 +137,7 @@ async function deliverOne(
     // signature — count it as a failure so it eventually auto-disables.
     console.error('[webhooks] secret decrypt failed for', row.id, err);
     await recordFailure(db, row);
-    return;
+    return null;
   }
 
   try {
@@ -133,12 +163,14 @@ async function deliverOne(
       .from('webhook_endpoints')
       .update({ failure_count: 0, last_delivery_at: new Date().toISOString() })
       .eq('id', row.id);
+    return true;
   } catch (err) {
     console.warn(
       `[webhooks] delivery to ${row.id} failed:`,
       err instanceof Error ? err.message : err
     );
     await recordFailure(db, row);
+    return false;
   }
 }
 

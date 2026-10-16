@@ -15,28 +15,34 @@ const h = vi.hoisted(() => ({
   webhooks: 0,
   flowDelayMs: 0,
   aiFailOnce: false,
+  flowEffect: 'ok' as 'ok' | 'noop' | 'retry' | 'uncertain',
 }))
 vi.mock('@/lib/flows/engine', () => ({
   dispatchInboundToFlows: vi.fn(async () => {
     h.flows++
     if (h.flowDelayMs) await new Promise((r) => setTimeout(r, h.flowDelayMs))
-    return { consumed: false }
+    return { consumed: false, effect: h.flowEffect }
   }),
 }))
 vi.mock('@/lib/automations/engine', () => ({
   resumeAwaitingReply: vi.fn(async () => false),
-  runAutomationsForTrigger: vi.fn(async () => undefined),
+  resumeAwaitingReplyOutcome: vi.fn(async () => ({ consumed: false, effect: 'noop' })),
+  runAutomationsForTrigger: vi.fn(async () => 'noop'),
 }))
 vi.mock('@/lib/ai/auto-reply', () => ({
   dispatchInboundToAiReply: vi.fn(async () => {
     if (h.aiFailOnce) {
+      // The executor contract (K4): a transient failure before any send.
       h.aiFailOnce = false
-      throw new Error('worker crashed in the AI step')
+      return 'retry'
     }
     h.ai++
+    return 'ok'
   }),
 }))
-vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: vi.fn(async () => void h.webhooks++) }))
+vi.mock('@/lib/webhooks/deliver', () => ({
+  dispatchWebhookEvent: vi.fn(async () => (h.webhooks++, { effect: 'ok', failedEndpointIds: [], deliveryId: 'd-1', occurredAt: '2026-10-16T00:00:00Z' })),
+}))
 
 const { runFanoutForMessage, drainInboundFanout } = await import('@/lib/whatsapp/inbound/fanout')
 
@@ -64,6 +70,17 @@ describe.skipIf(!pgAvailable())('inbound fan-out outbox (H1)', () => {
     await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}');`)
     await pg.migrate('053_inbound_completion.sql')
     await pg.migrate('057_inbound_fanout_outbox.sql')
+    // `held` (and the K5 repair) — skipped for the "before" run.
+    if (process.env.PROVE_OLD_FANOUT !== '1') {
+      await pg.sql(`CREATE TABLE IF NOT EXISTS public.whatsapp_openwa_config(id uuid, account_id uuid PRIMARY KEY, base_url text, api_key text,
+        engine text, session_id text, session_name text, webhook_id text, webhook_secret text, status text, phone text, push_name text,
+        last_error text, restriction jsonb, reconnect_attempts int, status_updated_at timestamptz, connected_at timestamptz,
+        broadcast_delay_ms int, updated_at timestamptz, status_event_at timestamptz);
+        CREATE TABLE IF NOT EXISTS public.whatsapp_config(account_id uuid PRIMARY KEY, user_id uuid, provider text, status text,
+        connected_at timestamptz, updated_at timestamptz);
+        ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS status text DEFAULT 'open';`)
+      await pg.migrate('060_fanout_outcomes.sql')
+    }
     db = new PgSupabase(pg)
   }, 60_000)
   afterAll(() => pg?.stop())
@@ -74,6 +91,7 @@ describe.skipIf(!pgAvailable())('inbound fan-out outbox (H1)', () => {
     h.webhooks = 0
     h.flowDelayMs = 0
     h.aiFailOnce = false
+    h.flowEffect = 'ok'
     db.clearFailures()
     await pg.sql(`
       DELETE FROM public.inbound_fanout_tasks; DELETE FROM public.messages; DELETE FROM public.conversations;
@@ -139,6 +157,49 @@ describe.skipIf(!pgAvailable())('inbound fan-out outbox (H1)', () => {
     await pg.sql(`UPDATE public.inbound_fanout_tasks SET lease_until = now() - interval '1 second'`)
     expect(await drainInboundFanout(db.asClient())).toBe(1)
     expect(h.flows).toBe(1)
+  })
+
+  // K3: a runner that lost its lease never runs a step — not even one
+  // the new owner has not reached; it stops at its next ownership check.
+  it('a stale runner that lost the task executes nothing', async () => {
+    await complete()
+    const { data } = await db.rpc('claim_inbound_fanout', { p_message_id: MSG, p_limit: 1, p_min_age_seconds: 0, p_lease_seconds: 300 })
+    const stale = (data as unknown[])[0]
+    // its lease runs out; another runner takes over and completes it
+    await pg.sql(`UPDATE public.inbound_fanout_tasks SET lease_until = now() - interval '1 second'`)
+    await runFanoutForMessage(db.asClient(), MSG)
+    expect(h.flows).toBe(1)
+    // the stale runner wakes up with its old copy
+    const { runFanoutTask } = await import('@/lib/whatsapp/inbound/fanout')
+    await runFanoutTask(db.asClient(), stale as Parameters<typeof runFanoutTask>[1])
+    expect(h.flows).toBe(1)
+    expect(h.webhooks).toBe(1)
+    expect(await pg.sql(`SELECT status FROM public.inbound_fanout_tasks`)).toBe('done')
+  })
+
+  it('a stale runner stops before a step the new owner already recorded', async () => {
+    await complete()
+    const { data } = await db.rpc('claim_inbound_fanout', { p_message_id: MSG, p_limit: 1, p_min_age_seconds: 0, p_lease_seconds: 300 })
+    const stale = (data as unknown[])[0]
+    // the new owner ran the flows step and is still on it
+    await pg.sql(`UPDATE public.inbound_fanout_tasks SET attempts = attempts + 1, progress = '{"flows":{"consumed":false}}', lease_until = now() + interval '5 minutes'`)
+    const { runFanoutTask } = await import('@/lib/whatsapp/inbound/fanout')
+    await runFanoutTask(db.asClient(), stale as Parameters<typeof runFanoutTask>[1])
+    expect(h.flows).toBe(0)
+    expect(await pg.sql(`SELECT status FROM public.inbound_fanout_tasks`)).toBe('running')
+  })
+
+  // K4: an uncertain outcome holds the task for a person — never "done",
+  // never retried automatically.
+  it('an uncertain step holds the task', async () => {
+    await complete()
+    h.flowEffect = 'uncertain'
+    await runFanoutForMessage(db.asClient(), MSG)
+    expect(await pg.sql(`SELECT status FROM public.inbound_fanout_tasks`)).toBe('held')
+    await pg.sql(`UPDATE public.inbound_fanout_tasks SET created_at = now() - interval '5 minutes', next_attempt_at = now() - interval '1 second'`)
+    await drainInboundFanout(db.asClient())
+    expect(h.flows).toBe(1)
+    expect(h.webhooks).toBe(0)
   })
 
   it('the cron leaves a fresh task to the request that is running it', async () => {

@@ -1,3 +1,4 @@
+import type { EffectOutcome } from '@/lib/effects'
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
@@ -45,7 +46,7 @@ interface DispatchArgs {
  */
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
-): Promise<void> {
+): Promise<EffectOutcome> {
   const {
     accountId,
     conversationId,
@@ -54,11 +55,14 @@ export async function dispatchInboundToAiReply(
     inboundMessageId,
   } = args
 
+  // Set once a reply slot is claimed: from then on a failure may follow
+  // a send, so it is uncertain rather than retryable (K4).
+  let claimedSlot = false
   try {
     const db = supabaseAdmin()
 
     const config = await loadAiConfig(db, accountId)
-    if (!config || !config.autoReplyEnabled) return
+    if (!config || !config.autoReplyEnabled) return 'noop'
 
     // Deterministic, user-configured responders win over the LLM — the
     // caller already excludes messages a Flow consumed. Message-level
@@ -68,29 +72,31 @@ export async function dispatchInboundToAiReply(
     // avoid double-texting the customer. (Relationship triggers like
     // `first_inbound_message` don't count — they're not per-message
     // auto-responders.)
-    const { data: autoResponders } = await db
+    const { data: autoResponders, error: respErr } = await db
       .from('automations')
       .select('id')
       .eq('account_id', accountId)
       .eq('is_active', true)
       .in('trigger_type', ['new_message_received', 'keyword_match'])
       .limit(1)
-    if (autoResponders && autoResponders.length > 0) return
+    if (respErr) return 'retry'
+    if (autoResponders && autoResponders.length > 0) return 'noop'
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
       .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
       .eq('id', conversationId)
       .maybeSingle()
-    if (convErr || !conv) return
-    if (conv.assigned_agent_id) return // a human owns this thread
-    if (conv.ai_autoreply_disabled) return // handed off / turned off here
+    if (convErr) return 'retry'
+    if (!conv) return 'noop'
+    if (conv.assigned_agent_id) return 'noop' // a human owns this thread
+    if (conv.ai_autoreply_disabled) return 'noop' // handed off / turned off here
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return 'noop'
 
     const messages = await buildConversationContext(db, conversationId)
-    if (messages.length === 0) return
+    if (messages.length === 0) return 'noop'
 
     // Account-wide throttle on the shared BYO key. The per-conversation
     // cap bounds one thread; this bounds a burst across many threads (a
@@ -105,7 +111,7 @@ export async function dispatchInboundToAiReply(
       console.warn(
         `[ai auto-reply] account ${accountId} hit the per-account rate limit — skipping this inbound.`,
       )
-      return
+      return 'noop'
     }
 
     // Every gate has passed — we're committed to attempting a reply, so
@@ -173,8 +179,9 @@ export async function dispatchInboundToAiReply(
       if (config.handoffAgentId && !conv.assigned_agent_id) {
         update.assigned_agent_id = config.handoffAgentId
       }
-      await db.from('conversations').update(update).eq('id', conversationId)
-      return
+      const { error: handoffErr } = await db.from('conversations').update(update).eq('id', conversationId)
+      // Nothing was sent; the hand-off can simply be done again.
+      return handoffErr ? 'retry' : 'ok'
     }
 
     // Atomically claim a reply slot: the cap check + increment happen in
@@ -195,9 +202,10 @@ export async function dispatchInboundToAiReply(
       // service role, or the migration not applied. Log it loudly: a
       // silent return makes "auto-reply never fires" undiagnosable.
       console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
-      return
+      return 'retry'
     }
-    if (claimed !== true) return // lost the per-conversation cap race
+    if (claimed !== true) return 'noop' // lost the per-conversation cap race
+    claimedSlot = true
 
     await engineSendText({
       accountId,
@@ -207,8 +215,12 @@ export async function dispatchInboundToAiReply(
       text,
       aiGenerated: true,
     })
+    return 'ok'
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
+    // Before the slot: the model call or a read failed — nothing sent.
+    // After it: the reply may be out.
+    return claimedSlot ? 'uncertain' : 'retry'
   }
 }
 

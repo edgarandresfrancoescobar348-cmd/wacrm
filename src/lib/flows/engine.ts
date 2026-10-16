@@ -195,6 +195,28 @@ export function evaluateConditionPredicate(args: {
 
 type AdminClient = ReturnType<typeof supabaseAdmin>;
 
+/** A read the dispatcher needs failed (not "nothing found"). */
+export class FlowLookupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FlowLookupError";
+  }
+}
+
+async function loadAllNodesOrThrow(
+  db: AdminClient,
+  flowId: string,
+): Promise<Map<string, FlowNodeRow>> {
+  const { data, error } = await db
+    .from("flow_nodes")
+    .select("*")
+    .eq("flow_id", flowId);
+  if (error) throw new FlowLookupError(`loadAllNodes: ${error.message}`);
+  const map = new Map<string, FlowNodeRow>();
+  for (const row of (data ?? []) as FlowNodeRow[]) map.set(row.node_key, row);
+  return map;
+}
+
 async function loadActiveRunForContact(
   db: AdminClient,
   accountId: string,
@@ -217,8 +239,9 @@ async function loadActiveRunForContact(
     .order("started_at", { ascending: false })
     .limit(1);
   if (error) {
-    console.error("[flows] loadActiveRunForContact error:", error.message);
-    return null;
+    // Not "no run": the lookup failed. Thrown so the caller can tell a
+    // transient failure (retry the message later) from no match (K4).
+    throw new FlowLookupError(`loadActiveRunForContact: ${error.message}`);
   }
   const rows = (data as FlowRunRow[] | null) ?? [];
   return rows[0] ?? null;
@@ -315,20 +338,22 @@ async function isDuplicateInbound(
   // Fetch ALL run ids for this contact in this account (active +
   // historical). Bounded by how many flows the customer has been
   // through — small.
-  const { data: runs } = await db
+  const { data: runs, error: runsErr } = await db
     .from("flow_runs")
     .select("id")
     .eq("account_id", accountId)
     .eq("contact_id", contactId);
+  if (runsErr) throw new FlowLookupError(`isDuplicateInbound: ${runsErr.message}`);
   if (!runs?.length) return false;
   const runIds = runs.map((r) => (r as { id: string }).id);
 
-  const { count } = await db
+  const { count, error: countErr } = await db
     .from("flow_run_events")
     .select("id", { count: "exact", head: true })
     .in("flow_run_id", runIds)
     .eq("event_type", "reply_received")
     .filter("payload->>meta_message_id", "eq", metaMessageId);
+  if (countErr) throw new FlowLookupError(`isDuplicateInbound: ${countErr.message}`);
   return (count ?? 0) > 0;
 }
 
@@ -357,7 +382,8 @@ async function findEntryFlow(
     .eq("account_id", accountId)
     .eq("status", "active")
     .order("created_at", { ascending: true });
-  if (error || !flows) return null;
+  if (error) throw new FlowLookupError(`findEntryFlow: ${error.message}`);
+  if (!flows) return null;
 
   const typed = flows as FlowRow[];
   for (const flow of typed) {
@@ -922,6 +948,7 @@ export async function dispatchInboundToFlows(
   input: DispatchInboundInput & { isFirstInboundMessage: boolean },
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
+  let stage: "lookup" | "run" = "lookup";
   try {
     const activeRun = await loadActiveRunForContact(
       db,
@@ -944,12 +971,14 @@ export async function dispatchInboundToFlows(
           consumed: true,
           flow_run_id: activeRun.id,
           outcome: "duplicate_inbound_ignored",
+          effect: "noop",
         };
       }
       // One SELECT for the whole flow's nodes — advance loop is now
       // in-memory. See loadAllNodes.
-      const nodes = await loadAllNodes(db, activeRun.flow_id);
-      return handleReplyForActiveRun(db, activeRun, input.message, nodes);
+      const nodes = await loadAllNodesOrThrow(db, activeRun.flow_id);
+      stage = "run";
+      return { ...(await handleReplyForActiveRun(db, activeRun, input.message, nodes)), effect: "ok" };
     }
 
     // No active run → look for a flow whose entry trigger matches.
@@ -960,16 +989,27 @@ export async function dispatchInboundToFlows(
       input.isFirstInboundMessage,
     );
     if (!flow || !flow.entry_node_id) {
-      return { consumed: false, outcome: "no_match" };
+      return { consumed: false, outcome: "no_match", effect: "noop" };
     }
-    const nodes = await loadAllNodes(db, flow.id);
-    return startNewRun(db, flow, input, nodes);
+    const nodes = await loadAllNodesOrThrow(db, flow.id);
+    const started = await startNewRun(db, flow, input, nodes);
+    return {
+      ...started,
+      effect: started.outcome === "duplicate_inbound_ignored" ? "noop" : "ok",
+    };
   } catch (err) {
     console.error(
       "[flows] dispatchInboundToFlows threw:",
       err instanceof Error ? err.message : err,
     );
-    return { consumed: false, outcome: "no_match" };
+    // A failed lookup / an insert that didn't happen: nothing ran, the
+    // message can be dispatched again. A failure while a run was being
+    // advanced may have sent messages: uncertain (K4).
+    return {
+      consumed: false,
+      outcome: "no_match",
+      effect: err instanceof FlowLookupError && stage === "lookup" ? "retry" : "uncertain",
+    };
   }
 }
 
@@ -1178,8 +1218,8 @@ async function startNewRun(
     if (msg.includes("23505") || msg.includes("duplicate key")) {
       return { consumed: true, outcome: "duplicate_inbound_ignored" };
     }
-    console.error("[flows] startNewRun insert error:", insErr.message);
-    return { consumed: false, outcome: "no_match" };
+    // Nothing was inserted, nothing sent: a transient failure to retry.
+    throw new FlowLookupError(`startNewRun insert: ${insErr.message}`);
   }
   const run = inserted as FlowRunRow;
   await logEvent(db, run.id, "started", flow.entry_node_id, {

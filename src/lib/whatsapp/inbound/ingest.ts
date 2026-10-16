@@ -27,7 +27,7 @@ import { supabaseAdmin } from '@/lib/flows/admin-client'
 import type { WhatsAppProvider } from '@/lib/whatsapp/transport/types'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { matchNumberedMenuReply } from './numbered-menu'
-import { runFanoutForMessage, runFanoutWithoutOutbox, type InboundFanoutPayload } from './fanout'
+import { runFanoutForMessage, type InboundFanoutPayload } from './fanout'
 
 export interface InboundContent {
   contentText: string | null
@@ -588,10 +588,31 @@ export async function ingestInboundMessage(
   // ONLY on a genuine first insert — an empty result means this delivery
   // was a replay. This is the single idempotency boundary that must sit
   // BEFORE the unread bump and all downstream fan-out below (issue #367).
+  // The fan-out inputs are stored WITH the message (K5): if completing
+  // it fails after the provider was acknowledged, the cron completes it
+  // from here (complete_stale_inbound_messages) — the fan-out then runs
+  // from the outbox, never from a side channel.
+  const lastMessageText = contentText || `[${inbound.type}]`
+  const storedFanout: InboundFanoutPayload = {
+    accountId,
+    configOwnerUserId,
+    contactId: contactRecord.id,
+    conversationId: conversation.id,
+    providerMessageId: inbound.messageId,
+    contentType,
+    contentText: contentText ?? null,
+    inboundText: contentText ?? inbound.text ?? '',
+    interactiveReplyId: interactiveReplyId ?? null,
+    isFirstInboundMessage: (priorCustomerMsgCount ?? 0) === 0,
+    contactWasCreated: contactOutcome.wasCreated,
+    botsEnabled: options.runBots !== false,
+    lastMessageText,
+  }
   const { data: insertedRows, error: msgError } = await supabaseAdmin()
     .from('messages')
     .upsert(
       {
+        ingest_fanout: storedFanout,
         conversation_id: conversation.id,
         sender_type: 'customer',
         content_type: contentType,
@@ -676,20 +697,7 @@ export async function ingestInboundMessage(
   // A message that arrived on the account's INACTIVE connection (the
   // number it switched away from) is stored and surfaced, but no bot
   // answers it: the reply would go out from the other number.
-  const fanout: InboundFanoutPayload = {
-    accountId,
-    configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    providerMessageId: inbound.messageId,
-    contentType,
-    contentText: contentText ?? null,
-    inboundText: contentText ?? inbound.text ?? '',
-    interactiveReplyId: interactiveReplyId ?? null,
-    isFirstInboundMessage,
-    contactWasCreated: contactOutcome.wasCreated,
-    botsEnabled: options.runBots !== false,
-  }
+  const fanout: InboundFanoutPayload = { ...storedFanout, isFirstInboundMessage }
 
   // Update conversation + mark the message complete + enqueue its
   // fan-out, atomically and only once (migration 057's
@@ -701,7 +709,7 @@ export async function ingestInboundMessage(
     'complete_inbound_message',
     {
       p_conversation_id: conversation.id,
-      p_last_message_text: contentText || `[${inbound.type}]`,
+      p_last_message_text: lastMessageText,
       p_message_id: messageRowId,
       p_account_id: accountId,
       p_fanout: fanout,
@@ -711,11 +719,30 @@ export async function ingestInboundMessage(
   if (convError) {
     console.error('Error updating conversation:', convError)
     if (options.throwOnFailure) throw new IngestFailure('conversation summary', convError)
-    // Not retried by the provider (Meta is acknowledged up front): run
-    // the fan-out from this request rather than drop it.
-    const run = () => runFanoutWithoutOutbox(supabaseAdmin(), fanout)
-    if (options.deferFanOut) options.deferFanOut(run)
-    else await run().catch((err) => console.error('[webhook] fan-out failed:', err))
+    // Not redelivered by the provider (Meta is acknowledged up front).
+    // The error may be a lost answer to a completion that DID commit:
+    // find out, and only ever run the fan-out through its outbox task
+    // (K5). If it really didn't complete, try once more; failing that,
+    // the cron completes it from the inputs stored with the message.
+    const { data: state } = await supabaseAdmin()
+      .from('messages')
+      .select('ingest_completed_at')
+      .eq('id', messageRowId)
+      .maybeSingle()
+    if (!state?.ingest_completed_at) {
+      const { error: againErr } = await supabaseAdmin().rpc('complete_inbound_message', {
+        p_conversation_id: conversation.id,
+        p_last_message_text: lastMessageText,
+        p_message_id: messageRowId,
+        p_account_id: accountId,
+        p_fanout: fanout,
+      })
+      if (againErr) {
+        console.error('[webhook] completion failed twice; the cron completes it:', againErr.message)
+        return
+      }
+    }
+    await scheduleFanout(messageRowId, options)
     return
   }
 

@@ -137,6 +137,19 @@ class Builder implements PromiseLike<Result> {
     else this.where.push(`NOT (t.${ident(c)} ${opr === 'eq' ? '=' : opr} ${lit(v)})`)
     return this
   }
+  /** Array containment (`col @> value`). */
+  contains(c: string, v: unknown) {
+    this.where.push(`t.${ident(c)} @> ${lit(v)}`)
+    return this
+  }
+  /** `.filter('payload->>key', 'eq', v)` — JSON paths and plain columns. */
+  filter(c: string, opr: string, v: unknown) {
+    const col = c.includes('->') ? `t.${c.replace(/^(\w+)/, (m) => ident(m))}` : `t.${ident(c)}`
+    const sqlOp = { eq: '=', neq: '<>', lt: '<', lte: '<=', gt: '>', gte: '>=' }[opr]
+    if (!sqlOp) throw new Error(`pg-supabase: unsupported filter operator ${opr}`)
+    this.where.push(`${col} ${sqlOp} ${lit(v)}`)
+    return this
+  }
   lt(c: string, v: unknown) {
     this.where.push(`t.${ident(c)} < ${lit(v)}`)
     return this

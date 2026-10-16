@@ -350,6 +350,8 @@ export interface DispatchInboundResult {
   consumed: boolean;
   /** For diagnostics / logging — null when not consumed. */
   flow_run_id?: string;
+  /** What the dispatch did, for durable callers (EffectOutcome, K4). */
+  effect?: import("@/lib/effects").EffectOutcome;
   /** For diagnostics. */
   outcome?:
     | "advanced"

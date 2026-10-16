@@ -7,7 +7,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 type Row = Record<string, unknown>
 
 const h = vi.hoisted(() => ({
-  dispatchWebhookEvent: vi.fn(async () => undefined),
+  loseCompletionAnswer: false,
+  completionFails: 0,
+  dispatchWebhookEvent: vi.fn(async () => ({ effect: 'ok', failedEndpointIds: [], deliveryId: 'd-1', occurredAt: '2026-10-16T00:00:00Z' })),
   tables: {} as Record<string, Row[]>,
   failInsertOn: null as string | null,
   rpcCalls: [] as { name: string; args: Record<string, unknown> }[],
@@ -18,7 +20,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/automations/engine', () => ({
   resumeAwaitingReply: vi.fn(async () => false),
-  runAutomationsForTrigger: vi.fn(async () => undefined),
+  resumeAwaitingReplyOutcome: vi.fn(async () => ({ consumed: false, effect: 'noop' })),
+  runAutomationsForTrigger: vi.fn(async () => 'noop'),
 }))
 vi.mock('@/lib/flows/engine', () => ({ dispatchInboundToFlows: h.dispatchInboundToFlows }))
 vi.mock('@/lib/ai/auto-reply', () => ({ dispatchInboundToAiReply: vi.fn() }))
@@ -103,6 +106,10 @@ vi.mock('@/lib/flows/admin-client', () => ({
       if (h.rpcError) return { data: null, error: h.rpcError }
       // Migration 057's completion (over 053): mark + bump only if not
       // complete yet, and enqueue the fan-out task in the same step.
+      if (name === 'complete_inbound_message' && args.p_message_id && h.completionFails) {
+        h.completionFails--
+        return { data: null, error: { message: 'connection reset' } }
+      }
       if (name === 'complete_inbound_message' && args.p_message_id) {
         const msg = (h.tables.messages ?? []).find((m) => m.id === args.p_message_id)
         if (!msg || msg.ingest_completed_at) return { data: false, error: null }
@@ -112,6 +119,11 @@ vi.mock('@/lib/flows/admin-client', () => ({
         if (!tasks.some((t) => t.message_id === args.p_message_id)) {
           tasks.push({ id: `task-${tasks.length + 1}`, message_id: args.p_message_id, payload: args.p_fanout,
             status: 'pending', attempts: 0, progress: {} })
+        }
+        // The transaction committed, but its answer is lost (K5).
+        if (h.loseCompletionAnswer) {
+          h.loseCompletionAnswer = false
+          return { data: null, error: { message: 'socket hang up' } }
         }
         return { data: true, error: null }
       }
@@ -164,6 +176,8 @@ beforeEach(() => {
   }
   h.failInsertOn = null
   h.rpcCalls = []
+  h.loseCompletionAnswer = false
+  h.completionFails = 0
   h.rpcError = null
   h.bumps = 0
   h.dispatchInboundToFlows.mockClear()
@@ -366,7 +380,7 @@ describe('G5 — essential post-insert writes, repaired on redelivery', () => {
     await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => redelivery.push(t) })
     for (const run of redelivery) await run()
     expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
-    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(expect.anything(), ACCOUNT, 'message.received', expect.anything())
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(expect.anything(), ACCOUNT, 'message.received', expect.anything(), expect.anything())
 
     // a late run of the first request's task does not repeat it
     for (const run of lost) await run()
@@ -385,5 +399,30 @@ describe('G5 — essential post-insert writes, repaired on redelivery', () => {
         { throwOnFailure: true, runBots: false },
       ),
     ).rejects.toBeInstanceOf(IngestFailure)
+  })
+})
+
+// K5 (fourth review): Meta's path (acknowledged up front, no redelivery)
+// never runs the fan-out outside its outbox task.
+describe('K5 — completion errors on the Meta path', () => {
+  it('a lost answer to a completion that committed runs the fan-out once, through its task', async () => {
+    const msg = inbound()
+    h.loseCompletionAnswer = true
+    await ingestInboundMessage(msg, ACCOUNT, 'owner')
+    expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
+    // the cron later tries the same task: nothing runs twice
+    const { runFanoutForMessage } = await import('./fanout')
+    await runFanoutForMessage(supabaseAdmin(), h.tables.messages[0].id as string)
+    expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
+    expect(h.bumps).toBe(1)
+  })
+
+  it('a completion that really failed runs nothing now; the inputs are stored for the cron', async () => {
+    const msg = inbound()
+    h.completionFails = 2
+    await ingestInboundMessage(msg, ACCOUNT, 'owner')
+    expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
+    expect(h.tables.messages[0].ingest_completed_at).toBeUndefined()
+    expect(h.tables.messages[0].ingest_fanout).toMatchObject({ providerMessageId: msg.messageId, lastMessageText: 'olá' })
   })
 })

@@ -130,4 +130,5 @@ export const WA_MIGRATIONS = [
   '057_inbound_fanout_outbox.sql',
   '058_openwa_status_mirror.sql',
   '059_send_evidence.sql',
+  '060_fanout_outcomes.sql',
 ]
