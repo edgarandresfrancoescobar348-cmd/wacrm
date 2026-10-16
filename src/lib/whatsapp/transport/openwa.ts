@@ -25,7 +25,6 @@ import {
   openWaSend,
   openWaTyping,
   OpenWaError,
-  SEND_TIMEOUT_MS,
 } from '@/lib/whatsapp/openwa/client'
 import type { OpenWaConnection } from '@/lib/whatsapp/openwa/connection'
 import {
@@ -156,8 +155,10 @@ export function createOpenWaTransport(conn: OpenWaConnection): WhatsAppTransport
     }
     return p
   }
+  // The absolute budget goes all the way down: openWaRequest recomputes
+  // what is left right before fetch, after its SSRF/DNS guard.
   const control = (c: SendControl) => ({
-    timeoutMs: budgetTimeout(c.sendBy, SEND_TIMEOUT_MS),
+    sendBy: c.sendBy,
     idempotencyKey: c.idempotencyKey,
   })
 

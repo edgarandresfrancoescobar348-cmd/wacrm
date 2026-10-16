@@ -14,6 +14,7 @@
 // ============================================================
 
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { SendBudgetExceededError } from '@/lib/whatsapp/transport/types'
 
 export const OPENWA_ALLOWED_HOSTS_ENV = 'OPENWA_ALLOWED_HOSTS'
 
@@ -132,6 +133,13 @@ export async function assertOpenWaUrlAllowed(baseUrl: string): Promise<void> {
 interface RequestOptions {
   body?: unknown
   timeoutMs?: number
+  /**
+   * Absolute epoch ms the WHOLE request must finish by — the SSRF/DNS
+   * guard included. The time left is recomputed right before `fetch`, so
+   * a slow resolution can't hand the request a fresh window. Past it,
+   * SendBudgetExceededError (nothing was sent).
+   */
+  deadline?: number
   /** Return the raw Response (binary downloads). */
   raw?: boolean
   idempotencyKey?: string
@@ -144,7 +152,21 @@ export async function openWaRequest<T = unknown>(
   opts: RequestOptions = {},
 ): Promise<T> {
   const base = normalizeOpenWaBaseUrl(creds.baseUrl)
-  await assertOpenWaUrlAllowed(base)
+  const deadline = opts.deadline
+  if (deadline === undefined) {
+    await assertOpenWaUrlAllowed(base)
+  } else {
+    // The guard resolves DNS, which can stall: bounded by the same deadline.
+    await withinDeadline(assertOpenWaUrlAllowed(base), deadline)
+  }
+  // Recomputed now, after the guard: what is left of the deadline caps
+  // this request's own timeout.
+  let timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  if (deadline !== undefined) {
+    const left = deadline - Date.now()
+    if (left <= 0) throw new SendBudgetExceededError()
+    timeoutMs = Math.min(timeoutMs, left)
+  }
 
   const headers: Record<string, string> = {
     'X-API-Key': creds.apiKey,
@@ -160,7 +182,7 @@ export async function openWaRequest<T = unknown>(
       headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       redirect: 'manual',
-      signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: 'no-store',
     })
   } catch (err) {
@@ -193,6 +215,23 @@ export async function openWaRequest<T = unknown>(
   if (response.status === 204) return undefined as T
   const text = await response.text()
   return (text ? JSON.parse(text) : undefined) as T
+}
+
+/** Rejects with SendBudgetExceededError if `work` hasn't settled by `deadline`. */
+async function withinDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
+  const left = deadline - Date.now()
+  if (left <= 0) throw new SendBudgetExceededError()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new SendBudgetExceededError()), left)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ---- auth / health ------------------------------------------------
@@ -342,19 +381,23 @@ export function openWaSend(
     | 'send-location',
   body: Record<string, unknown>,
   opts: {
-    /** ≤ SEND_TIMEOUT_MS; a broadcast passes what its budget has left. */
-    timeoutMs?: number
+    /** Absolute epoch ms the send must have finished by (a broadcast's
+     *  budget). Covers the SSRF guard and the request; never more than
+     *  SEND_TIMEOUT_MS from now. */
+    sendBy?: number
     /** OpenWA de-duplicates a repeated send with the same key (24 h). */
     idempotencyKey?: string
   } = {},
 ) {
+  const cap = Date.now() + SEND_TIMEOUT_MS
   return openWaRequest<OpenWaSendResult>(
     creds,
     'POST',
     `/sessions/${enc(sessionId)}/messages/${endpoint}`,
     {
       body,
-      timeoutMs: Math.min(opts.timeoutMs ?? SEND_TIMEOUT_MS, SEND_TIMEOUT_MS),
+      timeoutMs: SEND_TIMEOUT_MS,
+      deadline: opts.sendBy === undefined ? cap : Math.min(opts.sendBy, cap),
       idempotencyKey: opts.idempotencyKey,
     },
   )
