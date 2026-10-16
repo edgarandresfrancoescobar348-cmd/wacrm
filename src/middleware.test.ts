@@ -138,3 +138,21 @@ describe("middleware — every dashboard route requires a session", () => {
     expect(new URL(res.headers.get("location")!).pathname).toBe("/login");
   });
 });
+
+// F8 (second review, live check): the broadcast continuation cron is
+// called by a scheduler without a session; it authenticates itself with
+// x-cron-secret, like the webhooks with their signatures.
+describe("middleware — self-authenticating WhatsApp endpoints", () => {
+  it.each(["/api/whatsapp/broadcast/cron", "/api/whatsapp/webhook", "/api/whatsapp/openwa/webhook"])(
+    "lets %s through without a session",
+    async (path) => {
+      const res = await middleware(new NextRequest(new URL(path, "http://localhost")));
+      expect(res.status).not.toBe(401);
+    },
+  );
+
+  it("still requires a session for other WhatsApp API routes", async () => {
+    const res = await middleware(new NextRequest(new URL("/api/whatsapp/broadcast", "http://localhost")));
+    expect(res.status).toBe(401);
+  });
+});
