@@ -50,6 +50,7 @@ import {
   WwebjsMessaging,
   declaredMediaSize,
   declaredOnlyMedia,
+  declaredMediaDetails,
   downloadCappedMedia,
   type PageMediaDownload,
 } from './wwebjs-messaging';
@@ -437,7 +438,9 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
         sizeBytes: capped.sizeBytes,
       });
     }
-    return capped;
+    // wacrm patch: the live message carries WhatsApp's declared details too (voice length, pages,
+    // preview), so the inbox shows "Mensagem de voz (0:09)" like the history import.
+    return capped ? { ...capped, ...declaredMediaDetails(msg) } : capped;
   }
 
   // ----- Lifecycle (./wwebjs-lifecycle and its sibling collaborators) -----

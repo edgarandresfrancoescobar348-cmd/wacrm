@@ -158,7 +158,12 @@ conflicts (each is marked `wacrm patch` in the source):
   `downloadMessageMedia` (whatsapp-web.js) lets `GET …/:messageId/media`
   download a never-archived message's media from WhatsApp (410 expired, 413
   over the cap, 504 timeout).
-- Messages carry `ack` (ticks), `isForwarded` / `forwardingScore`. Re-run the QR flow (connect, receive, send) after an
+- Messages carry `ack` (ticks), `isForwarded` / `forwardingScore`.
+- Live media downloaded on arrival keeps WhatsApp's declared details too
+  (voice length, page count, preview) — `declaredMediaDetails`, so a live voice
+  note previews "Mensagem de voz (0:09)" like an imported one.
+
+Re-run the QR flow (connect, receive, send) after an
 update: the client in `src/lib/whatsapp/openwa/client.ts` targets the v0.25 API.
 
 ## Security model

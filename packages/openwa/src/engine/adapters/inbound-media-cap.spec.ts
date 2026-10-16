@@ -406,6 +406,30 @@ describe('process-wide inbound media gate (INBOUND_MEDIA_GLOBAL_CONCURRENCY)', (
       expect(second.downloadMedia).not.toHaveBeenCalled();
       await r1;
     });
+
+    it('wacrm patch: a downloaded live voice note keeps the length WhatsApp declares', async () => {
+      process.env.INBOUND_MEDIA_CONCURRENCY = '4';
+      process.env.INBOUND_MEDIA_GLOBAL_CONCURRENCY = '0';
+      process.env.MEDIA_DOWNLOAD_TIMEOUT_MS = '100000';
+      const voice = {
+        id: { _serialized: 'v1' },
+        _data: { size: 100, mimetype: 'audio/ogg; codecs=opus', duration: '9' },
+        ...onPage(
+          jest
+            .fn()
+            .mockResolvedValue({ mimetype: 'audio/ogg; codecs=opus', data: Buffer.from('ogg').toString('base64') }),
+        ),
+      };
+      const media = await cap(newAdapter('live-voice'), voice);
+      expect(media).toEqual(
+        expect.objectContaining({
+          mimetype: 'audio/ogg; codecs=opus',
+          data: Buffer.from('ogg').toString('base64'),
+          durationSeconds: 9,
+        }),
+      );
+      expect(media.omitted).toBeFalsy();
+    });
   });
 
   describe('Baileys', () => {

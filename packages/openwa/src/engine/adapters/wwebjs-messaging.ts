@@ -68,6 +68,26 @@ export function extractWwebjsCall(msg: Message): { video: boolean; missed: boole
 const MAX_THUMBNAIL_CHARS = 150_000;
 
 export function declaredOnlyMedia(msg: Message): IncomingMessage['media'] {
+  const data = (msg as unknown as { _data?: { size?: number; mimetype?: string; filename?: string } })._data;
+  return {
+    mimetype: data?.mimetype ?? '',
+    filename: data?.filename || undefined,
+    omitted: true,
+    sizeBytes: coerceDeclaredSize(data?.size),
+    ...declaredMediaDetails(msg),
+  };
+}
+
+/**
+ * wacrm patch: what WhatsApp declares about the media without downloading it — the length of an
+ * audio/video (seconds, sometimes a numeric string), a document's page count, and the JPEG preview
+ * WhatsApp Web keeps in the raw `body` of an image/video/sticker/document (the message's own `body`
+ * is the caption). Only a base64 JPEG of reasonable size is passed on. Added to the declared-only
+ * marker (history) and to downloaded live media alike.
+ */
+export function declaredMediaDetails(
+  msg: Message,
+): Pick<NonNullable<IncomingMessage['media']>, 'durationSeconds' | 'pageCount' | 'thumbnail'> {
   const data = (
     msg as unknown as {
       _data?: {
@@ -80,10 +100,6 @@ export function declaredOnlyMedia(msg: Message): IncomingMessage['media'] {
       };
     }
   )._data;
-  // wacrm patch: what WhatsApp declares about the media without downloading it — the length of an
-  // audio/video (seconds, sometimes a numeric string), a document's page count, and the JPEG preview
-  // WhatsApp Web keeps in the raw `body` of an image/video/sticker/document (the message's own `body`
-  // is the caption). Only a base64 JPEG of reasonable size is passed on.
   const duration = Number(data?.duration);
   const pageCount = Number(data?.pageCount);
   const thumbnail =
@@ -94,10 +110,6 @@ export function declaredOnlyMedia(msg: Message): IncomingMessage['media'] {
       ? data.body
       : undefined;
   return {
-    mimetype: data?.mimetype ?? '',
-    filename: data?.filename || undefined,
-    omitted: true,
-    sizeBytes: coerceDeclaredSize(data?.size),
     ...(Number.isFinite(duration) && duration > 0 ? { durationSeconds: Math.round(duration) } : {}),
     ...(Number.isFinite(pageCount) && pageCount > 0 ? { pageCount: Math.trunc(pageCount) } : {}),
     ...(thumbnail ? { thumbnail } : {}),
