@@ -1,7 +1,8 @@
 // Access control for the QR-code (OpenWA) settings routes: only an admin
-// (or owner) configures the connection, exactly like whatsapp_config's
-// RLS; members only ever see a sanitized state; the gateway URL is
-// SSRF-checked before anything is called or stored.
+// (or owner) changes the connection, exactly like whatsapp_config's
+// RLS; members only ever see a sanitized state. The gateway is wacrm's
+// own (server config): there is no URL or key a user can set, and the
+// server key only ever goes to OPENWA_URL.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -73,7 +74,6 @@ vi.stubGlobal(
 )
 
 import { GET as getState, PUT as putConfig } from './route'
-import { POST as postTest } from './test/route'
 import { POST as postSession } from './session/route'
 import { GET as getQr } from './qr/route'
 import { POST as postPairing } from './pairing-code/route'
@@ -96,20 +96,21 @@ beforeEach(() => {
     id: 'r1',
     account_id: 'acct-1',
     user_id: 'u',
-    base_url: 'https://gw.example.com',
-    api_key: encrypt('secret-key-value'),
     webhook_secret: encrypt('w'.repeat(64)),
     session_id: 'sess-1',
     status: 'ready',
     engine: 'whatsapp-web.js',
     broadcast_delay_ms: 8000,
   }
-  process.env.OPENWA_ALLOWED_HOSTS = ''
+  delete process.env.OPENWA_URL
+  delete process.env.OPENWA_API_KEY
+  delete process.env.OPENWA_API_KEY_FILE
 })
 
+const getReq = (qs = '') => new Request(`http://app/api/whatsapp/openwa${qs}`)
+
 const adminCalls: [string, () => Promise<Response>][] = [
-  ['PUT /openwa', () => putConfig(json({ base_url: 'https://gw.example.com', api_key: 'k' }))],
-  ['POST /openwa/test', () => postTest(json({}))],
+  ['PUT /openwa', () => putConfig(json({ broadcast_delay_ms: 9000 }))],
   ['POST /openwa/session', () => postSession(json({ action: 'connect' }))],
   ['GET /openwa/qr', () => getQr()],
   ['POST /openwa/pairing-code', () => postPairing(json({ phone: '+5511999999999' }))],
@@ -128,14 +129,16 @@ describe.each(['agent', 'viewer'])('as %s', (role) => {
     expect(h.writes).toEqual([])
   })
 
-  it('GET /openwa returns the state without the URL, key or secret', async () => {
-    const res = await getState()
+  it('GET /openwa returns the state without the key or the webhook secret', async () => {
+    process.env.OPENWA_URL = 'http://openwa:2785'
+    process.env.OPENWA_API_KEY = 'server-gateway-key'
+    const res = await getState(getReq('?gateway=1'))
     expect(res.status).toBe(200)
     const body = JSON.stringify(await res.json())
-    expect(body).not.toContain('gw.example.com')
-    expect(body).not.toContain('secret-key-value')
-    expect(body).not.toContain('"api_key"')
+    expect(body).not.toContain('server-gateway-key')
+    expect(body).not.toContain('openwa:2785')
     expect(body).not.toContain('webhook_secret')
+    expect(body).not.toContain('wwwwwwww')
   })
 })
 
@@ -144,43 +147,42 @@ describe('as admin', () => {
     h.role = 'admin'
   })
 
-  it('GET /openwa shows the URL but never the key or the webhook secret', async () => {
-    const body = JSON.stringify(await (await getState()).json())
-    expect(body).toContain('gw.example.com')
-    expect(body).not.toContain('secret-key-value')
-    expect(body).not.toContain('wwwwwwww')
+  it('GET /openwa has no gateway URL or key fields at all', async () => {
+    const body = await (await getState(getReq())).json()
+    expect(body.openwa).not.toHaveProperty('base_url')
+    expect(body.openwa).not.toHaveProperty('has_api_key')
+    expect(body.gateway).toBeNull() // only probed on ?gateway=1
+    expect(h.fetchCalls).toEqual([])
   })
 
-  it.each([
-    'http://169.254.169.254/latest/meta-data',
-    'http://127.0.0.1:2785',
-    'http://localhost:2785',
-    'http://10.1.2.3',
-    'file:///etc/passwd',
-  ])('PUT /openwa refuses %s before any request', async (url) => {
-    const res = await putConfig(json({ base_url: url, api_key: 'k' }))
-    expect(res.status).toBe(400)
+  it('GET /openwa?gateway=1 says when the gateway is not running', async () => {
+    const body = await (await getState(getReq('?gateway=1'))).json()
+    expect(body.gateway).toEqual({ state: 'unconfigured', engine: null })
+  })
+
+  it('PUT /openwa only takes the broadcast pacing — a URL or key in the body is ignored', async () => {
+    h.row = null
+    const res = await putConfig(
+      json({ base_url: 'http://169.254.169.254', api_key: 'k', broadcast_delay_ms: 9000 }),
+    )
+    expect(res.status).toBe(200)
+    const insert = h.writes.find((w) => w.table === 'whatsapp_openwa_config' && w.op === 'insert')
+    expect(insert?.value).toEqual({ account_id: 'acct-1', user_id: 'user-admin', broadcast_delay_ms: 9000 })
     expect(h.fetchCalls).toEqual([])
+  })
+
+  it.each([undefined, 2000, 121_000, 'x'])('PUT /openwa refuses broadcast_delay_ms=%s', async (delay) => {
+    const res = await putConfig(json({ broadcast_delay_ms: delay }))
+    expect(res.status).toBe(400)
     expect(h.writes).toEqual([])
   })
 
-  it('POST /openwa/test refuses an internal URL too', async () => {
-    const res = await postTest(json({ base_url: 'http://169.254.169.254', api_key: 'k' }))
-    expect(res.status).toBe(400)
+  it('Conectar with the gateway down answers 503 gateway_unavailable and writes nothing', async () => {
+    const res = await postSession(json({ action: 'connect' }))
+    expect(res.status).toBe(503)
+    expect((await res.json()).code).toBe('gateway_unavailable')
     expect(h.fetchCalls).toEqual([])
-  })
-
-  it('PUT /openwa stores the key encrypted', async () => {
-    h.row = null
-    // No DNS in the sandbox: allow the host explicitly (exact-match list).
-    process.env.OPENWA_ALLOWED_HOSTS = 'gw.example.com'
-    const res = await putConfig(json({ base_url: 'https://gw.example.com', api_key: 'plain-key-123' }))
-    expect(res.status).toBe(200)
-    const insert = h.writes.find((w) => w.table === 'whatsapp_openwa_config' && w.op === 'insert')
-    expect(insert).toBeTruthy()
-    const stored = (insert!.value as { api_key: string }).api_key
-    expect(stored).not.toContain('plain-key-123')
-    expect(stored.split(':')).toHaveLength(3)
+    expect(h.writes).toEqual([])
   })
 
   it('PUT /provider rejects an unknown provider', async () => {
@@ -195,66 +197,30 @@ describe('as admin', () => {
   })
 })
 
-// F1 (review): a key the server holds must never leave for a URL other
-// than the one it is bound to.
-describe('credential binding (F1)', () => {
+// The server key goes to the configured gateway and nowhere else.
+describe('server key binding', () => {
   const captured: { url: string; key: unknown }[] = []
   beforeEach(() => {
     h.role = 'admin'
     captured.length = 0
     vi.mocked(fetch).mockImplementation(async (url, init) => {
       captured.push({ url: String(url), key: (init?.headers as Record<string, string>)?.['X-API-Key'] })
-      return new Response(JSON.stringify({ valid: true, role: 'operator', engineType: 'whatsapp-web.js', scoped: false }), {
+      return new Response(JSON.stringify({ valid: true, role: 'admin', engineType: 'whatsapp-web.js', scoped: false }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     })
-    process.env.OPENWA_ALLOWED_HOSTS = 'gw.example.com,other.example.com,env-gw.example.com'
-    process.env.OPENWA_API_KEY = 'server-default-secret'
-    process.env.OPENWA_URL = 'https://env-gw.example.com'
+    process.env.OPENWA_URL = 'http://openwa:2785'
+    process.env.OPENWA_API_KEY = 'server-gateway-key'
   })
   afterEach(() => {
     delete process.env.OPENWA_API_KEY
     delete process.env.OPENWA_URL
   })
 
-  it('test: never sends the server default key to an arbitrary URL', async () => {
-    h.row = null
-    const res = await postTest(json({ base_url: 'https://other.example.com/attacker' }))
-    expect(res.status).toBe(400)
-    expect(captured).toEqual([])
-  })
-
-  it('test: never sends the stored key to a different URL', async () => {
-    const res = await postTest(json({ base_url: 'https://other.example.com' }))
-    expect(res.status).toBe(400)
-    expect(captured).toEqual([])
-  })
-
-  it('PUT: changing the URL without a key is refused (stored key stays home)', async () => {
-    const res = await putConfig(json({ base_url: 'https://other.example.com' }))
-    expect(res.status).toBe(400)
-    expect(captured).toEqual([])
-    expect(h.writes).toEqual([])
-  })
-
-  it('reuses the stored key for its own (normalized) URL', async () => {
-    const res = await postTest(json({ base_url: 'https://gw.example.com/api/' }))
-    expect(res.status).toBe(200)
-    expect(captured[0]).toEqual({ url: 'https://gw.example.com/api/auth/validate', key: 'secret-key-value' })
-  })
-
-  it('uses the server default key only for OPENWA_URL', async () => {
-    h.row = null
-    const res = await postTest(json({ base_url: 'https://env-gw.example.com' }))
-    expect(res.status).toBe(200)
-    expect(captured[0].key).toBe('server-default-secret')
-  })
-
-  it('a typed key goes where the admin points it', async () => {
-    h.row = null
-    const res = await postTest(json({ base_url: 'https://other.example.com', api_key: 'my-own-key' }))
-    expect(res.status).toBe(200)
-    expect(captured[0]).toEqual({ url: 'https://other.example.com/api/auth/validate', key: 'my-own-key' })
+  it('the gateway probe calls OPENWA_URL with the server key', async () => {
+    const body = await (await getState(getReq('?gateway=1'))).json()
+    expect(body.gateway).toEqual({ state: 'ok', engine: 'whatsapp-web.js' })
+    expect(captured).toEqual([{ url: 'http://openwa:2785/api/auth/validate', key: 'server-gateway-key' }])
   })
 })

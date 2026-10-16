@@ -270,6 +270,16 @@ BEGIN
     RAISE EXCEPTION 'claim_history_import is executable by authenticated — migration 063 grants are wrong';
   END IF;
 
+  -- 064: the gateway is embedded — no per-account URL or key.
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'whatsapp_openwa_config'
+                AND column_name IN ('base_url', 'api_key')) THEN
+    RAISE EXCEPTION 'whatsapp_openwa_config still has base_url/api_key — migration 064 did not apply';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.apply_openwa_session_state(uuid,jsonb,text,timestamptz)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'apply_openwa_session_state is executable by authenticated — migration 064 grants are wrong';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

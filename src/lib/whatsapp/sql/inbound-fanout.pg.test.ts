@@ -72,7 +72,7 @@ describe.skipIf(!pgAvailable())('inbound fan-out outbox (H1)', () => {
     await pg.migrate('057_inbound_fanout_outbox.sql')
     // `held` (and the K5 repair) — skipped for the "before" run.
     if (process.env.PROVE_OLD_FANOUT !== '1') {
-      await pg.sql(`CREATE TABLE IF NOT EXISTS public.whatsapp_openwa_config(id uuid, account_id uuid PRIMARY KEY, base_url text, api_key text,
+      await pg.sql(`CREATE TABLE IF NOT EXISTS public.whatsapp_openwa_config(id uuid, account_id uuid PRIMARY KEY,
         engine text, session_id text, session_name text, webhook_id text, webhook_secret text, status text, phone text, push_name text,
         last_error text, restriction jsonb, reconnect_attempts int, status_updated_at timestamptz, connected_at timestamptz,
         broadcast_delay_ms int, updated_at timestamptz, status_event_at timestamptz);

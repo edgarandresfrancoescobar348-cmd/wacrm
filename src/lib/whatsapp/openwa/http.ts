@@ -14,19 +14,22 @@ export function openWaErrorResponse(err: unknown): NextResponse {
     return toErrorResponse(err)
   }
   if (err instanceof OpenWaError) {
-    if (err.code === 'invalid_url' || err.code === 'url_not_allowed') {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: 400 })
+    // The gateway is wacrm's own (./gateway.ts): not running, not
+    // reachable, or not accepting the provisioned key all mean the same
+    // to the admin — "the gateway is unavailable" — and are 503s.
+    if (err.code === 'gateway_unconfigured' || err.code === 'invalid_url') {
+      return NextResponse.json({ error: err.message, code: 'gateway_unavailable' }, { status: 503 })
     }
     if (err.status === 401 || err.status === 403) {
       return NextResponse.json(
-        { error: 'OpenWA rejected the API key (or its role is too low).', code: 'openwa_auth', status: err.status },
-        { status: 400 },
+        { error: 'The WhatsApp gateway rejected the server key.', code: 'gateway_unavailable', status: err.status },
+        { status: 503 },
       )
     }
     if (err.status === 0) {
-      return NextResponse.json({ error: err.message, code: 'openwa_unreachable' }, { status: 502 })
+      return NextResponse.json({ error: err.message, code: 'gateway_unavailable' }, { status: 503 })
     }
-    if (err.code === 'not_configured' || err.code === 'no_session') {
+    if (err.code === 'no_session') {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 400 })
     }
     return NextResponse.json(

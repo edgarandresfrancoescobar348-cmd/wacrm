@@ -26,8 +26,6 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 }))
 vi.mock('@/lib/conversations/reopen', () => ({ reopenClosedConversation: vi.fn(async () => false) }))
 
-process.env.OPENWA_ALLOWED_HOSTS = '127.0.0.1'
-const { encrypt } = await import('@/lib/whatsapp/encryption')
 const { runHistoryImport, startHistoryImport } = await import('@/lib/whatsapp/openwa/history-import')
 const { ingestInboundMessage } = await import('@/lib/whatsapp/inbound/ingest')
 
@@ -89,6 +87,9 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     db = new PgSupabase(pg)
     h.db = db.asClient()
     gw = await startFakeOpenWa()
+    // The embedded gateway is server config (lib/whatsapp/openwa/gateway.ts).
+    process.env.OPENWA_URL = gw.baseUrl
+    process.env.OPENWA_API_KEY = gw.apiKey
     gw.override((req) => {
       const p = req.path
       if (/\/chats\?/.test(p)) {
@@ -122,8 +123,8 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     await pg.sql(`
       DELETE FROM public.inbound_fanout_tasks; DELETE FROM public.messages; DELETE FROM public.conversations; DELETE FROM public.contacts;
       DELETE FROM public.whatsapp_history_import_chats; DELETE FROM public.whatsapp_history_imports; DELETE FROM public.whatsapp_openwa_config;
-      INSERT INTO public.whatsapp_openwa_config(account_id, base_url, api_key, session_id, status, broadcast_delay_ms)
-        VALUES ('${ACCT}', '${gw.baseUrl}', '${encrypt(gw.apiKey)}', '${SESSION}', 'ready', 8000);`)
+      INSERT INTO public.whatsapp_openwa_config(account_id, session_id, status, broadcast_delay_ms)
+        VALUES ('${ACCT}', '${SESSION}', 'ready', 8000);`)
     // user_id for the row (the importer creates rows as the config owner)
     await pg.sql(`ALTER TABLE public.whatsapp_openwa_config ADD COLUMN IF NOT EXISTS user_id uuid; UPDATE public.whatsapp_openwa_config SET user_id = '${USER}'`)
   })

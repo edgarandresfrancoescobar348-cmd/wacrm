@@ -31,7 +31,9 @@ vi.mock('next/server', () => ({
 vi.mock('@/lib/whatsapp/openwa/events', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   handleOpenWaEvent: h.handleOpenWaEvent,
-  credsForRow: () => ({ baseUrl: 'http://gw', apiKey: 'k' }),
+}))
+vi.mock('@/lib/whatsapp/openwa/gateway', () => ({
+  requireOpenWaGateway: () => ({ baseUrl: 'http://gw', apiKey: 'k' }),
 }))
 
 // In-memory ledger with just enough PostgREST semantics: insert with a
@@ -161,8 +163,6 @@ beforeEach(() => {
     account_id: 'acct-1',
     user_id: 'user-1',
     session_id: SESSION,
-    base_url: 'http://gw',
-    api_key: encrypt('k'),
     webhook_secret: encrypt(SECRET),
   }
 })

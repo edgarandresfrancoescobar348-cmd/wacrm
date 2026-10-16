@@ -26,11 +26,11 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import type { OpenWaConnectionRow } from '@/lib/whatsapp/openwa/connection'
 import { claimDelivery, finishDelivery, releaseDelivery } from '@/lib/whatsapp/openwa/delivery-ledger'
 import {
-  credsForRow,
   handleOpenWaEvent,
   verifyOpenWaSignature,
   type OpenWaEnvelope,
 } from '@/lib/whatsapp/openwa/events'
+import { requireOpenWaGateway } from '@/lib/whatsapp/openwa/gateway'
 
 export const maxDuration = 60
 
@@ -166,7 +166,7 @@ export async function POST(request: Request) {
     outcome = await handleOpenWaEvent(envelope, {
       admin,
       row: connection,
-      creds: credsForRow(connection),
+      creds: requireOpenWaGateway(),
       activeProvider: config?.provider ?? 'meta',
       mirrorMedia: config?.mirror_inbound_media !== false,
       defer: (task) => deferred.push(task),

@@ -30,7 +30,6 @@ import {
   type OpenWaCredentials,
 } from './client'
 import type { OpenWaConnectionRow } from './connection'
-import { decrypt } from '@/lib/whatsapp/encryption'
 import { parseVcards, type ContentMeta } from '@/lib/whatsapp/message-content'
 import { reconcileAttemptFromEcho } from '@/lib/whatsapp/broadcast-attempts'
 import { queueHistoryImportOnConnect, runHistoryImport } from './history-import'
@@ -721,9 +720,4 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   // The active-connection flag (whatsapp_config.status) is NOT written
   // here: migration 058 derives it from this row in the same statement,
   // so it can never disagree with the newest applied session state.
-}
-
-/** Decrypted credentials for a row (route helper). */
-export function credsForRow(row: OpenWaConnectionRow): OpenWaCredentials {
-  return { baseUrl: row.base_url, apiKey: decrypt(row.api_key) }
 }

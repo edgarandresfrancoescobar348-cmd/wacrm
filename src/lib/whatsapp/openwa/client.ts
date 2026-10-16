@@ -2,21 +2,17 @@
 // OpenWA REST client — the only code that talks HTTP to an OpenWA
 // gateway (https://github.com/rmyndharis/OpenWA, API v0.25).
 //
-// The gateway URL is tenant input, so every request is SSRF-guarded:
-// http/https only, no embedded credentials, and the host must resolve
-// to public address space unless the operator allow-listed it in
-// OPENWA_ALLOWED_HOSTS (self-hosters running OpenWA next to wacrm on
-// 127.0.0.1 / a docker host). Redirects are never followed, so a public
-// URL can't bounce the server onto an internal one.
+// The gateway is wacrm's own: vendored under packages/openwa and
+// started next to the app (scripts/wacrm.mjs, docker-compose.yml). Its
+// URL and admin key come from server config (./gateway.ts), never from
+// a tenant, so there is no per-request URL guard. Redirects are still
+// never followed.
 //
 // Responses are bare JSON (no envelope); errors are Nest's
 // `{ message, error, statusCode, code? }`.
 // ============================================================
 
-import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import { SendBudgetExceededError, UncertainSendError } from '@/lib/whatsapp/transport/types'
-
-export const OPENWA_ALLOWED_HOSTS_ENV = 'OPENWA_ALLOWED_HOSTS'
 
 const DEFAULT_TIMEOUT_MS = 20_000
 /** Sends wait out OpenWA's simulated typing (≤ 5 s) before answering. */
@@ -84,13 +80,6 @@ export class OpenWaError extends Error {
   }
 }
 
-export function allowedOpenWaHosts(): string[] {
-  return (process.env[OPENWA_ALLOWED_HOSTS_ENV] ?? '')
-    .split(',')
-    .map((h) => h.trim())
-    .filter(Boolean)
-}
-
 /**
  * Canonical base URL: scheme + host + optional path prefix, no trailing
  * slash, no trailing `/api` (the client adds it), no query, no fragment,
@@ -116,28 +105,13 @@ export function normalizeOpenWaBaseUrl(raw: string): string {
   return `${url.protocol}//${url.host}${path}`
 }
 
-/** SSRF gate. Throws OpenWaError('url_not_allowed'). */
-export async function assertOpenWaUrlAllowed(baseUrl: string): Promise<void> {
-  const ok = await isDeliverableUrl(baseUrl, {
-    allowPrivateHosts: allowedOpenWaHosts(),
-  })
-  if (!ok) {
-    throw new OpenWaError(
-      `OpenWA URL points at a private or unresolvable address. Self-hosters can allow it with ${OPENWA_ALLOWED_HOSTS_ENV}.`,
-      400,
-      'url_not_allowed',
-    )
-  }
-}
-
 interface RequestOptions {
   body?: unknown
   timeoutMs?: number
   /**
-   * Absolute epoch ms the WHOLE request must finish by — the SSRF/DNS
-   * guard included. The time left is recomputed right before `fetch`, so
-   * a slow resolution can't hand the request a fresh window. Past it,
-   * SendBudgetExceededError (nothing was sent).
+   * Absolute epoch ms the WHOLE request must finish by. The time left
+   * caps this request's timeout; past it, SendBudgetExceededError
+   * (nothing was sent).
    */
   deadline?: number
   /** Return the raw Response (binary downloads). */
@@ -153,14 +127,7 @@ export async function openWaRequest<T = unknown>(
 ): Promise<T> {
   const base = normalizeOpenWaBaseUrl(creds.baseUrl)
   const deadline = opts.deadline
-  if (deadline === undefined) {
-    await assertOpenWaUrlAllowed(base)
-  } else {
-    // The guard resolves DNS, which can stall: bounded by the same deadline.
-    await withinDeadline(assertOpenWaUrlAllowed(base), deadline)
-  }
-  // Recomputed now, after the guard: what is left of the deadline caps
-  // this request's own timeout.
+  // What is left of the deadline caps this request's own timeout.
   let timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (deadline !== undefined) {
     const left = deadline - Date.now()
@@ -226,23 +193,6 @@ export async function openWaRequest<T = unknown>(
   }
 }
 
-/** Rejects with SendBudgetExceededError if `work` hasn't settled by `deadline`. */
-async function withinDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
-  const left = deadline - Date.now()
-  if (left <= 0) throw new SendBudgetExceededError()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new SendBudgetExceededError()), left)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 // ---- auth / health ------------------------------------------------
 
 export interface OpenWaKeyInfo {
@@ -252,7 +202,7 @@ export interface OpenWaKeyInfo {
   scoped: boolean
 }
 
-/** POST /auth/validate — 401 on a bad key. The "Testar conexão" probe. */
+/** POST /auth/validate — 401 on a bad key. The gateway health probe. */
 export function validateOpenWaKey(creds: OpenWaCredentials) {
   return openWaRequest<OpenWaKeyInfo>(creds, 'POST', '/auth/validate')
 }

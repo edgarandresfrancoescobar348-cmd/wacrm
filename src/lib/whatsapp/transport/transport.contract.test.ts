@@ -55,7 +55,6 @@ const SESSION = '9f7af9f5-6eb1-4092-8c61-0b1e443958b9'
 
 beforeAll(async () => {
   fake = await startFakeOpenWa()
-  process.env.OPENWA_ALLOWED_HOSTS = '127.0.0.1'
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://own-project.supabase.co'
   installMetaFetch()
 })

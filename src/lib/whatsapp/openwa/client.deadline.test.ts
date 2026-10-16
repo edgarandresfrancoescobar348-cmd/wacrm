@@ -1,13 +1,6 @@
-// H2 (third review): a send's absolute deadline covers the SSRF/DNS
-// guard too. Before, the timeout was computed BEFORE the guard and the
-// fetch got a fresh window afterwards — 45 s budget + 20 s of DNS + 44 s
-// of fetch was not a 45 s call.
+// H2 (third review): a send has one absolute deadline. The fetch only
+// gets what is left of it, and a spent deadline sends nothing.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-let guardDelayMs = 0
-vi.mock('@/lib/webhooks/ssrf', () => ({
-  isDeliverableUrl: () => new Promise<boolean>((r) => setTimeout(() => r(true), guardDelayMs)),
-}))
 
 const { openWaSend } = await import('./client')
 const { SendBudgetExceededError } = await import('@/lib/whatsapp/transport/types')
@@ -20,21 +13,18 @@ beforeEach(() => {
 })
 afterEach(() => {
   fetchSpy.mockRestore()
-  guardDelayMs = 0
 })
 
 describe('openWaSend — one absolute deadline (H2)', () => {
-  it('a guard slower than the budget aborts before any fetch', async () => {
-    guardDelayMs = 300
+  it('a spent deadline aborts before any fetch', async () => {
     fetchSpy.mockResolvedValue(new Response('{"messageId":"m"}', { status: 201 }))
     await expect(
-      openWaSend(creds, 's', 'send-text', { chatId: '1@c.us', text: 'x' }, { sendBy: Date.now() + 100 }),
+      openWaSend(creds, 's', 'send-text', { chatId: '1@c.us', text: 'x' }, { sendBy: Date.now() - 1 }),
     ).rejects.toBeInstanceOf(SendBudgetExceededError)
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('the fetch only gets what the guard left of the deadline', async () => {
-    guardDelayMs = 200
+  it('the fetch only gets what is left of the deadline', async () => {
     fetchSpy.mockImplementation(
       (_url: unknown, init: unknown) =>
         new Promise((_, reject) => {
@@ -44,9 +34,9 @@ describe('openWaSend — one absolute deadline (H2)', () => {
     )
     const started = Date.now()
     await expect(
-      openWaSend(creds, 's', 'send-text', { chatId: '1@c.us', text: 'x' }, { sendBy: started + 400 }),
+      openWaSend(creds, 's', 'send-text', { chatId: '1@c.us', text: 'x' }, { sendBy: started + 300 }),
     ).rejects.toThrow()
-    // Aborted at the absolute deadline (≈400 ms), not 200 + 400.
-    expect(Date.now() - started).toBeLessThan(550)
+    // Aborted at the absolute deadline (≈300 ms), not the 45 s send timeout.
+    expect(Date.now() - started).toBeLessThan(450)
   })
 })

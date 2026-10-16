@@ -49,12 +49,12 @@ import {
   type OpenWaStoredMessage,
 } from './client'
 import {
-  credsForRow,
   isContentlessPlaceholder,
   mapOpenWaMessage,
   openWaMediaProxyUrl,
   phoneFromChatId,
 } from './events'
+import { requireOpenWaGateway } from './gateway'
 import type { OpenWaConnectionRow } from './connection'
 
 export const HISTORY_LEASE_SECONDS = 600
@@ -442,7 +442,7 @@ export async function runHistoryImport(
     await updateJob(admin, job.account_id, { status: 'failed', last_error: 'The QR-code session changed; start the import again', lease_until: null })
     return { ...job, status: 'failed' }
   }
-  const creds = credsForRow(row)
+  const creds = requireOpenWaGateway()
 
   try {
     if (job.status === 'queued' || job.status === 'listing' || job.status === 'waiting_session') {

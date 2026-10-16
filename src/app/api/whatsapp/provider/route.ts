@@ -35,7 +35,7 @@ export async function PUT(request: Request) {
       const row = await loadOpenWaRow(admin, accountId)
       if (!row?.session_id) {
         return NextResponse.json(
-          { error: 'QR-code mode is not set up yet — save the OpenWA settings and press Connect.', code: 'not_configured' },
+          { error: 'QR-code mode is not set up yet — press Connect in Settings → WhatsApp → QR Code.', code: 'not_configured' },
           { status: 409 },
         )
       }

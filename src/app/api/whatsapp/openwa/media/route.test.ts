@@ -28,8 +28,10 @@ vi.mock('@/lib/flows/admin-client', () => ({
 }))
 vi.mock('@/lib/whatsapp/openwa/connection', () => ({ loadOpenWaRow: async () => ({ session_id: 'sess-1' }) }))
 vi.mock('@/lib/whatsapp/openwa/events', () => ({
-  credsForRow: () => ({ baseUrl: 'https://gateway', apiKey: 'dummy' }),
   openWaMediaProxyUrl: () => '/owned',
+}))
+vi.mock('@/lib/whatsapp/openwa/gateway', () => ({
+  requireOpenWaGateway: () => ({ baseUrl: 'https://gateway', apiKey: 'dummy' }),
 }))
 vi.mock('@/lib/whatsapp/openwa/client', () => ({
   OpenWaError: class extends Error {},

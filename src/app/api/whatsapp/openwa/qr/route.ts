@@ -14,7 +14,7 @@ import { getOpenWaQr, OpenWaError } from '@/lib/whatsapp/openwa/client'
 import { openWaErrorResponse } from '@/lib/whatsapp/openwa/http'
 import { refreshOpenWa } from '@/lib/whatsapp/openwa/session'
 import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
-import { credsForRow } from '@/lib/whatsapp/openwa/events'
+import { requireOpenWaGateway } from '@/lib/whatsapp/openwa/gateway'
 
 export async function GET() {
   try {
@@ -34,7 +34,7 @@ export async function GET() {
       return NextResponse.json({ status: state.status, qr_code: null, openwa: state })
     }
     try {
-      const qr = await getOpenWaQr(credsForRow(row), row.session_id)
+      const qr = await getOpenWaQr(requireOpenWaGateway(), row.session_id)
       const qrCode = typeof qr.qrCode === 'string' && qr.qrCode.startsWith('data:image/') ? qr.qrCode : null
       return NextResponse.json({ status: qr.status ?? state.status, qr_code: qrCode, openwa: state })
     } catch (err) {

@@ -24,6 +24,7 @@ import {
   OpenWaError,
   startOpenWaSession,
   stopOpenWaSession,
+  validateOpenWaKey,
   type OpenWaCredentials,
   type OpenWaSession,
 } from './client'
@@ -33,25 +34,13 @@ import {
   type OpenWaConnectionRow,
   type PublicOpenWaState,
 } from './connection'
-import { credsForRow } from './events'
+import { openWaWebhookBaseUrl, requireOpenWaGateway } from './gateway'
 
 export const OPENWA_WEBHOOK_PATH = '/api/whatsapp/openwa/webhook'
 
 /** Random webhook secret: 32 bytes → 64 hex chars (OpenWA needs ≥ 16). */
 export function generateWebhookSecret(): string {
   return crypto.randomBytes(32).toString('hex')
-}
-
-/**
- * Public base URL OpenWA should deliver to. `OPENWA_WEBHOOK_BASE_URL`
- * wins (a gateway in Docker reaches the host as
- * `http://host.docker.internal:<port>`), then `NEXT_PUBLIC_SITE_URL`,
- * then the origin of the request that triggered the connect.
- */
-export function webhookBaseUrl(requestOrigin: string): string {
-  const configured =
-    process.env.OPENWA_WEBHOOK_BASE_URL?.trim() || process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  return (configured || requestOrigin).replace(/\/+$/, '')
 }
 
 function sessionName(accountId: string): string {
@@ -95,6 +84,20 @@ async function updateRow(
   const row = Array.isArray(data) ? data[0] : data
   if (error || !row) throw new Error(`Failed to save OpenWA state: ${error?.message ?? 'no row'}`)
   return row as OpenWaConnectionRow
+}
+
+/** The account's session row, created on its first "Conectar". */
+async function createRow(admin: SupabaseClient, accountId: string, userId: string): Promise<OpenWaConnectionRow> {
+  const { data, error } = await admin
+    .from('whatsapp_openwa_config')
+    .upsert({ account_id: accountId, user_id: userId }, { onConflict: 'account_id', ignoreDuplicates: true })
+    .select('*')
+    .maybeSingle()
+  if (error) throw new Error(`Failed to create the QR-code connection: ${error.message}`)
+  // A concurrent "Conectar" created it first (ignoreDuplicates returns nothing).
+  const row = (data as OpenWaConnectionRow | null) ?? (await loadOpenWaRow(admin, accountId))
+  if (!row) throw new Error('Failed to create the QR-code connection')
+  return row
 }
 
 /**
@@ -163,11 +166,13 @@ export async function connectOpenWa(
   admin: SupabaseClient,
   accountId: string,
   userId: string,
-  requestOrigin: string,
 ): Promise<PublicOpenWaState> {
-  let row = await loadOpenWaRow(admin, accountId)
-  if (!row) throw new OpenWaError('Save the OpenWA URL and API key first', 400, 'not_configured')
-  const creds = credsForRow(row)
+  // The gateway is the deployment's own: nothing to configure first.
+  const creds = requireOpenWaGateway()
+  // Fails fast (503) when the gateway is down or refuses the server key.
+  const info = await validateOpenWaKey(creds)
+  const engine = info?.engineType === 'baileys' || info?.engineType === 'whatsapp-web.js' ? info.engineType : null
+  let row = (await loadOpenWaRow(admin, accountId)) ?? (await createRow(admin, accountId, userId))
 
   let session = await fetchSession(creds, row.session_id)
   if (!session) {
@@ -181,9 +186,10 @@ export async function connectOpenWa(
     })
   }
 
-  const webhookUrl = `${webhookBaseUrl(requestOrigin)}${OPENWA_WEBHOOK_PATH}`
+  const webhookUrl = `${openWaWebhookBaseUrl()}${OPENWA_WEBHOOK_PATH}`
   const hook = await ensureWebhook(creds, row, session.id, webhookUrl)
   row = await updateRow(admin, accountId, {
+    engine,
     webhook_id: hook.webhookId,
     ...(hook.secret ? { webhook_secret: encrypt(hook.secret) } : {}),
   })
@@ -203,7 +209,7 @@ export async function restartOpenWa(
 ): Promise<PublicOpenWaState> {
   const row = await loadOpenWaRow(admin, accountId)
   if (!row?.session_id) throw new OpenWaError('No OpenWA session to restart', 400, 'no_session')
-  const creds = credsForRow(row)
+  const creds = requireOpenWaGateway()
   await stopOpenWaSession(creds, row.session_id).catch((err) => {
     // Already stopped is fine; anything else surfaces from start below.
     console.warn('[openwa] stop before restart failed:', err instanceof Error ? err.message : err)
@@ -221,7 +227,7 @@ export async function logoutOpenWa(
 ): Promise<PublicOpenWaState> {
   const row = await loadOpenWaRow(admin, accountId)
   if (!row?.session_id) throw new OpenWaError('No OpenWA session to disconnect', 400, 'no_session')
-  const creds = credsForRow(row)
+  const creds = requireOpenWaGateway()
   let session: OpenWaSession
   try {
     session = await logoutOpenWaSession(creds, row.session_id)
@@ -249,7 +255,7 @@ export async function refreshOpenWa(
 ): Promise<PublicOpenWaState> {
   const row = await loadOpenWaRow(admin, accountId)
   if (!row?.session_id) return toPublicOpenWaState(row)
-  const session = await fetchSession(credsForRow(row), row.session_id)
+  const session = await fetchSession(requireOpenWaGateway(), row.session_id)
   if (!session) {
     const updated = await updateRow(admin, accountId, {
       status: 'disconnected',

@@ -12,7 +12,7 @@ import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { requestOpenWaPairingCode } from '@/lib/whatsapp/openwa/client'
 import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
-import { credsForRow } from '@/lib/whatsapp/openwa/events'
+import { requireOpenWaGateway } from '@/lib/whatsapp/openwa/gateway'
 import { openWaErrorResponse } from '@/lib/whatsapp/openwa/http'
 
 export async function POST(request: Request) {
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     if (!row?.session_id) {
       return NextResponse.json({ error: 'Connect first, then request a code.', code: 'no_session' }, { status: 400 })
     }
-    const result = await requestOpenWaPairingCode(credsForRow(row), row.session_id, digits)
+    const result = await requestOpenWaPairingCode(requireOpenWaGateway(), row.session_id, digits)
     return NextResponse.json({ pairing_code: result.pairingCode, status: result.status })
   } catch (err) {
     return openWaErrorResponse(err)

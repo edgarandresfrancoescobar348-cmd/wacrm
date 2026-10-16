@@ -1,9 +1,10 @@
 // ============================================================
 // The account's OpenWA connection row (`whatsapp_openwa_config`).
 //
-// Service role only — the table has no client RLS policies. The API
-// key and webhook secret are decrypted here and nowhere else; what goes
-// to the browser is `toPublicOpenWaState`, which carries neither.
+// Service role only — the table has no client RLS policies. The webhook
+// secret is decrypted here and nowhere else; what goes to the browser is
+// `toPublicOpenWaState`, which never carries it. The gateway URL and key
+// are deployment config (./gateway.ts), not per-account data.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -11,18 +12,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   isOpenWaSessionStatus,
-  normalizeOpenWaBaseUrl,
   type OpenWaCredentials,
   type OpenWaRestriction,
   type OpenWaSessionStatus,
 } from './client'
+import { requireOpenWaGateway } from './gateway'
 
 export interface OpenWaConnectionRow {
   id: string
   account_id: string
   user_id: string
-  base_url: string
-  api_key: string
   engine: string | null
   session_id: string | null
   session_name: string | null
@@ -71,12 +70,12 @@ export async function loadOpenWaRow(
   return (data as OpenWaConnectionRow | null) ?? null
 }
 
+/** The row plus the gateway's credentials. Throws when the gateway isn't configured. */
 export function rowToConnection(row: OpenWaConnectionRow): OpenWaConnection {
   return {
+    ...requireOpenWaGateway(),
     accountId: row.account_id,
     userId: row.user_id,
-    baseUrl: row.base_url,
-    apiKey: decrypt(row.api_key),
     sessionId: row.session_id,
     sessionName: row.session_name,
     webhookId: row.webhook_id,
@@ -105,8 +104,6 @@ export function configStatusFor(status: OpenWaSessionStatus): 'connected' | 'dis
 /** What the settings UI may see. No key, no secret. */
 export interface PublicOpenWaState {
   configured: boolean
-  base_url: string | null
-  has_api_key: boolean
   engine: string | null
   session_id: string | null
   status: OpenWaSessionStatus | null
@@ -124,8 +121,6 @@ export interface PublicOpenWaState {
 export function toPublicOpenWaState(row: OpenWaConnectionRow | null): PublicOpenWaState {
   return {
     configured: Boolean(row),
-    base_url: row?.base_url ?? null,
-    has_api_key: Boolean(row?.api_key),
     engine: row?.engine ?? null,
     session_id: row?.session_id ?? null,
     status: row && isOpenWaSessionStatus(row.status) ? row.status : null,
@@ -139,40 +134,4 @@ export function toPublicOpenWaState(row: OpenWaConnectionRow | null): PublicOpen
     broadcast_delay_ms: row?.broadcast_delay_ms ?? null,
     webhook_registered: Boolean(row?.webhook_id),
   }
-}
-
-function sameGateway(a: string | null | undefined, b: string): boolean {
-  if (!a) return false
-  try {
-    return normalizeOpenWaBaseUrl(a) === b
-  } catch {
-    return false
-  }
-}
-
-/**
- * The API key to use for `baseUrl` (already normalized).
- *
- * A key is a credential FOR ONE GATEWAY. A typed key is the admin's own
- * to send wherever they point it. A key we hold — the account's stored
- * key, or the operator's `OPENWA_API_KEY` default — is only ever sent to
- * the gateway it is bound to: the stored row's URL, or `OPENWA_URL`.
- * Otherwise a tenant admin could aim "Testar conexão" at a server they
- * control and receive the operator's (possibly unscoped admin) key in
- * `X-API-Key`. Returns '' when no key may be used — the caller asks for
- * one explicitly.
- */
-export function resolveBoundApiKey(args: {
-  baseUrl: string
-  typedKey?: unknown
-  stored?: Pick<OpenWaConnectionRow, 'base_url' | 'api_key'> | null
-}): string {
-  const typed = typeof args.typedKey === 'string' ? args.typedKey.trim() : ''
-  if (typed) return typed
-  if (args.stored && sameGateway(args.stored.base_url, args.baseUrl)) {
-    return decrypt(args.stored.api_key)
-  }
-  const envKey = process.env.OPENWA_API_KEY?.trim() ?? ''
-  if (envKey && sameGateway(process.env.OPENWA_URL, args.baseUrl)) return envKey
-  return ''
 }

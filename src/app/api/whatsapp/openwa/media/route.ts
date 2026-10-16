@@ -14,7 +14,8 @@ import { untrustedMediaHeaders } from '@/lib/media/safe-inline'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { downloadOpenWaMedia, OpenWaError } from '@/lib/whatsapp/openwa/client'
 import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
-import { credsForRow, openWaMediaProxyUrl } from '@/lib/whatsapp/openwa/events'
+import { openWaMediaProxyUrl } from '@/lib/whatsapp/openwa/events'
+import { requireOpenWaGateway } from '@/lib/whatsapp/openwa/gateway'
 
 export async function GET(request: Request) {
   try {
@@ -43,12 +44,12 @@ export async function GET(request: Request) {
     }
 
     const { bytes, mimeType } = await downloadOpenWaMedia(
-      credsForRow(row),
+      requireOpenWaGateway(),
       row.session_id,
       chatId,
       messageId,
     )
-    // The gateway is tenant-chosen: only inert types render inline;
+    // The bytes are whatever a WhatsApp sender sent: only inert types render inline;
     // anything else downloads, sandboxed (see untrustedMediaHeaders).
     return new Response(new Uint8Array(bytes), {
       status: 200,

@@ -25,8 +25,9 @@ vi.mock('@/lib/auth/account', () => ({
 }))
 
 process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'a'.repeat(64)
-process.env.OPENWA_ALLOWED_HOSTS = '127.0.0.1'
-const { encrypt } = await import('@/lib/whatsapp/encryption')
+// The embedded gateway, unreachable here.
+process.env.OPENWA_URL = 'http://127.0.0.1:9'
+process.env.OPENWA_API_KEY = 'k'
 const { PUT } = await import('@/app/api/whatsapp/provider/route')
 const { handleOpenWaEvent } = await import('@/lib/whatsapp/openwa/events')
 const { __resetRateLimitForTests } = await import('@/lib/rate-limit')
@@ -71,8 +72,8 @@ describe.skipIf(!pgAvailable())('mode switch vs session change (K6)', () => {
     __resetRateLimitForTests()
     await pg.sql(`
       DELETE FROM public.whatsapp_config; DELETE FROM public.whatsapp_openwa_config;
-      INSERT INTO public.whatsapp_openwa_config(account_id, base_url, api_key, session_id, status, status_event_at, broadcast_delay_ms)
-        VALUES ('${ACCT}', 'http://127.0.0.1:9', '${encrypt('k')}', 'sess-1', 'ready', '2026-10-15T10:00:00Z', 8000);
+      INSERT INTO public.whatsapp_openwa_config(account_id, session_id, status, status_event_at, broadcast_delay_ms)
+        VALUES ('${ACCT}', 'sess-1', 'ready', '2026-10-15T10:00:00Z', 8000);
       INSERT INTO public.whatsapp_config(account_id, user_id, provider, status) VALUES ('${ACCT}', '${USER}', 'meta', 'connected');`)
   })
 

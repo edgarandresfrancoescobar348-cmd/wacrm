@@ -45,10 +45,9 @@ export async function POST(request: Request) {
     if (!limit.success) return rateLimitResponse(limit)
 
     const admin = supabaseAdmin()
-    const origin = new URL(request.url).origin
     const openwa =
       action === 'connect'
-        ? await connectOpenWa(admin, accountId, userId, origin)
+        ? await connectOpenWa(admin, accountId, userId)
         : action === 'restart'
           ? await restartOpenWa(admin, accountId)
           : action === 'logout'

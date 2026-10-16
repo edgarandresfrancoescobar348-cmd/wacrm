@@ -77,7 +77,6 @@ describe.skipIf(!pgAvailable())('send evidence (fourth review K1, K2, K7)', () =
   const ok = (id: string): [number, string] => [200, JSON.stringify({ messages: [{ id }] })]
 
   beforeAll(async () => {
-    process.env.OPENWA_ALLOWED_HOSTS = '127.0.0.1'
     pg = await startPg()
     await pg.sql(WA_SCHEMA)
     await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}');`)
