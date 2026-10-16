@@ -16,8 +16,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export const CLAIM_TIMEOUT_MS = 60_000
 
 export type ClaimResult =
-  /** This request owns the delivery — process it. */
-  | 'claimed'
+  /** This request owns the delivery — process it, then finish it with
+   *  the returned attempt number (its lease token). */
+  | { claimed: true; attempt: number }
   /** Already processed — answer 2xx, do nothing. */
   | 'done'
   /** Another request is processing it right now — answer non-2xx so
@@ -43,7 +44,7 @@ export async function claimDelivery(
     attempts: 1,
     updated_at: now.toISOString(),
   })
-  if (!error) return 'claimed'
+  if (!error) return { claimed: true, attempt: 1 }
   if (error.code !== '23505') throw new Error(`ledger insert failed: ${error.message}`)
 
   const { data: row, error: readErr } = await admin
@@ -63,21 +64,22 @@ export async function claimDelivery(
 
   // Re-claim a failed or abandoned delivery. Conditional on the row we
   // read, so two concurrent redeliveries can't both win.
+  const nextAttempt = current.attempts + 1
   const { data: won, error: claimErr } = await admin
     .from('openwa_webhook_deliveries')
-    .update({ status: 'processing', attempts: current.attempts + 1, updated_at: now.toISOString() })
+    .update({ status: 'processing', attempts: nextAttempt, updated_at: now.toISOString() })
     .eq('idempotency_key', args.key)
     .eq('account_id', args.accountId)
     .eq('status', current.status)
     .eq('updated_at', current.updated_at)
     .select('idempotency_key')
   if (claimErr) throw new Error(`ledger re-claim failed: ${claimErr.message}`)
-  return Array.isArray(won) && won.length > 0 ? 'claimed' : 'busy'
+  return Array.isArray(won) && won.length > 0 ? { claimed: true, attempt: nextAttempt } : 'busy'
 }
 
 export async function finishDelivery(
   admin: SupabaseClient,
-  args: { key: string; accountId: string; error?: unknown },
+  args: { key: string; accountId: string; attempt: number; error?: unknown },
 ): Promise<void> {
   const failed = args.error !== undefined
   const message = args.error instanceof Error ? args.error.message : failed ? String(args.error) : null
@@ -90,6 +92,10 @@ export async function finishDelivery(
     })
     .eq('idempotency_key', args.key)
     .eq('account_id', args.accountId)
+    // Lease token: a worker whose claim went stale and was re-claimed by
+    // a redelivery must not overwrite the newer attempt's outcome.
+    .eq('attempts', args.attempt)
+    .eq('status', 'processing')
   // Not recording the outcome must not look like success: the caller
   // answers non-2xx and the redelivery re-claims the (stale) row.
   if (error) throw new Error(`ledger finish failed: ${error.message}`)

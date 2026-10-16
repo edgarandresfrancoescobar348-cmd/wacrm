@@ -353,3 +353,15 @@ describe('OpenWA webhook — ledger finish failure (G5)', () => {
     expect(h.ledger.get('acct-1|msg_key_1')).toMatchObject({ status: 'processing' })
   })
 })
+
+// F3 follow-up (second review): the claim is a lease with an owner token.
+describe('OpenWA webhook — lease ownership (F3)', () => {
+  it('a stale worker cannot overwrite the outcome of the attempt that re-claimed it', async () => {
+    const { finishDelivery } = await import('@/lib/whatsapp/openwa/delivery-ledger')
+    const { supabaseAdmin } = await import('@/lib/flows/admin-client')
+    h.ledger.set('acct-1|k', { idempotency_key: 'k', account_id: 'acct-1', status: 'done', attempts: 2, updated_at: new Date().toISOString() })
+    // attempt 1 finishes late, with an error
+    await finishDelivery(supabaseAdmin(), { key: 'k', accountId: 'acct-1', attempt: 1, error: new Error('late') })
+    expect(h.ledger.get('acct-1|k')).toMatchObject({ status: 'done', attempts: 2 })
+  })
+})

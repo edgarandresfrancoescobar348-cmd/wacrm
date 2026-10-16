@@ -133,6 +133,7 @@ export async function POST(request: Request) {
   if (claim === 'busy') {
     return NextResponse.json({ error: 'Delivery in progress' }, { status: 409 })
   }
+  const attempt = claim.attempt
 
   const { data: config } = await admin
     .from('whatsapp_config')
@@ -156,13 +157,13 @@ export async function POST(request: Request) {
     })
   } catch (err) {
     console.error(`[openwa webhook] ${envelope.event} failed; OpenWA will redeliver:`, err)
-    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, error: err }).catch(
+    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, attempt, error: err }).catch(
       (finishErr) => console.error('[openwa webhook] could not record the failure:', finishErr),
     )
     return NextResponse.json({ error: 'Processing failed, retry' }, { status: 503 })
   }
   try {
-    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id })
+    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, attempt })
   } catch (err) {
     // Processed but not recorded as done: answer non-2xx; the redelivery
     // re-claims the stale claim and finds every write already applied.
