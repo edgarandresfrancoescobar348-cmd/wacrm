@@ -229,7 +229,10 @@ class Builder implements PromiseLike<Result> {
     if (this.op === 'insert') {
       const rows = Array.isArray(this.payload) ? this.payload : [this.payload as Row]
       const keys2 = [...new Set(rows.flatMap((r) => Object.keys(r)))]
-      const values = rows.map((r) => `(${keys2.map((k) => (k in r ? lit(r[k]) : 'DEFAULT')).join(', ')})`).join(', ')
+      // Like supabase-js (defaultToNull) + PostgREST: a bulk insert names the
+      // union of the rows' keys, and a key a row lacks is NULL, not the
+      // column default — a mixed batch must carry every NOT NULL column.
+      const values = rows.map((r) => `(${keys2.map((k) => (k in r ? lit(r[k]) : 'NULL')).join(', ')})`).join(', ')
       let onConflict = ''
       if (this.conflict) {
         const target = this.conflict.cols.split(',').map((c) => ident(c.trim())).join(', ')

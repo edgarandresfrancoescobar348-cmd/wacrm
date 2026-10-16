@@ -541,27 +541,24 @@ async function importChat(
 
   const now = new Date().toISOString()
   const rows = history.map((m) => {
-    const at = typeof m.timestamp === 'number' ? new Date(m.timestamp * 1000).toISOString() : now
+    const row = messageRowFor(m)
     // WhatsApp listed it but hasn't delivered its content here yet: the
-    // phone's "Aguardando mensagem" bubble until the real one arrives.
-    if (isContentlessPlaceholder(m)) {
-      return {
-        conversation_id: conversationId,
-        sender_type: m.fromMe ? 'agent' : 'customer',
-        content_type: 'text',
-        content_text: null,
-        content_meta: { kind: 'waiting' } as ContentMeta,
-        media_url: null,
-        media_type: null,
-        message_id: m.id!,
-        status: m.fromMe ? statusFromAck(m.ack) : 'delivered',
-        created_at: at,
-        revoked_at: null,
-        sender_name: null as string | null,
-        imported_at: now,
-        ingest_completed_at: now,
-      }
+    // phone's "Aguardando mensagem" bubble until the real one arrives. Same
+    // columns as every other row (a mixed batch would NULL the missing ones).
+    if (!isContentlessPlaceholder(m)) return row
+    return {
+      ...row,
+      content_type: 'text',
+      content_text: null,
+      content_meta: { kind: 'waiting' } as ContentMeta,
+      media_url: null,
+      media_type: null,
+      revoked_at: null,
+      media_meta: null,
     }
+  })
+  function messageRowFor(m: HistoryMessage) {
+    const at = typeof m.timestamp === 'number' ? new Date(m.timestamp * 1000).toISOString() : now
     if (isGroup) {
       return {
         ...(groupMessageRow(m, conversationId, chat.chat_id, at) as MessageRow),
@@ -589,7 +586,7 @@ async function importChat(
       imported_at: now,
       ingest_completed_at: now,
     }
-  })
+  }
 
   let inserted = 0
   for (let i = 0; i < rows.length; i += INSERT_BATCH) {
