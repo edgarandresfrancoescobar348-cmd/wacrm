@@ -19,8 +19,9 @@ gateway, next to the official Meta Cloud API.
 > `050_message_status_pending.sql`, `051_definer_search_path.sql`,
 > `052_apply_message_receipt.sql`, `053_inbound_completion.sql` and
 > `054_broadcast_send_checkpoint.sql`, `055_broadcast_params_jsonb.sql`,
-> `056_broadcast_send_attempts.sql`, `057_inbound_fanout_outbox.sql` and
-> `058_openwa_status_mirror.sql`, in order. All additive; existing rows
+> `056_broadcast_send_attempts.sql`, `057_inbound_fanout_outbox.sql`,
+> `058_openwa_status_mirror.sql`, `059_send_evidence.sql`,
+> `060_fanout_outcomes.sql` and `061_connection_lock.sql`, in order. All additive; existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -31,7 +32,11 @@ gateway, next to the official Meta Cloud API.
 > 054 the broadcast send checkpoint and automatic continuation flag; 055
 > fixes per-recipient params on `POST /api/v1/broadcasts`; 056 durable
 > broadcast send attempts (and recipient status `unknown`); 057 the inbound
-> fan-out outbox; 058 derives the QR "connected" flag from the session.
+> fan-out outbox; 058 derives the QR "connected" flag from the session;
+> 059 send evidence (one message proves one send, proven refusals resend,
+> uncertain legacy failures quarantined); 060 fan-out step outcomes and
+> the stored inputs the cron completes from; 061 the per-account
+> connection lock.
 
 ### Added
 
@@ -87,6 +92,16 @@ gateway, next to the official Meta Cloud API.
   **Unconfirmed** on the broadcast page for a person to decide. Retry
   failed is resumable even if interrupted; the continuation keeps its
   schedule through failures.
+- A broadcast refused before sending (Meta 429, out of time) is sent on the
+  next pass on both modes; a 2xx answer that can't be read is treated as
+  "may have been sent" (same key), never as failed; one provider message
+  can confirm only one send, and ambiguous evidence goes to a person.
+- Inbound fan-out steps report their outcome: transient failures are
+  retried (webhooks only to the endpoints that missed the delivery),
+  uncertain ones held for a person; a runner that lost its lease stops
+  before the next step; Meta's path never runs the fan-out outside its
+  task.
+- Switching to QR mode and session changes are serialised per account.
 - Inbound bot fan-out is a durable outbox task written with the message: a
   failed ledger write or a crash no longer drops a bot reply.
 - The QR "connected" flag can no longer fall behind a newer session event.

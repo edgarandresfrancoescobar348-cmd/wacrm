@@ -96,7 +96,10 @@ so quoting or reacting to messages from before the switch stops resolving.
   message (migration 057). It runs right after the delivery is processed; if
   that doesn't happen (the delivery couldn't be marked done, the process
   died), a redelivery of the message or the cron above runs it — once, and
-  steps already run are not repeated.
+  steps already run are not repeated. A step that fails transiently is
+  retried later (a public webhook only to the endpoints that missed it,
+  with the same delivery id); one whose outcome is uncertain stops the task
+  for a person (status `held`) instead of risking a duplicate.
 - The account's "connected" flag is derived in the database from the
   session state (migration 058), so it can't fall behind a newer session
   event.
@@ -124,7 +127,14 @@ so quoting or reacting to messages from before the switch stops resolving.
   gateway URL and session. Otherwise — and always on the official API,
   which has no idempotency key — the recipient is shown as **Unconfirmed**
   on the broadcast page, where a person records "They arrived" or "Not sent
-  (allow retry)" after checking the chat.
+  (allow retry)" after checking the chat. Evidence only counts when it is
+  unambiguous: one provider message confirms at most one send, and a match
+  by text with more than one candidate goes to a person. A refusal that
+  provably happened before sending (rate limit, out of time) is simply sent
+  on the next pass; an answer that can't be read is treated as "may have
+  been sent". Failures recorded before send attempts existed that had
+  already started sending are shown as Unconfirmed instead of being
+  retried.
 - What doesn't fit a pass stays `pending` and **continues automatically**
   on the next run of the scheduler you already use for automations
   (`GET /api/automations/cron`, or the dedicated

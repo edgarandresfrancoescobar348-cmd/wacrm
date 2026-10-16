@@ -225,6 +225,33 @@ BEGIN
     RAISE EXCEPTION 'OpenWA status mirror triggers are missing — migration 058 did not apply';
   END IF;
 
+  -- 059: send evidence (fourth review K1, K2, quarantine).
+  IF to_regprocedure('public.broadcast_attempt_settle_evidence(uuid,uuid,text[],text)') IS NULL
+     OR (SELECT format_type(prorettype, NULL) FROM pg_proc
+          WHERE oid = to_regprocedure('public.broadcast_attempt_reconcile_stored(uuid,uuid)')) IS DISTINCT FROM 'jsonb' THEN
+    RAISE EXCEPTION 'send evidence functions are missing — migration 059 did not apply';
+  END IF;
+
+  -- 060: fan-out outcomes (K3–K5).
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'inbound_fanout_tasks_status_check' AND pg_get_constraintdef(oid) LIKE '%held%'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'ingest_fanout'
+  ) OR to_regprocedure('public.complete_stale_inbound_messages(integer,integer)') IS NULL THEN
+    RAISE EXCEPTION 'fan-out outcomes are missing — migration 060 did not apply';
+  END IF;
+
+  -- 061: the per-account connection lock (K6).
+  IF to_regprocedure('public.set_openwa_active(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.apply_openwa_session_state(uuid,jsonb,text,timestamptz)') IS NULL THEN
+    RAISE EXCEPTION 'connection lock RPCs are missing — migration 061 did not apply';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.apply_openwa_session_state(uuid,jsonb,text,timestamptz)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'apply_openwa_session_state is executable by authenticated — migration 061 grants are wrong';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;
