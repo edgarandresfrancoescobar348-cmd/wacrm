@@ -474,11 +474,11 @@ export function MediaDocumentBubble({
   const details = [pages ? t("pages", { count: pages }) : null, size, ext ? ext.toLowerCase() : null].filter(Boolean).join(" · ");
 
   return (
-    <div className="w-[min(320px,62vw)] pt-0.5">
+    <div className="w-[min(240px,62vw)] pt-0.5" data-testid="document-card">
       {/* The document's first page, as WhatsApp previews it. */}
       {thumb ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={thumb} alt="" className="mb-0.5 block h-[110px] w-full rounded-t-md object-cover object-top" data-testid="document-thumbnail" />
+        <img src={thumb} alt="" className="block h-[92px] w-full rounded-t-md object-cover object-top" data-testid="document-thumbnail" />
       ) : null}
       <div className={cn("flex items-center gap-2 bg-bubble-quote p-2.5", thumb ? "rounded-b-md" : "rounded-md")}>
         <a
@@ -492,7 +492,7 @@ export function MediaDocumentBubble({
             {ext ?? ""}
           </span>
           <span className="min-w-0">
-            <span className="line-clamp-2 text-[14px] leading-[19px] break-words text-foreground">
+            <span className="block truncate text-[14px] leading-[19px] text-foreground" title={message.content_text || undefined}>
               {message.content_text || t("document")}
             </span>
             <span className="block text-[12px] leading-4 text-foreground/60" data-testid="document-details">
@@ -506,7 +506,7 @@ export function MediaDocumentBubble({
           disabled={downloading}
           aria-label={t("download")}
           title={t("download")}
-          className="flex size-9 shrink-0 items-center justify-center rounded-full border border-foreground/20 text-foreground/70 transition-colors hover:bg-background/40 hover:text-foreground disabled:opacity-60"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full border-[1.5px] border-primary text-primary transition-colors hover:bg-primary/10 disabled:opacity-60"
         >
           {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
         </button>
