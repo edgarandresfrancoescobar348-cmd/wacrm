@@ -8,6 +8,7 @@
 // who want broadcasts on their own schedule.
 
 import { timingSafeEqual } from 'node:crypto'
+import { cronSecret } from '@/lib/cron/secret'
 import { NextResponse } from 'next/server'
 
 import { supabaseAdmin } from '@/lib/flows/admin-client'
@@ -18,7 +19,7 @@ export const maxDuration = 300
 
 export async function GET(request: Request) {
   const startedAt = Date.now()
-  const expected = process.env.AUTOMATION_CRON_SECRET
+  const expected = cronSecret()
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
   }

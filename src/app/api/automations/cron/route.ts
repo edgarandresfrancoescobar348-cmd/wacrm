@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
+import { cronSecret } from '@/lib/cron/secret'
 import { NextResponse, after } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { expireAwaitingReplies, resumePendingExecution } from '@/lib/automations/engine'
@@ -24,7 +25,7 @@ export const maxDuration = 300
  */
 export async function GET(request: Request) {
   const startedAt = Date.now()
-  const expected = process.env.AUTOMATION_CRON_SECRET
+  const expected = cronSecret()
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
   }
@@ -60,7 +61,7 @@ export async function GET(request: Request) {
         // one job per run; the loop picks the next due one
       }
     } catch (err) {
-      console.error('[automations cron] history import failed:', err)
+      console.error('[history import] cron run failed:', err instanceof Error ? err.message : err)
     }
   })
 

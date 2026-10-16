@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
+import { cronSecret } from '@/lib/cron/secret'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { resolveFallbackPolicy } from '@/lib/flows/fallback'
@@ -27,7 +28,7 @@ import { resolveFallbackPolicy } from '@/lib/flows/fallback'
  * tenants.
  */
 export async function GET(request: Request) {
-  const expected = process.env.AUTOMATION_CRON_SECRET
+  const expected = cronSecret()
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
   }

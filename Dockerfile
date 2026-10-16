@@ -52,6 +52,9 @@ RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# The scheduler (`node scripts/wacrm.mjs cron`, the compose `scheduler`
+# service) runs from this same image; it needs only Node's builtins.
+COPY --from=builder --chown=nextjs:nextjs /app/scripts/wacrm.mjs ./scripts/wacrm.mjs
 
 USER nextjs
 EXPOSE 3000

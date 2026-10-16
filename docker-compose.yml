@@ -2,7 +2,8 @@ name: wacrm
 
 services:
   app:
-    build:
+    image: wacrm-app:local
+    build: &app-build
       context: .
       # NEXT_PUBLIC_* vars are inlined at build time — forward them
       # from .env.local as build args. Changing any of them requires
@@ -28,6 +29,13 @@ services:
       OPENWA_URL: http://openwa:2785
       OPENWA_API_KEY_FILE: /run/wacrm-gateway/gateway.key
       OPENWA_WEBHOOK_BASE_URL: http://app:3000
+      # The gateway's per-client rate limits below; the history import
+      # paces itself under them.
+      OPENWA_RATE_LIMIT_PER_MIN: 600
+      OPENWA_RATE_LIMIT_PER_HOUR: 36000
+      # Cron endpoints' secret when .env.local sets no
+      # AUTOMATION_CRON_SECRET (generated once by `openwa-key`).
+      AUTOMATION_CRON_SECRET_FILE: /run/wacrm-gateway/cron.secret
     volumes:
       - gateway-key:/run/wacrm-gateway:ro
     depends_on:
@@ -51,6 +59,30 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # ----------------------------------------------------------------
+  # The scheduler: every 60 s it calls the cron endpoints (automations
+  # — which also continues broadcasts, the inbound fan-out and the QR
+  # history import —, the broadcast cron, and the flow sweep every
+  # 5 min) with the cron secret. Same image as `app`; no crontab.
+  # ----------------------------------------------------------------
+  scheduler:
+    image: wacrm-app:local
+    build: *app-build
+    restart: unless-stopped
+    command: ['node', 'scripts/wacrm.mjs', 'cron']
+    env_file:
+      - .env.local
+    environment:
+      WACRM_CRON_URL: http://app:3000
+      AUTOMATION_CRON_SECRET_FILE: /run/wacrm-gateway/cron.secret
+    volumes:
+      - gateway-key:/run/wacrm-gateway:ro
+    depends_on:
+      openwa-key:
+        condition: service_completed_successfully
+      app:
+        condition: service_started
 
   # ----------------------------------------------------------------
   # The WhatsApp gateway for the "QR Code" connection mode, built from
@@ -77,6 +109,12 @@ services:
       SSRF_ALLOWED_HOSTS: app
       # wacrm is the UI; OpenWA's own dashboard is not served.
       SERVE_DASHBOARD: 'false'
+      # Per-client rate limits: wacrm is the only client (stock 10/s,
+      # 100/min and 1000/h would throttle a history import). Keep the
+      # per-minute/per-hour values in sync with app's OPENWA_RATE_LIMIT_*.
+      RATE_LIMIT_SHORT_LIMIT: 20
+      RATE_LIMIT_MEDIUM_LIMIT: 600
+      RATE_LIMIT_LONG_LIMIT: 36000
     # The provisioned key seeds OpenWA's admin key on its first boot
     # (API_MASTER_KEY; an existing data volume keeps the key it has —
     # openwa-key adopts it).
@@ -86,7 +124,8 @@ services:
       - gateway-key:/run/wacrm-gateway:ro
 
   # One-shot: generate the gateway admin key on the first `up` (or adopt
-  # the key an existing OpenWA data volume already holds), then exit.
+  # the key an existing OpenWA data volume already holds) and the cron
+  # secret, then exit.
   openwa-key:
     build:
       context: ./packages/openwa
@@ -108,6 +147,13 @@ services:
           console.log('wacrm gateway key ' + source + ' (' + key.slice(0, 10) + '…)');
         } else {
           console.log('wacrm gateway key present (' + have.slice(0, 10) + '…)');
+        }
+        // The cron endpoints' secret, for app and scheduler (used when
+        // .env.local sets no AUTOMATION_CRON_SECRET).
+        const cronFile = '/run/wacrm-gateway/cron.secret';
+        if (!fs.existsSync(cronFile) || !fs.readFileSync(cronFile, 'utf8').trim()) {
+          fs.writeFileSync(cronFile, crypto.randomBytes(32).toString('hex') + '\n', { mode: 0o644 });
+          console.log('wacrm cron secret generated');
         }
     volumes:
       - openwa-data:/app/data:ro

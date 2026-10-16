@@ -7,9 +7,16 @@
 //   node scripts/wacrm.mjs start [next start args]  npm run start
 //   node scripts/wacrm.mjs build [next build args]  npm run build
 //   node scripts/wacrm.mjs openwa:install | openwa:build
+//   node scripts/wacrm.mjs cron                     the scheduler alone (compose)
 //
 // dev/start run Next and OpenWA side by side; when either exits (or on
-// Ctrl-C / SIGTERM) both stop. The gateway's admin API key is a shared
+// Ctrl-C / SIGTERM) both stop. They also run the scheduler: every 60 s
+// a tick calls the cron endpoints (automations — which also continues
+// broadcasts, the inbound fan-out and the QR history import —, the
+// broadcast cron, and the flow sweep every 5 minutes) with the cron
+// secret: AUTOMATION_CRON_SECRET from the environment or .env files,
+// else one generated once into the data dir (cron.secret, 0600) and
+// handed to Next. WACRM_CRON=off turns it off. The gateway's admin API key is a shared
 // secret generated on first run and kept in the data dir
 // (.openwa-data/gateway.key, 0600). OpenWA seeds it as its admin key
 // (API_MASTER_KEY, first boot only); Next gets it as OPENWA_API_KEY.
@@ -20,6 +27,8 @@
 //
 // WACRM_OPENWA=off runs Next alone (serverless hosts, or when the QR
 // mode isn't wanted). Vercel builds skip the gateway automatically.
+// OPENWA_URL set in the shell (with OPENWA_API_KEY) uses that gateway
+// instead of starting the embedded one.
 // ============================================================
 
 import { spawn, spawnSync } from 'node:child_process'
@@ -27,14 +36,30 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OPENWA_DIR = path.join(ROOT, 'packages', 'openwa')
 const NEXT_BIN = path.join(ROOT, 'node_modules', 'next', 'dist', 'bin', 'next')
 const INSTALL_STAMP = path.join(OPENWA_DIR, 'node_modules', '.wacrm-install-stamp')
 const KEY_FILE_NAME = 'gateway.key'
+const CRON_SECRET_FILE_NAME = 'cron.secret'
+/**
+ * The embedded gateway's per-client rate limits (OpenWA's Nest throttler;
+ * stock 10/s, 100/min, 1000/h). wacrm is its only client and its API is
+ * loopback-only, so the stock hourly cap would only throttle a history
+ * import. Next gets the same numbers to pace the import under them.
+ */
+export const GATEWAY_RATE_LIMITS = { perSecond: 20, perMinute: 600, perHour: 36_000 }
 const STOP_GRACE_MS = 20_000
+const CRON_FIRST_TICK_MS = 10_000
+const CRON_REQUEST_TIMEOUT_MS = 120_000
+/** The cron endpoints a tick calls; `every` = once per that many ticks. */
+export const CRON_ENDPOINTS = [
+  { name: 'automations', path: '/api/automations/cron', every: 1 },
+  { name: 'broadcast', path: '/api/whatsapp/broadcast/cron', every: 1 },
+  { name: 'flows', path: '/api/flows/cron', every: 5 },
+]
 
 const log = (msg) => console.log(`[wacrm] ${msg}`)
 
@@ -174,6 +199,100 @@ export function ensureGatewayKey(dir) {
   return { key, keyFile, source }
 }
 
+/** A KEY=value from the .env files Next loads, in Next's order of precedence. */
+function envFileValue(key, mode, root = ROOT) {
+  const nodeEnv = mode === 'dev' ? 'development' : 'production'
+  for (const name of [`.env.${nodeEnv}.local`, '.env.local', `.env.${nodeEnv}`, '.env']) {
+    const file = path.join(root, name)
+    if (!fs.existsSync(file)) continue
+    const m = new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=\\s*(.*)$`, 'm').exec(fs.readFileSync(file, 'utf8'))
+    const value = m?.[1]?.trim().replace(/^(['"])(.*)\1$/, '$2')
+    if (value) return value
+  }
+  return ''
+}
+
+/**
+ * The cron endpoints' shared secret: the operator's (environment, then
+ * the .env files), else one generated once into the data dir.
+ */
+export function ensureCronSecret(dir, mode, root = ROOT) {
+  const configured = process.env.AUTOMATION_CRON_SECRET?.trim() || envFileValue('AUTOMATION_CRON_SECRET', mode, root)
+  if (configured) return { secret: configured, source: 'configured' }
+  const file = path.join(dir, CRON_SECRET_FILE_NAME)
+  const stored = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : ''
+  if (stored) return { secret: stored, source: 'existing' }
+  const secret = crypto.randomBytes(32).toString('hex')
+  fs.writeFileSync(file, secret + '\n', { mode: 0o600 })
+  return { secret, source: 'generated' }
+}
+
+/**
+ * One scheduler tick: call each due cron endpoint with the secret.
+ * Returns one short line for the log. An endpoint whose previous call
+ * is still running is skipped, not stacked.
+ */
+export async function cronTick({ baseUrl, secret, tick, inFlight = new Set(), fetchImpl = fetch, signal = undefined }) {
+  const parts = []
+  const started = Date.now()
+  await Promise.all(
+    CRON_ENDPOINTS.filter((e) => tick % e.every === 0).map(async (e) => {
+      if (inFlight.has(e.name)) {
+        parts.push(`${e.name} busy`)
+        return
+      }
+      inFlight.add(e.name)
+      try {
+        const res = await fetchImpl(`${baseUrl}${e.path}`, {
+          headers: { 'x-cron-secret': secret },
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CRON_REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(CRON_REQUEST_TIMEOUT_MS),
+        })
+        parts.push(`${e.name} ${res.status}`)
+        await res.body?.cancel().catch(() => undefined)
+      } catch (err) {
+        parts.push(`${e.name} ${err?.name === 'TimeoutError' ? 'timeout' : 'unreachable'}`)
+      } finally {
+        inFlight.delete(e.name)
+      }
+    }),
+  )
+  const order = CRON_ENDPOINTS.map((e) => e.name)
+  parts.sort((a, b) => order.indexOf(a.split(' ')[0]) - order.indexOf(b.split(' ')[0]))
+  return `${parts.join(' · ')} (${Date.now() - started} ms)`
+}
+
+/** Tick every `intervalMs` until stop() — one log line per tick. */
+export function startScheduler({ baseUrl, secret, intervalMs, firstTickMs = CRON_FIRST_TICK_MS, write = (l) => console.log(l) }) {
+  const inFlight = new Set()
+  const controller = new AbortController()
+  let tick = 0
+  let timer = null
+  const run = async () => {
+    const line = await cronTick({ baseUrl, secret, tick, inFlight, signal: controller.signal })
+    if (!controller.signal.aborted) write(`[cron] tick ${tick}: ${line}`)
+    tick++
+  }
+  const first = setTimeout(() => {
+    void run()
+    timer = setInterval(() => void run(), intervalMs)
+  }, firstTickMs)
+  return {
+    stop() {
+      clearTimeout(first)
+      if (timer) clearInterval(timer)
+      controller.abort()
+    },
+  }
+}
+
+function cronEnabled() {
+  return !['off', 'false', '0', 'no'].includes((process.env.WACRM_CRON ?? '').trim().toLowerCase())
+}
+
+function cronIntervalMs() {
+  return (Number(process.env.WACRM_CRON_INTERVAL_S) || 60) * 1000
+}
+
 /** -p / --port / --port=N from the Next args, else PORT, else 3000. */
 function nextPort(args) {
   for (let i = 0; i < args.length; i++) {
@@ -203,6 +322,9 @@ function openWaEnv({ mode, port, key }) {
     ENGINE_TYPE: process.env.OPENWA_ENGINE_TYPE?.trim() || 'whatsapp-web.js',
     // The dashboard SPA isn't built here; wacrm is the UI.
     SERVE_DASHBOARD: 'false',
+    RATE_LIMIT_SHORT_LIMIT: String(GATEWAY_RATE_LIMITS.perSecond),
+    RATE_LIMIT_MEDIUM_LIMIT: String(GATEWAY_RATE_LIMITS.perMinute),
+    RATE_LIMIT_LONG_LIMIT: String(GATEWAY_RATE_LIMITS.perHour),
   }
 }
 
@@ -251,9 +373,12 @@ async function serve(mode, nextArgs) {
   const children = []
   let stopping = false
 
+  let scheduler = null
+
   const stopAll = (code) => {
     if (stopping) return
     stopping = true
+    scheduler?.stop()
     process.exitCode = code
     for (const c of children) if (c.exitCode === null) c.kill('SIGTERM')
     setTimeout(() => {
@@ -261,7 +386,11 @@ async function serve(mode, nextArgs) {
     }, STOP_GRACE_MS).unref()
   }
 
-  if (embedded.on) {
+  const external = process.env.OPENWA_URL?.trim()
+  if (external) {
+    log(`using the WhatsApp gateway at ${external} (OPENWA_URL); the embedded one is not started`)
+    if (!process.env.OPENWA_WEBHOOK_BASE_URL) nextEnv.OPENWA_WEBHOOK_BASE_URL = `http://127.0.0.1:${port}`
+  } else if (embedded.on) {
     ensureOpenWaInstalled()
     ensureOpenWaBuilt()
     verifyOpenWaRuntime()
@@ -290,9 +419,23 @@ async function serve(mode, nextArgs) {
 
     nextEnv.OPENWA_URL = gwUrl
     nextEnv.OPENWA_API_KEY = key
+    nextEnv.OPENWA_RATE_LIMIT_PER_MIN = String(GATEWAY_RATE_LIMITS.perMinute)
+    nextEnv.OPENWA_RATE_LIMIT_PER_HOUR = String(GATEWAY_RATE_LIMITS.perHour)
     nextEnv.OPENWA_WEBHOOK_BASE_URL = `http://127.0.0.1:${port}`
   } else {
     log(`WhatsApp gateway not started: ${embedded.why}. QR-code mode is unavailable; the official API mode works.`)
+  }
+
+  if (cronEnabled()) {
+    const { secret, source } = ensureCronSecret(dataDir(), mode)
+    nextEnv.AUTOMATION_CRON_SECRET = secret
+    const intervalMs = cronIntervalMs()
+    log(
+      `scheduler: cron endpoints every ${intervalMs / 1000} s (secret ${source === 'configured' ? 'from AUTOMATION_CRON_SECRET' : `${source}, ${CRON_SECRET_FILE_NAME}`})`,
+    )
+    scheduler = startScheduler({ baseUrl: `http://127.0.0.1:${port}`, secret, intervalMs })
+  } else {
+    log('scheduler off (WACRM_CRON=off): nothing calls the cron endpoints')
   }
 
   const next = spawn(process.execPath, [NEXT_BIN, mode, ...nextArgs], {
@@ -322,9 +465,24 @@ function build(nextArgs) {
   run(process.execPath, [NEXT_BIN, 'build', ...nextArgs], { cwd: ROOT })
 }
 
-const [cmd, ...rest] = process.argv.slice(2)
-try {
+/** `cron`: the scheduler alone, for a separate container (docker-compose.yml). */
+async function cronOnly() {
+  const baseUrl = (process.env.WACRM_CRON_URL?.trim() || 'http://127.0.0.1:3000').replace(/\/+$/, '')
+  let secret = process.env.AUTOMATION_CRON_SECRET?.trim() || ''
+  const file = process.env.AUTOMATION_CRON_SECRET_FILE?.trim()
+  if (!secret && file) secret = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : ''
+  if (!secret) throw new Error('no cron secret: set AUTOMATION_CRON_SECRET or AUTOMATION_CRON_SECRET_FILE')
+  const intervalMs = cronIntervalMs()
+  log(`scheduler: ${baseUrl} every ${intervalMs / 1000} s`)
+  const scheduler = startScheduler({ baseUrl, secret, intervalMs })
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => scheduler.stop())
+}
+
+async function main(cmd, rest) {
   switch (cmd) {
+    case 'cron':
+      await cronOnly()
+      break
     case 'dev':
     case 'start':
       await serve(cmd, rest)
@@ -342,10 +500,19 @@ try {
       ensureOpenWaBuilt({ force: true })
       break
     default:
-      console.error('usage: node scripts/wacrm.mjs dev|start|build|openwa:install|openwa:build [args]')
+      console.error('usage: node scripts/wacrm.mjs dev|start|build|cron|openwa:install|openwa:build [args]')
       process.exit(2)
   }
-} catch (err) {
-  console.error(`[wacrm] ${err instanceof Error ? err.message : err}`)
-  process.exit(1)
+}
+
+// Run only as a script: tests import the scheduler functions.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+if (isMain) {
+  const [cmd, ...rest] = process.argv.slice(2)
+  try {
+    await main(cmd, rest)
+  } catch (err) {
+    console.error(`[wacrm] ${err instanceof Error ? err.message : err}`)
+    process.exit(1)
+  }
 }
