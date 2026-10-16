@@ -21,7 +21,8 @@ gateway, next to the official Meta Cloud API.
 > `054_broadcast_send_checkpoint.sql`, `055_broadcast_params_jsonb.sql`,
 > `056_broadcast_send_attempts.sql`, `057_inbound_fanout_outbox.sql`,
 > `058_openwa_status_mirror.sql`, `059_send_evidence.sql`,
-> `060_fanout_outcomes.sql` and `061_connection_lock.sql`, in order. All additive; existing rows
+> `060_fanout_outcomes.sql`, `061_connection_lock.sql`,
+> `062_message_content_meta.sql` and `063_whatsapp_history_import.sql`, in order. All additive; existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -36,7 +37,8 @@ gateway, next to the official Meta Cloud API.
 > 059 send evidence (one message proves one send, proven refusals resend,
 > uncertain legacy failures quarantined); 060 fan-out step outcomes and
 > the stored inputs the cron completes from; 061 the per-account
-> connection lock.
+> connection lock; 062 `messages.content_meta` (structured message kinds);
+> 063 the QR-code history import job and `messages.imported_at`.
 
 ### Added
 
@@ -54,6 +56,18 @@ gateway, next to the official Meta Cloud API.
 - **Inbound on QR** through the same ingestion path as Meta: media mirrored
   to storage, ticks from `message.ack`, failures, reactions, deleted/edited
   labels, messages typed on the phone; groups and status are ignored.
+- **QR Code: chat history import.** On connect (and from "Importar de
+  novo" in Settings → WhatsApp) the individual chats and their history on
+  the linked phone are imported in the background — resumable, idempotent
+  with live webhooks, progress on the connection page. Imported messages
+  never run bots, automations, flows, AI, public webhooks or
+  notifications; unread comes from the phone. Baileys engines only have
+  the gateway's stored messages (shown as limited history).
+- **Every message kind renders like WhatsApp, in both modes**: location,
+  shared contact (with "Add contact"), poll, voice/video call, deleted,
+  order, product, "not available on this device", stickers and voice
+  notes; list previews show an icon and label ("Foto", "Documento
+  nome.pdf"), never `[text]`.
 - Optional `openwa` compose profile; `OPENWA_ALLOWED_HOSTS`,
   `OPENWA_WEBHOOK_BASE_URL`, `OPENWA_URL`, `OPENWA_API_KEY` env vars.
 
@@ -78,6 +92,15 @@ gateway, next to the official Meta Cloud API.
 - Delivery receipts that arrive before their message exists are kept and
   applied when it appears; ticks never move backwards (official API too).
 - A quoted reply to an older numbered menu maps to that menu's options.
+- QR Code: the empty placeholders WhatsApp sends while a phone is being
+  linked (`unknown`, no content) no longer create contacts and
+  conversations with an empty bubble; the real message is accepted when
+  it is redelivered.
+- The inbox connection banner and empty-state button follow the active
+  mode (a connected QR session no longer shows "WhatsApp is not
+  connected") and stay current.
+- A new conversation shows its preview, time and unread badge in the
+  inbox list in realtime, without reloading.
 - The echo of our own QR send can no longer make the send fail.
 - Paced broadcasts run in time-boxed passes that checkpoint each recipient
   and continue automatically on the existing cron

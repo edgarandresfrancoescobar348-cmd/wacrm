@@ -104,6 +104,28 @@ so quoting or reacting to messages from before the switch stops resolving.
   session state (migration 058), so it can't fall behind a newer session
   event.
 
+## Chat history import
+
+When a QR session becomes ready (and from **Importar de novo** in Settings →
+WhatsApp → QR Code), wacrm imports the individual chats the linked phone
+holds: `GET /sessions/:id/chats` (groups, channels, status and broadcasts
+are skipped), then per chat `GET …/messages/:chatId/history?deep=true`. On
+engines without live history (Baileys answers 501) only the messages the
+gateway stored are imported, and the page says the history is limited.
+
+- Runs in the background, resumable (per-chat checkpoints, migration 063),
+  continued by the same scheduler as automations; 409/503 are retried with
+  backoff, and a disconnected session waits.
+- Idempotent: messages are keyed by the provider message id, so a re-run or
+  a webhook delivering the same message never duplicates it. Messages newer
+  than the import's start are left to the webhooks.
+- Imported messages never run bots, automations, flows, AI, public
+  webhooks or notifications and never add to unread — each conversation
+  takes the phone's unread count. Media is a lazy reference through the
+  media proxy, downloaded only when opened.
+- WhatsApp's link-time placeholders (type `unknown`, no content) are
+  skipped here and on the webhook.
+
 ## Limits
 
 - Pacing state is per server process; a multi-instance deployment paces per

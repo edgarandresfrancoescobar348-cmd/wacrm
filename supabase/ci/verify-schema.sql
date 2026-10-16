@@ -252,6 +252,24 @@ BEGIN
     RAISE EXCEPTION 'apply_openwa_session_state is executable by authenticated — migration 061 grants are wrong';
   END IF;
 
+  -- 062: structured message kinds (A2).
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'content_meta') THEN
+    RAISE EXCEPTION 'messages.content_meta is missing — migration 062 did not apply';
+  END IF;
+
+  -- 063: QR-code history import (A1).
+  IF to_regclass('public.whatsapp_history_imports') IS NULL
+     OR to_regclass('public.whatsapp_history_import_chats') IS NULL
+     OR to_regprocedure('public.claim_history_import(uuid,integer)') IS NULL
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'imported_at') THEN
+    RAISE EXCEPTION 'history import schema is missing — migration 063 did not apply';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.claim_history_import(uuid,integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'claim_history_import is executable by authenticated — migration 063 grants are wrong';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;
