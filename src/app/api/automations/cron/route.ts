@@ -5,6 +5,7 @@ import { expireAwaitingReplies, resumePendingExecution } from '@/lib/automations
 import type { AutomationContext } from '@/lib/automations/engine'
 import { continuePausedBroadcasts } from '@/lib/whatsapp/broadcast-continue'
 import { drainInboundFanout } from '@/lib/whatsapp/inbound/fanout'
+import { runHistoryImport } from '@/lib/whatsapp/openwa/history-import'
 
 // Room for the broadcast continuation run in after() below (paced
 // broadcasts deliver in time-boxed passes).
@@ -51,6 +52,15 @@ export async function GET(request: Request) {
       await drainInboundFanout(supabaseAdmin(), { deadline: startedAt + (maxDuration - 30) * 1000 })
     } catch (err) {
       console.error('[automations cron] inbound fan-out drain failed:', err)
+    }
+    // QR-code history imports (A1): continue from their checkpoint.
+    try {
+      const deadline = startedAt + (maxDuration - 20) * 1000
+      while (Date.now() < deadline && (await runHistoryImport(supabaseAdmin(), { deadline }))) {
+        // one job per run; the loop picks the next due one
+      }
+    } catch (err) {
+      console.error('[automations cron] history import failed:', err)
     }
   })
 

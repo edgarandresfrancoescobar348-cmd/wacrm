@@ -78,6 +78,7 @@ function selectList(table: string, cols: string): string {
 
 class Builder implements PromiseLike<Result> {
   private op: 'select' | 'insert' | 'update' | 'delete' = 'select'
+  private conflict: { cols: string; ignore: boolean } | null = null
   private cols = '*'
   private countMode = false
   private headOnly = false
@@ -105,6 +106,17 @@ class Builder implements PromiseLike<Result> {
   insert(rows: Row | Row[]) {
     this.op = 'insert'
     this.payload = rows
+    return this
+  }
+  /** PostgREST upsert: ON CONFLICT (onConflict) DO NOTHING | DO UPDATE. */
+  upsert(rows: Row | Row[], opts: { onConflict?: string; ignoreDuplicates?: boolean } = {}) {
+    this.op = 'insert'
+    this.payload = rows
+    this.conflict = { cols: opts.onConflict ?? 'id', ignore: !!opts.ignoreDuplicates }
+    return this
+  }
+  like(c: string, pattern: string) {
+    this.where.push(`t.${ident(c)} LIKE ${lit(pattern)}`)
     return this
   }
   update(patch: Row) {
@@ -216,10 +228,16 @@ class Builder implements PromiseLike<Result> {
     let stmt: string
     if (this.op === 'insert') {
       const rows = Array.isArray(this.payload) ? this.payload : [this.payload as Row]
-      const keys = Object.keys(rows[0] ?? {})
-      stmt = `INSERT INTO ${tbl} AS t (${keys.map(ident).join(', ')}) VALUES ${rows
-        .map((r) => `(${keys.map((k) => lit(r[k])).join(', ')})`)
-        .join(', ')}${ret}`
+      const keys2 = [...new Set(rows.flatMap((r) => Object.keys(r)))]
+      const values = rows.map((r) => `(${keys2.map((k) => (k in r ? lit(r[k]) : 'DEFAULT')).join(', ')})`).join(', ')
+      let onConflict = ''
+      if (this.conflict) {
+        const target = this.conflict.cols.split(',').map((c) => ident(c.trim())).join(', ')
+        onConflict = this.conflict.ignore
+          ? ` ON CONFLICT (${target}) DO NOTHING`
+          : ` ON CONFLICT (${target}) DO UPDATE SET ${keys2.map((k) => `${ident(k)} = EXCLUDED.${ident(k)}`).join(', ')}`
+      }
+      stmt = `INSERT INTO ${tbl} AS t (${keys2.map(ident).join(', ')}) VALUES ${values}${onConflict}${ret}`
     } else if (this.op === 'update') {
       const set = Object.entries(this.payload as Row)
         .map(([k, v]) => `${ident(k)} = ${lit(v)}`)

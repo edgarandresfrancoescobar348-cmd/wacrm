@@ -33,6 +33,7 @@ import type { OpenWaConnectionRow } from './connection'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { parseVcards, type ContentMeta } from '@/lib/whatsapp/message-content'
 import { reconcileAttemptFromEcho } from '@/lib/whatsapp/broadcast-attempts'
+import { queueHistoryImportOnConnect, runHistoryImport } from './history-import'
 
 export interface OpenWaEnvelope {
   event: string
@@ -705,6 +706,17 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   if (!Array.isArray(applied) || applied.length === 0) {
     console.info(`[openwa] ignored ${env.event} older than the current session state`)
     return
+  }
+  // First connection of this session: import the history the linked
+  // phone holds (A1) — in the background, continued by the cron.
+  if (patch.status === 'ready' && ctx.defer) {
+    const accountId = ctx.row.account_id
+    const sessionId = env.sessionId
+    ctx.defer(async () => {
+      if (await queueHistoryImportOnConnect(ctx.admin, accountId, sessionId)) {
+        await runHistoryImport(ctx.admin, { accountId, deadline: Date.now() + 45_000 })
+      }
+    })
   }
   // The active-connection flag (whatsapp_config.status) is NOT written
   // here: migration 058 derives it from this row in the same statement,

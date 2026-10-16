@@ -430,15 +430,62 @@ export interface OpenWaStoredMessage {
   createdAt?: string
 }
 
+export interface OpenWaChatSummary {
+  id: string
+  name: string
+  isGroup: boolean
+  kind?: string
+  unreadCount: number
+  timestamp: number
+  lastMessage?: string
+  lastMessageType?: string
+  archived?: boolean
+  pinned?: boolean
+}
+
+/** GET /sessions/:id/chats — most recent first, paginated. */
+export function listOpenWaChats(
+  creds: OpenWaCredentials,
+  sessionId: string,
+  page: { limit: number; offset: number },
+) {
+  return openWaRequest<OpenWaChatSummary[]>(
+    creds,
+    'GET',
+    `/sessions/${enc(sessionId)}/chats?limit=${page.limit}&offset=${page.offset}`,
+    { timeoutMs: 60_000 },
+  )
+}
+
+/**
+ * GET /sessions/:id/messages/:chatId/history — read live from WhatsApp
+ * (whatsapp-web.js; `deep` reaches up to 2000 messages, metadata only).
+ * 501 on engines without it (Baileys). Oldest first.
+ */
+export function getOpenWaChatHistory(
+  creds: OpenWaCredentials,
+  sessionId: string,
+  chatId: string,
+  opts: { limit: number; deep: boolean },
+) {
+  return openWaRequest<Record<string, unknown>[]>(
+    creds,
+    'GET',
+    `/sessions/${enc(sessionId)}/messages/${enc(chatId)}/history?limit=${opts.limit}&deep=${opts.deep}`,
+    { timeoutMs: 120_000 },
+  )
+}
+
 /** GET /sessions/:id/messages — the gateway's stored history, newest first. */
 export function listOpenWaMessages(
   creds: OpenWaCredentials,
   sessionId: string,
-  query: { chatId: string; since?: number; limit?: number },
+  query: { chatId: string; since?: number; limit?: number; offset?: number },
   opts: { deadline?: number } = {},
 ) {
   const params = new URLSearchParams({ chatId: query.chatId, limit: String(query.limit ?? 50) })
   if (query.since !== undefined) params.set('since', String(Math.floor(query.since)))
+  if (query.offset !== undefined) params.set('offset', String(query.offset))
   return openWaRequest<{ messages: OpenWaStoredMessage[] }>(
     creds,
     'GET',

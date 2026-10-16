@@ -1,5 +1,6 @@
 'use client';
 
+import { OpenWaHistoryImport } from './openwa-history-import';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -428,6 +429,11 @@ export function OpenWaPanel({
             />
           )}
         </section>
+
+        {/* History import (A1) */}
+        {openwa?.session_id ? (
+          <OpenWaHistoryImport connected={status === 'ready'} canEdit={canEditSettings} />
+        ) : null}
 
         {/* Gateway */}
         <section aria-labelledby="openwa-gateway" className="space-y-4 rounded-xl bg-surface p-4 sm:p-6">
