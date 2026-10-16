@@ -28,7 +28,6 @@ import {
   type OpenWaSession,
 } from './client'
 import {
-  configStatusFor,
   loadOpenWaRow,
   toPublicOpenWaState,
   type OpenWaConnectionRow,
@@ -123,14 +122,6 @@ export async function activateOpenWaProvider(
     ? await admin.from('whatsapp_config').update(patch).eq('account_id', accountId)
     : await admin.from('whatsapp_config').insert({ account_id: accountId, user_id: userId, ...patch })
   if (error) throw new Error(`Failed to activate QR-code mode: ${error.message}`)
-}
-
-async function syncConfigStatus(admin: SupabaseClient, accountId: string, status: string) {
-  await admin
-    .from('whatsapp_config')
-    .update({ status: configStatusFor(status as never) })
-    .eq('account_id', accountId)
-    .eq('provider', 'openwa')
 }
 
 /** The session row on OpenWA, or null when it no longer exists there. */
@@ -229,8 +220,8 @@ export async function restartOpenWa(
     console.warn('[openwa] stop before restart failed:', err instanceof Error ? err.message : err)
   })
   const session = await startOpenWaSession(creds, row.session_id)
+  // whatsapp_config.status follows the session row (migration 058).
   const updated = await updateRow(admin, accountId, sessionPatch(session, row))
-  await syncConfigStatus(admin, accountId, session.status)
   return toPublicOpenWaState(updated)
 }
 
@@ -259,7 +250,6 @@ export async function logoutOpenWa(
     push_name: null,
     connected_at: null,
   })
-  await syncConfigStatus(admin, accountId, session.status)
   return toPublicOpenWaState(updated)
 }
 
@@ -277,10 +267,8 @@ export async function refreshOpenWa(
       status_updated_at: new Date().toISOString(),
       connected_at: null,
     })
-    await syncConfigStatus(admin, accountId, 'disconnected')
     return toPublicOpenWaState(updated)
   }
   const updated = await updateRow(admin, accountId, sessionPatch(session, row))
-  await syncConfigStatus(admin, accountId, session.status)
   return toPublicOpenWaState(updated)
 }

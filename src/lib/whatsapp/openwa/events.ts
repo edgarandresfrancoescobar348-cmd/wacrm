@@ -29,7 +29,7 @@ import {
   isOpenWaSessionStatus,
   type OpenWaCredentials,
 } from './client'
-import { configStatusFor, type OpenWaConnectionRow } from './connection'
+import type { OpenWaConnectionRow } from './connection'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { reconcileAttemptFromEcho } from '@/lib/whatsapp/broadcast-attempts'
 
@@ -586,26 +586,10 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   }
   if (!applied || applied.length === 0) {
     console.info(`[openwa] ignored ${env.event} older than the current session state`)
-    return
   }
-
-  if (typeof patch.status === 'string' && isOpenWaSessionStatus(patch.status)) {
-    // The active-connection flag every reader (inbox banner, overview)
-    // uses. Only while QR mode is the active one.
-    const { error: mirrorErr } = await ctx.admin
-      .from('whatsapp_config')
-      .update({
-        status: configStatusFor(patch.status),
-        connected_at: patch.status === 'ready' ? now : null,
-      })
-      .eq('account_id', ctx.row.account_id)
-      .eq('provider', 'openwa')
-    // Essential: the inbox banner and every sender read this flag. Fail
-    // the delivery so OpenWA redelivers; the session row above is already
-    // at this event, and the newest-wins guard lets the same event apply
-    // again (lte), so the redelivery repairs the mirror.
-    if (mirrorErr) throw new Error(`active-connection mirror failed: ${mirrorErr.message}`)
-  }
+  // The active-connection flag (whatsapp_config.status) is NOT written
+  // here: migration 058 derives it from this row in the same statement,
+  // so it can never disagree with the newest applied session state.
 }
 
 /** Decrypted credentials for a row (route helper). */

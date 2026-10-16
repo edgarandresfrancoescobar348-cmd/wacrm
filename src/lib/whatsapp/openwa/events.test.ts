@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   orFilters: [] as string[],
   staleSession: false,
   failMirror: false,
+  failSession: false,
   rpcs: [] as { fn: string; args: Record<string, unknown> }[],
   rpcError: null as { message: string } | null,
 }))
@@ -50,7 +51,10 @@ const admin = {
         eq: () => chain,
         or: (f: string) => (h.orFilters.push(f), chain),
         // A stale session event matches no row (status_event_at is newer).
-        select: async () => ({ data: h.staleSession ? [] : [{ id: 'row' }], error: null }),
+        select: async () =>
+          h.failSession
+            ? { data: null, error: { message: 'connection reset' } }
+            : { data: h.staleSession ? [] : [{ id: 'row' }], error: null },
         then: (r: (v: unknown) => unknown) =>
           r({ error: table === 'whatsapp_config' && h.failMirror ? { message: 'connection reset' } : null }),
       }
@@ -81,6 +85,7 @@ beforeEach(() => {
   h.orFilters.length = 0
   h.rpcs.length = 0
   h.rpcError = null
+  h.failSession = false
   h.staleSession = false
   h.failMirror = false
 })
@@ -254,18 +259,20 @@ describe('acks, failures, reactions, mutations', () => {
 })
 
 describe('session events', () => {
-  it('session.authenticated stores phone + push name and marks the account connected', async () => {
+  // The active-connection flag is derived from this row by the database
+  // (migration 058; sql/openwa-status-mirror.pg.test.ts) — ONE write.
+  it('session.authenticated stores phone + push name in one write (the flag follows in SQL)', async () => {
     await handleOpenWaEvent(env('session.authenticated', { sessionId: 'sess-1', phone: '5511977776666', pushName: 'Loja' }), ctx())
+    expect(h.updates).toHaveLength(1)
     expect(h.updates[0]).toMatchObject({
       table: 'whatsapp_openwa_config',
       patch: { status: 'ready', phone: '5511977776666', push_name: 'Loja' },
     })
-    expect(h.updates[1]).toMatchObject({ table: 'whatsapp_config', patch: { status: 'connected' } })
   })
 
-  it('session.status disconnected marks the account disconnected', async () => {
+  it('session.status disconnected is one write of the session row', async () => {
     await handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx())
-    expect(h.updates[1]).toMatchObject({ table: 'whatsapp_config', patch: { status: 'disconnected' } })
+    expect(h.updates.map((u) => u.table)).toEqual(['whatsapp_openwa_config'])
   })
 
   it('session.restriction stores and clears the restriction', async () => {
@@ -344,13 +351,14 @@ describe('session events are newest-wins (F4)', () => {
   })
 })
 
-// G5 (second review): the active-connection mirror is essential.
-describe('session mirror failure (G5)', () => {
+// G5 (second review): a failed session write fails the delivery. The
+// mirror is part of that same write now (migration 058).
+describe('session write failure (G5)', () => {
   it('fails the delivery so OpenWA redelivers', async () => {
-    h.failMirror = true
+    h.failSession = true
     await expect(
       handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx()),
-    ).rejects.toThrow(/mirror/)
+    ).rejects.toThrow(/session state update failed/)
   })
 })
 

@@ -143,14 +143,8 @@ export async function PUT(request: Request) {
       console.error('[openwa config] save failed:', error?.message)
       return NextResponse.json({ error: 'Failed to save the OpenWA settings' }, { status: 500 })
     }
-    if (gatewayChanged) {
-      // The active QR connection (if any) pointed at the old gateway.
-      await admin
-        .from('whatsapp_config')
-        .update({ status: 'disconnected', connected_at: null })
-        .eq('account_id', accountId)
-        .eq('provider', 'openwa')
-    }
+    // A changed gateway reset the session (status 'created' above); the
+    // active QR connection's flag follows it (migration 058).
 
     return NextResponse.json({
       success: true,
