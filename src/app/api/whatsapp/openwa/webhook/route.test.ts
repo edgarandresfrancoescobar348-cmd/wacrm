@@ -76,7 +76,18 @@ function ledgerTable() {
       }
       return q
     },
-    delete: () => ({ eq: () => ({ lt: async () => ({ error: null }) }) }),
+    delete: () => {
+      const filters: [string, unknown][] = []
+      const q = {
+        eq: (c: string, v: unknown) => (filters.push([c, v]), q),
+        lt: async () => ({ error: null }),
+        then: (resolve: (v: unknown) => unknown) => {
+          for (const [k, r] of h.ledger) if (filters.every(([c, v]) => r[c] === v)) h.ledger.delete(k)
+          return resolve({ error: null })
+        },
+      }
+      return q
+    },
   }
 }
 
@@ -379,5 +390,25 @@ describe('OpenWA webhook — lease ownership (F3)', () => {
     // attempt 1 finishes late, with an error
     await finishDelivery(supabaseAdmin(), { key: 'k', accountId: 'acct-1', attempt: 1, error: new Error('late') })
     expect(h.ledger.get('acct-1|k')).toMatchObject({ status: 'done', attempts: 2 })
+  })
+})
+
+// Teste real 1: a content-less placeholder is not recorded as processed —
+// OpenWA keys message.received by message id, so the decrypted message
+// delivered later under the SAME key must be processed, not "duplicate".
+describe('OpenWA webhook — placeholders leave no ledger trace (Teste real 1)', () => {
+  it('releases the key of a placeholder; the decrypted delivery with the same key is processed', async () => {
+    h.handleOpenWaEvent.mockResolvedValueOnce('ignored_placeholder')
+    const first = delivery({ idempotencyKey: 'msg_sess_false_248335327858691@lid_3EB0' })
+    const res1 = await post(first, { 'x-openwa-signature': sign(first) })
+    expect(res1.status).toBe(200)
+    expect([...h.ledger.keys()]).toEqual([])
+
+    h.handleOpenWaEvent.mockResolvedValueOnce('ingested')
+    const second = delivery({ idempotencyKey: 'msg_sess_false_248335327858691@lid_3EB0', deliveryId: 'dlv_2' })
+    const res2 = await post(second, { 'x-openwa-signature': sign(second) })
+    expect(res2.body).toEqual({ status: 'received' })
+    expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(2)
+    expect(h.ledger.get('acct-1|msg_sess_false_248335327858691@lid_3EB0')).toMatchObject({ status: 'done' })
   })
 })

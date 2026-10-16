@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   orFilters: [] as string[],
   staleSession: false,
   failMirror: false,
+  getOpenWaContactPhone: vi.fn(async () => ({ contactId: 'x', phone: '5511955554444' })),
   failSession: false,
   rpcs: [] as { fn: string; args: Record<string, unknown> }[],
   rpcError: null as { message: string } | null,
@@ -24,6 +25,11 @@ vi.mock('@/lib/whatsapp/inbound/ingest', () => ({
   applyStatusUpdate: h.applyStatusUpdate,
   applyMessageMutation: h.applyMessageMutation,
   recordOutboundEcho: h.recordOutboundEcho,
+}))
+vi.mock('./client', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  getOpenWaContactPhone: h.getOpenWaContactPhone,
+  getOpenWaProfilePicture: vi.fn(async () => ({ url: null })),
 }))
 vi.mock('@/lib/whatsapp/mirror-inbound-media', () => ({
   mirrorInboundMedia: h.mirrorInboundMedia,
@@ -409,5 +415,50 @@ describe('session / edit watermark precision (G6)', () => {
   it('edits carry the millisecond instant (two edits in one second keep their order)', async () => {
     await handleOpenWaEvent(env('message.edited', { messageId: 'm', body: 'v2' }), ctx())
     expect(h.applyMessageMutation).toHaveBeenLastCalledWith('acct-1', 'm', expect.objectContaining({ at: '2026-10-15T22:17:00.250Z' }), { throwOnFailure: true })
+  })
+})
+
+// Teste real 1: on linking a device, WhatsApp delivered one placeholder
+// per recent chat — OpenWA stores them as type 'unknown', body '' (all
+// @lid). The fixture is a real row from the gateway.
+import placeholder from './testing/fixtures/link-placeholder.json'
+
+describe('content-less placeholders (Teste real 1)', () => {
+  const real = placeholder.webhook as Record<string, unknown>
+
+  it('the real link-time placeholder is ignored before any lookup or write', async () => {
+    const outcome = await handleOpenWaEvent(env('message.received', real), ctx())
+    expect(outcome).toBe('ignored_placeholder')
+    expect(h.ingestInboundMessage).not.toHaveBeenCalled()
+    expect(h.getOpenWaContactPhone).not.toHaveBeenCalled()
+  })
+
+  it.each(['ciphertext', 'e2e_notification', 'notification_template', 'protocol', 'gp2'])(
+    'a %s stub without content is ignored',
+    async (type) => {
+      expect(await handleOpenWaEvent(env('message.received', { ...real, type }), ctx())).toBe('ignored_placeholder')
+    },
+  )
+
+  it('the same id delivered decrypted (with content) is ingested normally', async () => {
+    await handleOpenWaEvent(env('message.received', real), ctx())
+    const outcome = await handleOpenWaEvent(env('message.received', { ...real, type: 'text', body: 'Oi, tudo bem?' }), ctx())
+    expect(outcome).toBe('ingested')
+    expect(h.ingestInboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: real.id, text: 'Oi, tudo bem?' }),
+      'acct-1',
+      'user-1',
+      expect.anything(),
+    )
+  })
+
+  it('an unknown type that does carry content is still ingested', async () => {
+    expect(await handleOpenWaEvent(env('message.received', { ...real, body: 'texto' }), ctx())).toBe('ingested')
+    expect(await handleOpenWaEvent(env('message.received', { ...real, media: { mimetype: 'image/jpeg', data: 'AA==' } }), ctx())).toBe('ingested')
+  })
+
+  it('a placeholder echo of our own number is not recorded either', async () => {
+    expect(await handleOpenWaEvent(env('message.sent', { ...real, fromMe: true }), ctx())).toBe('ignored_placeholder')
+    expect(h.recordOutboundEcho).not.toHaveBeenCalled()
   })
 })

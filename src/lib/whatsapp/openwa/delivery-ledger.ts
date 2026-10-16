@@ -77,6 +77,27 @@ export async function claimDelivery(
   return Array.isArray(won) && won.length > 0 ? { claimed: true, attempt: nextAttempt } : 'busy'
 }
 
+/**
+ * Forget a delivery we processed but deliberately did not record (a
+ * content-less placeholder): OpenWA keys `message.received` by message
+ * id, so a later delivery of the DECRYPTED message under the same id
+ * must be processed, not answered "duplicate". Lease-token guarded like
+ * finishDelivery.
+ */
+export async function releaseDelivery(
+  admin: SupabaseClient,
+  args: { key: string; accountId: string; attempt: number },
+): Promise<void> {
+  const { error } = await admin
+    .from('openwa_webhook_deliveries')
+    .delete()
+    .eq('idempotency_key', args.key)
+    .eq('account_id', args.accountId)
+    .eq('attempts', args.attempt)
+    .eq('status', 'processing')
+  if (error) throw new Error(`ledger release failed: ${error.message}`)
+}
+
 export async function finishDelivery(
   admin: SupabaseClient,
   args: { key: string; accountId: string; attempt: number; error?: unknown },

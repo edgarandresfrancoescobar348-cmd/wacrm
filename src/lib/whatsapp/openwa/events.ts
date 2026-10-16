@@ -108,6 +108,39 @@ export function isIgnorableChat(data: OpenWaMessageData): boolean {
   return false
 }
 
+/**
+ * Message types that carry no content of their own: WhatsApp's
+ * encryption/notification stubs (and OpenWA's catch-all `unknown`, which
+ * is what it maps them to). On linking a device, WhatsApp delivers one
+ * such placeholder per recent chat — they are not messages.
+ */
+const NON_CONTENT_TYPES = new Set([
+  'unknown',
+  'ciphertext',
+  'e2e_notification',
+  'notification',
+  'notification_template',
+  'gp2',
+  'protocol',
+  'broadcast_notification',
+])
+
+/**
+ * A delivery with nothing a person could read: a non-content type with
+ * no text, no media, no location, no tapped button, no poll. Ingesting it
+ * would create a contact, a conversation, an unread bump and an empty
+ * bubble for nothing. If WhatsApp later delivers the decrypted message
+ * under the same id, it carries content and is ingested normally.
+ */
+export function isContentlessPlaceholder(data: OpenWaMessageData): boolean {
+  const type = (data.type ?? 'unknown').toLowerCase()
+  if (!NON_CONTENT_TYPES.has(type)) return false
+  if ((data.body ?? '').trim()) return false
+  if (data.media && (data.media.data || data.media.mimetype || data.media.omitted)) return false
+  if (data.location || data.button?.id || data.poll?.name) return false
+  return true
+}
+
 /** `5511999999999@c.us` → `5511999999999`; other JIDs → null. */
 export function phoneFromChatId(chatId: string | undefined | null): string | null {
   if (!chatId) return null
@@ -309,6 +342,8 @@ export type OpenWaEventOutcome =
   | 'ingested'
   | 'ignored_group'
   | 'ignored_no_phone'
+  /** A content-less placeholder (isContentlessPlaceholder): nothing stored. */
+  | 'ignored_placeholder'
   | 'ignored'
   | 'status'
   | 'session'
@@ -337,6 +372,9 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       const msg = data as OpenWaMessageData
       if (!msg.id || msg.fromMe) return 'ignored'
       if (isIgnorableChat(msg)) return 'ignored_group'
+      // Before anything is created (no phone lookup, contact, conversation
+      // or unread): a placeholder isn't a message.
+      if (isContentlessPlaceholder(msg)) return 'ignored_placeholder'
       const chatId = msg.chatId ?? msg.from ?? ''
       const phone = await resolveChatPhone(ctx, chatId, msg.senderPhone)
       if (!phone) {
@@ -377,6 +415,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       const msg = data as OpenWaMessageData
       if (!msg.id) return 'ignored'
       if (isIgnorableChat(msg)) return 'ignored_group'
+      if (isContentlessPlaceholder(msg)) return 'ignored_placeholder'
       const chatId = msg.chatId ?? msg.to ?? ''
       const phone = await resolveChatPhone(ctx, chatId)
       if (!phone) return 'ignored_no_phone'

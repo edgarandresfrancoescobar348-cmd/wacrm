@@ -24,7 +24,7 @@ import { NextResponse, after } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { OpenWaConnectionRow } from '@/lib/whatsapp/openwa/connection'
-import { claimDelivery, finishDelivery } from '@/lib/whatsapp/openwa/delivery-ledger'
+import { claimDelivery, finishDelivery, releaseDelivery } from '@/lib/whatsapp/openwa/delivery-ledger'
 import {
   credsForRow,
   handleOpenWaEvent,
@@ -161,8 +161,9 @@ export async function POST(request: Request) {
         }
       }
     })
+  let outcome: string
   try {
-    await handleOpenWaEvent(envelope, {
+    outcome = await handleOpenWaEvent(envelope, {
       admin,
       row: connection,
       creds: credsForRow(connection),
@@ -179,7 +180,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Processing failed, retry' }, { status: 503 })
   }
   try {
-    await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, attempt })
+    if (outcome === 'ignored_placeholder') {
+      // Nothing was recorded for it; a decrypted delivery under the same
+      // key (OpenWA keys message.received by message id) must go through.
+      await releaseDelivery(admin, { key: idempotencyKey, accountId: row.account_id, attempt })
+    } else {
+      await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, attempt })
+    }
   } catch (err) {
     // Processed but not recorded as done: answer non-2xx; the redelivery
     // re-claims the stale claim and finds every write already applied.
