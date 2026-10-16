@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useWhatsAppStatus } from "@/hooks/use-whatsapp-status";
 import { previewFor } from "@/lib/whatsapp/message-content";
+import { mergeFetchedConversation } from "@/lib/inbox/conversation-merge";
 import {
   CONVERSATION_SELECT,
   normalizeConversation,
@@ -110,6 +111,10 @@ function InboxPageInner() {
   // hydrateConversation; the dedupe here keeps it at one refetch per
   // new conversation even when both events arrive within milliseconds.
   const hydratingConvIdsRef = useRef<Set<string>>(new Set());
+  /** Asked again while a fetch was in flight — refetch when it ends. */
+  const rehydrateConvIdsRef = useRef<Set<string>>(new Set());
+  /** The open conversation, readable from async callbacks. */
+  const activeConversationIdRef = useRef<string | null>(null);
 
   /**
    * Synchronous mirror of the conversation ids currently in `conversations`
@@ -128,6 +133,9 @@ function InboxPageInner() {
     for (const c of conversations) next.add(c.id);
     knownConvIdsRef.current = next;
   }, [conversations]);
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversation?.id ?? null;
+  }, [activeConversation]);
 
   // Pull the conversation row with its `contact` joined and merge it
   // into state. Needed because Supabase Realtime payloads only carry the
@@ -137,8 +145,13 @@ function InboxPageInner() {
   // conversations stuck on "No messages yet" until the user reloaded.
   // Also self-heals if a realtime event was missed: callers can invoke
   // this whenever they reference a conversation id they don't recognise.
-  const hydrateConversation = useCallback(async (convId: string) => {
-    if (hydratingConvIdsRef.current.has(convId)) return;
+  const hydrateConversation = useCallback(async (convId: string): Promise<void> => {
+    if (hydratingConvIdsRef.current.has(convId)) {
+      // A fetch is already in flight but may have read the row BEFORE
+      // the change that asked for this one: fetch again when it ends.
+      rehydrateConvIdsRef.current.add(convId);
+      return;
+    }
     hydratingConvIdsRef.current.add(convId);
     try {
       const supabase = createClient();
@@ -168,9 +181,12 @@ function InboxPageInner() {
           // last_message_text / unread_count to fresher values than
           // the row we just read). Only backfill `contact`, which the
           // realtime payloads never carry.
+          // The fresher row wins (mergeFetchedConversation): the INSERT
+          // payload has no preview yet, and the UPDATE that carries it
+          // may have been dropped while this conversation was unknown.
           return prev.map((c) =>
             c.id === fetched.id
-              ? { ...c, contact: c.contact ?? fetched.contact }
+              ? mergeFetchedConversation(c, fetched, activeConversationIdRef.current === c.id)
               : c,
           );
         }
@@ -179,6 +195,7 @@ function InboxPageInner() {
     } finally {
       hydratingConvIdsRef.current.delete(convId);
     }
+    if (rehydrateConvIdsRef.current.delete(convId)) await hydrateConversation(convId);
   }, []);
 
   // Check WhatsApp connection status on mount
@@ -297,10 +314,18 @@ function InboxPageInner() {
             ),
           );
         } else {
-          // UPDATE arrived before the INSERT (or after a missed INSERT)
-          // — fetch the row so it surfaces with its contact joined. The
-          // patch contained in `conv` will already be reflected in what
-          // the hydrate fetch returns.
+          // Unknown to the ref — but the INSERT may already be in state
+          // (the ref follows state one render later): patch it there too,
+          // and fetch the row so it surfaces with its contact joined
+          // (refetched if a fetch for the INSERT is still in flight).
+          const isActive = activeConversation?.id === conv.id;
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === conv.id
+                ? { ...c, ...conv, contact: c.contact, unread_count: isActive ? 0 : conv.unread_count }
+                : c,
+            ),
+          );
           hydrateConversation(conv.id);
         }
 
