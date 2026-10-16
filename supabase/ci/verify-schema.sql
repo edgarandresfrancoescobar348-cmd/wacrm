@@ -168,6 +168,28 @@ BEGIN
     RAISE EXCEPTION 'apply_pending_status trigger on messages is missing — migration 050 did not apply';
   END IF;
 
+  -- 051: SECURITY DEFINER receipt triggers must pin pg_temp last.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc
+    WHERE proname = '_apply_pending_status_to_message'
+      AND 'search_path=pg_catalog, public, pg_temp' = ANY (proconfig)
+  ) THEN
+    RAISE EXCEPTION '_apply_pending_status_to_message has an unsafe search_path — migration 051 did not apply';
+  END IF;
+  -- 052–054: receipts RPC, inbound completion, broadcast checkpoint.
+  IF to_regprocedure('public.apply_message_receipt(uuid,text,text,jsonb,timestamptz)') IS NULL THEN
+    RAISE EXCEPTION 'apply_message_receipt is missing — migration 052 did not apply';
+  END IF;
+  IF to_regprocedure('public.bump_conversation_on_inbound(uuid,text,uuid)') IS NULL THEN
+    RAISE EXCEPTION 'bump_conversation_on_inbound(uuid,text,uuid) is missing — migration 053 did not apply';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'auto_resume_at'
+  ) THEN
+    RAISE EXCEPTION 'broadcasts.auto_resume_at is missing — migration 054 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;
