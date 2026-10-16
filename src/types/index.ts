@@ -206,6 +206,10 @@ export interface Conversation {
   pinned_at?: string | null;
   /** The group member who sent the last message ("Luciana Alves: …"). */
   last_message_sender?: string | null;
+  /** The chat with your own number: "Seu Nome (Você)" (migration 068). */
+  is_self?: boolean;
+  /** The newest message's status when it is yours — the list's ticks; null when it is the contact's (068). */
+  last_message_status?: MessageStatus | null;
 }
 
 /** What WhatsApp declares about a message's media (migration 067). */
