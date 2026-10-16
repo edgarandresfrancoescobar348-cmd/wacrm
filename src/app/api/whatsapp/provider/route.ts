@@ -39,7 +39,7 @@ export async function PUT(request: Request) {
           { status: 409 },
         )
       }
-      await activateOpenWaProvider(admin, accountId, userId, row.status)
+      await activateOpenWaProvider(admin, accountId, userId)
       const openwa = await refreshOpenWa(admin, accountId).catch(() => null)
       return NextResponse.json({ success: true, provider: 'openwa', connected: openwa?.status === 'ready' })
     }

@@ -572,19 +572,20 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   // not overwrite newer state — e.g. an old "disconnected" over a live
   // session.
   const eventAt = envelopeInstant(env)
-  patch.status_event_at = eventAt
-  const { data: applied, error } = await ctx.admin
-    .from('whatsapp_openwa_config')
-    .update(patch)
-    .eq('account_id', ctx.row.account_id)
-    .eq('session_id', env.sessionId)
-    .or(`status_event_at.is.null,status_event_at.lte.${eventAt}`)
-    .select('id')
+  // One RPC: the per-account connection lock first (061, K6), then the
+  // session row, newest-wins on the event time; the active-connection
+  // flag follows in the same transaction (058).
+  const { data: applied, error } = await ctx.admin.rpc('apply_openwa_session_state', {
+    p_account_id: ctx.row.account_id,
+    p_patch: patch,
+    p_session_id: env.sessionId,
+    p_event_at: eventAt,
+  })
   if (error) {
     console.error('[openwa] session state update failed:', error.message)
     throw new Error(`session state update failed: ${error.message}`)
   }
-  if (!applied || applied.length === 0) {
+  if (!Array.isArray(applied) || applied.length === 0) {
     console.info(`[openwa] ignored ${env.event} older than the current session state`)
   }
   // The active-connection flag (whatsapp_config.status) is NOT written

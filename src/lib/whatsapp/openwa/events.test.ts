@@ -41,6 +41,15 @@ import type { OpenWaConnectionRow } from './connection'
 const admin = {
   storage: {},
   rpc: async (fn: string, args: Record<string, unknown>) => {
+    // Session state goes through one RPC (migration 061): the account
+    // lock, the newest-wins check and the row update.
+    if (fn === 'apply_openwa_session_state') {
+      h.updates.push({ table: 'whatsapp_openwa_config', patch: { ...(args.p_patch as object), status_event_at: args.p_event_at } })
+      h.orFilters.push(`session=${String(args.p_session_id)} event_at=${String(args.p_event_at)}`)
+      if (h.failSession) return { data: null, error: { message: 'connection reset' } }
+      // A stale session event matches no row (status_event_at is newer).
+      return { data: h.staleSession ? [] : [{ id: 'row' }], error: null }
+    }
     h.rpcs.push({ fn, args })
     return { data: null, error: h.rpcError }
   },
@@ -341,7 +350,7 @@ describe('session events are newest-wins (F4)', () => {
   it('applies only when not older than the last applied event', async () => {
     await handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx())
     expect(h.updates[0].patch.status_event_at).toBe('2026-10-15T22:17:00.250Z')
-    expect(h.orFilters[0]).toBe('status_event_at.is.null,status_event_at.lte.2026-10-15T22:17:00.250Z')
+    expect(h.orFilters[0]).toBe('session=sess-1 event_at=2026-10-15T22:17:00.250Z')
   })
 
   it('an older event changes nothing — not even the active-connection flag', async () => {
@@ -367,24 +376,14 @@ describe('session write failure (G5)', () => {
 describe('session / edit watermark precision (G6)', () => {
   function watermarkAdmin(state: { watermark: string; status: string }) {
     return {
-      from: (table: string) => ({
-        update: (patch: Record<string, unknown>) => {
-          let bound = ''
-          const q = {
-            eq: () => q,
-            or: (f: string) => ((bound = f.split('.lte.')[1] ?? ''), q),
-            select: async () => {
-              if (table !== 'whatsapp_openwa_config') return { data: [], error: null }
-              if (Date.parse(state.watermark) > Date.parse(bound)) return { data: [], error: null }
-              state.status = String(patch.status)
-              state.watermark = String(patch.status_event_at)
-              return { data: [{ id: 'row' }], error: null }
-            },
-            then: (r: (v: unknown) => unknown) => r({ error: null }),
-          }
-          return q
-        },
-      }),
+      // Evaluates apply_openwa_session_state's newest-wins check like SQL.
+      rpc: async (_fn: string, args: Record<string, unknown>) => {
+        const eventAt = String(args.p_event_at)
+        if (Date.parse(state.watermark) > Date.parse(eventAt)) return { data: [], error: null }
+        state.status = String((args.p_patch as Record<string, unknown>).status)
+        state.watermark = eventAt
+        return { data: [{ id: 'row' }], error: null }
+      },
     } as unknown as SupabaseClient
   }
 

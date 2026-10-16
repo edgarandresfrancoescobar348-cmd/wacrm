@@ -111,7 +111,7 @@ ALTER TABLE public.broadcasts ADD COLUMN template_name text, ADD COLUMN template
 ALTER TABLE public.broadcast_recipients ADD COLUMN contact_id uuid, ADD COLUMN template_params jsonb,
   ADD CONSTRAINT broadcast_recipients_status_check
     CHECK (status IN ('pending','sent','delivered','read','replied','failed'));
-CREATE TABLE public.whatsapp_config(account_id uuid PRIMARY KEY, user_id uuid, provider text NOT NULL DEFAULT 'meta',
+CREATE TABLE public.whatsapp_config(id uuid NOT NULL DEFAULT gen_random_uuid(), account_id uuid PRIMARY KEY, user_id uuid, provider text NOT NULL DEFAULT 'meta',
   status text NOT NULL DEFAULT 'disconnected' CHECK (status IN ('connected','disconnected')), connected_at timestamptz,
   updated_at timestamptz);
 CREATE TABLE public.whatsapp_openwa_config(id uuid NOT NULL DEFAULT gen_random_uuid(), account_id uuid PRIMARY KEY,
@@ -131,4 +131,5 @@ export const WA_MIGRATIONS = [
   '058_openwa_status_mirror.sql',
   '059_send_evidence.sql',
   '060_fanout_outcomes.sql',
+  '061_connection_lock.sql',
 ]

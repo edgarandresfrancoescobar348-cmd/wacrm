@@ -76,7 +76,7 @@ describe.skipIf(!pgAvailable())('fan-out steps complete only on an appropriate o
       CREATE FUNCTION public.record_webhook_failure(endpoint_id text, max_failures int) RETURNS void LANGUAGE sql AS
         $$ UPDATE public.webhook_endpoints SET failure_count = failure_count + 1 WHERE id = endpoint_id $$;
       GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;`)
-    for (const m of WA_MIGRATIONS) if (!(OLD && (m.startsWith('060')))) await pg.migrate(m)
+    for (const m of WA_MIGRATIONS) if (!(OLD && (m.startsWith('060') || m.startsWith('061')))) await pg.migrate(m)
     db = new PgSupabase(pg)
     h.db = db.asClient()
 

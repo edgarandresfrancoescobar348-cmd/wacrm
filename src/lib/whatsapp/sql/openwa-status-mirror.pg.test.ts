@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { MINIMAL_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
+import { WA_MIGRATIONS, WA_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
 import { PgSupabase } from '@/test/pg-supabase'
 import { handleOpenWaEvent, type OpenWaEnvelope } from '@/lib/whatsapp/openwa/events'
 import type { OpenWaConnectionRow } from '@/lib/whatsapp/openwa/connection'
@@ -45,17 +45,13 @@ describe.skipIf(!pgAvailable())('OpenWA session state → active-connection flag
 
   beforeAll(async () => {
     pg = await startPg()
-    await pg.sql(MINIMAL_SCHEMA)
-    await pg.sql(`
-      INSERT INTO public.accounts VALUES ('${ACCT}');
-      CREATE TABLE public.whatsapp_config(account_id uuid PRIMARY KEY, provider text NOT NULL DEFAULT 'meta',
-        status text NOT NULL DEFAULT 'disconnected' CHECK (status IN ('connected','disconnected')), connected_at timestamptz,
-        updated_at timestamptz);
-      CREATE TABLE public.whatsapp_openwa_config(id uuid DEFAULT gen_random_uuid(), account_id uuid PRIMARY KEY, session_id text, status text,
-        status_updated_at timestamptz, status_event_at timestamptz, connected_at timestamptz, last_error text,
-        reconnect_attempts int, phone text, push_name text, restriction jsonb);
-      GRANT ALL ON public.whatsapp_config, public.whatsapp_openwa_config TO service_role;`)
-    if (process.env.PROVE_OLD_MIRROR !== '1') await pg.migrate('058_openwa_status_mirror.sql')
+    await pg.sql(WA_SCHEMA)
+    await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}');`)
+    // PROVE_OLD_MIRROR=1: without 058 (and the 061 RPCs built on it).
+    for (const m of WA_MIGRATIONS) {
+      if (process.env.PROVE_OLD_MIRROR === '1' && (m.startsWith('058') || m.startsWith('061'))) continue
+      await pg.migrate(m)
+    }
     db = new PgSupabase(pg)
   }, 60_000)
   afterAll(() => pg?.stop())

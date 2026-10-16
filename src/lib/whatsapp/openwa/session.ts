@@ -84,43 +84,32 @@ async function updateRow(
   accountId: string,
   patch: Record<string, unknown>,
 ): Promise<OpenWaConnectionRow> {
-  const { data, error } = await admin
-    .from('whatsapp_openwa_config')
-    .update(patch)
-    .eq('account_id', accountId)
-    .select('*')
-    .single()
-  if (error || !data) throw new Error(`Failed to save OpenWA state: ${error?.message}`)
-  return data as OpenWaConnectionRow
+  // Through the per-account connection lock (migration 061): a session
+  // change and a switch to QR mode never interleave (K6).
+  const { data, error } = await admin.rpc('apply_openwa_session_state', {
+    p_account_id: accountId,
+    p_patch: patch,
+    p_session_id: null,
+    p_event_at: null,
+  })
+  const row = Array.isArray(data) ? data[0] : data
+  if (error || !row) throw new Error(`Failed to save OpenWA state: ${error?.message ?? 'no row'}`)
+  return row as OpenWaConnectionRow
 }
 
 /**
- * Make QR mode the account's active connection, mirroring the session
- * status into `whatsapp_config.status`. Creates the config row for an
- * account that never had one (Meta columns stay null — allowed in
- * OpenWA mode by migration 047's CHECK).
+ * Make QR mode the account's active connection. Creates the config row
+ * for an account that never had one (Meta columns stay null — allowed in
+ * OpenWA mode by migration 047's CHECK). The status is derived from the
+ * session row by the database (058), under the same per-account
+ * connection lock as every session change (061, K6).
  */
 export async function activateOpenWaProvider(
   admin: SupabaseClient,
   accountId: string,
   userId: string,
-  status: string,
 ): Promise<void> {
-  const configStatus = status === 'ready' ? 'connected' : 'disconnected'
-  const { data: existing } = await admin
-    .from('whatsapp_config')
-    .select('id')
-    .eq('account_id', accountId)
-    .maybeSingle()
-  const patch = {
-    provider: 'openwa',
-    status: configStatus,
-    connected_at: configStatus === 'connected' ? new Date().toISOString() : null,
-    updated_at: new Date().toISOString(),
-  }
-  const { error } = existing
-    ? await admin.from('whatsapp_config').update(patch).eq('account_id', accountId)
-    : await admin.from('whatsapp_config').insert({ account_id: accountId, user_id: userId, ...patch })
+  const { error } = await admin.rpc('set_openwa_active', { p_account_id: accountId, p_user_id: userId })
   if (error) throw new Error(`Failed to activate QR-code mode: ${error.message}`)
 }
 
@@ -203,7 +192,7 @@ export async function connectOpenWa(
     session = await startOpenWaSession(creds, session.id)
   }
   row = await updateRow(admin, accountId, sessionPatch(session, row))
-  await activateOpenWaProvider(admin, accountId, userId, session.status)
+  await activateOpenWaProvider(admin, accountId, userId)
   return toPublicOpenWaState(row)
 }
 

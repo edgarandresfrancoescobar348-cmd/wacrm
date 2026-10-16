@@ -81,7 +81,7 @@ describe.skipIf(!pgAvailable())('send evidence (fourth review K1, K2, K7)', () =
     pg = await startPg()
     await pg.sql(WA_SCHEMA)
     await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}');`)
-    for (const m of WA_MIGRATIONS) if (!(OLD && (m.startsWith('059') || m.startsWith('060')))) await pg.migrate(m)
+    for (const m of WA_MIGRATIONS) if (!(OLD && (m.startsWith('059') || m.startsWith('060') || m.startsWith('061')))) await pg.migrate(m)
     db = new PgSupabase(pg)
     gw = await startFakeOpenWa()
   }, 60_000)

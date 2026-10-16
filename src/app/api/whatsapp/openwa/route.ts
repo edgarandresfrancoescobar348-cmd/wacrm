@@ -131,13 +131,17 @@ export async function PUT(request: Request) {
           }
         : {}),
     }
+    // An existing row changes through the per-account connection lock
+    // (migration 061, K6) like every session change.
     const { data, error } = existing
       ? await admin
-          .from('whatsapp_openwa_config')
-          .update(row)
-          .eq('account_id', accountId)
-          .select('*')
-          .single()
+          .rpc('apply_openwa_session_state', {
+            p_account_id: accountId,
+            p_patch: row,
+            p_session_id: null,
+            p_event_at: null,
+          })
+          .then((r) => ({ data: Array.isArray(r.data) ? r.data[0] : r.data, error: r.error }))
       : await admin.from('whatsapp_openwa_config').insert(row).select('*').single()
     if (error || !data) {
       console.error('[openwa config] save failed:', error?.message)
