@@ -2617,7 +2617,7 @@
       "dbInsertFailed": "enviado a Meta, pero falló el guardado en la base de datos: {message}",
       "conversationLookupFailed": "falló la búsqueda de la conversación: {message}",
       "conversationNotFound": "conversación no encontrada en esta cuenta",
-      "templateNotApproved": "La plantilla \"{name}\" es local (creada o editada en modo código QR) y Meta no la aprobó — envíala a aprobación en Configuración › Plantillas."
+      "templateNotApproved": "La versión actual de la plantilla \"{name}\" no está aprobada por Meta (local, borrador o en revisión) — envíala en Configuración › Plantillas y espera la aprobación."
     },
     "engine": {
       "needsContact": "{step} necesita un contacto",
@@ -2914,7 +2914,7 @@
       "templateNameRequired": "El nombre de la plantilla es obligatorio",
       "templateMalformed": "El registro local de la plantilla está dañado: usa \"Sincronizar desde Meta\" en Configuración para repararlo antes de enviar la difusión.",
       "invalidPhoneFormat": "Formato de número de teléfono no válido",
-      "templateNotApproved": "Esta plantilla es local (creada o editada en modo código QR) y Meta no la aprobó — envíala a aprobación en Configuración › Plantillas."
+      "templateNotApproved": "La versión actual de esta plantilla no está aprobada por Meta (local, borrador o en revisión) — envíala en Configuración › Plantillas y espera la aprobación."
     },
     "whatsappConfig": {
       "fetchFailed": "Error al obtener la configuración",

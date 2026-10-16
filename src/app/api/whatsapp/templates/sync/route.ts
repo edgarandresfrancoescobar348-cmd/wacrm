@@ -246,6 +246,10 @@ export async function POST() {
         sample_values: sampleValues,
         status: normalizeStatus(t.status),
         meta_template_id: t.id,
+        // The row now holds exactly what Meta has under this id — its
+        // usability on the official API follows Meta's status again,
+        // even if it had been edited locally (QR mode) before (G8).
+        origin: 'meta',
         quality_score: normalizeQualityScore(t.quality_score),
         updated_at: new Date().toISOString(),
       }

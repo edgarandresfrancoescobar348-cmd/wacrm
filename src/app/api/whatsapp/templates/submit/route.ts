@@ -219,13 +219,17 @@ export async function POST(request: Request) {
       } catch (e) {
         const message = e instanceof Error ? e.message : t('templates.metaSubmitFailed')
         // Persist the failure so the user can retry; row stays DRAFT
-        // until they fix and re-submit.
+        // until they fix and re-submit. Its content was NOT approved by
+        // Meta, so it stays 'local' — not sendable on the official API.
+        // Marking it 'meta' here would let a send by name deliver
+        // whatever Meta approved under that name earlier (G8).
         await upsertTemplateRow(
           supabase,
           buildUpsertRow(accountId, userId, payload, {
             status: 'DRAFT',
             metaTemplateId: null,
             submissionError: message,
+            origin: 'local',
           }),
         )
         const isRateLimit = /\b429\b/.test(message)

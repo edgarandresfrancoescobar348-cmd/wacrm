@@ -2617,7 +2617,7 @@
       "dbInsertFailed": "Meta로 전송되었지만 DB 저장에 실패했습니다: {message}",
       "conversationLookupFailed": "대화 조회에 실패했습니다: {message}",
       "conversationNotFound": "이 계정에서 대화를 찾을 수 없습니다",
-      "templateNotApproved": "템플릿 \"{name}\"은(는) 로컬 템플릿(QR 코드 모드에서 생성 또는 수정)이며 Meta 승인을 받지 않았습니다. 먼저 설정 › 템플릿에서 승인을 요청하세요."
+      "templateNotApproved": "템플릿 \"{name}\"의 현재 버전은 Meta 승인을 받지 않았습니다(로컬, 초안 또는 검토 중). 설정 › 템플릿에서 제출하고 승인을 기다리세요."
     },
     "engine": {
       "needsContact": "{step}에는 연락처가 필요합니다",
@@ -2914,7 +2914,7 @@
       "templateNameRequired": "템플릿 이름은 필수입니다",
       "templateMalformed": "로컬 템플릿 데이터가 손상되었습니다 — 브로드캐스트 전에 설정에서 \"Meta에서 동기화\"를 실행해 복구하세요.",
       "invalidPhoneFormat": "전화번호 형식이 올바르지 않습니다",
-      "templateNotApproved": "이 템플릿은 로컬 템플릿(QR 코드 모드에서 생성 또는 수정)이며 Meta 승인을 받지 않았습니다. 먼저 설정 › 템플릿에서 승인을 요청하세요."
+      "templateNotApproved": "이 템플릿의 현재 버전은 Meta 승인을 받지 않았습니다(로컬, 초안 또는 검토 중). 설정 › 템플릿에서 제출하고 승인을 기다리세요."
     },
     "whatsappConfig": {
       "fetchFailed": "설정을 가져오지 못했습니다",

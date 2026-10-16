@@ -257,7 +257,7 @@ export async function planBroadcastResume(
   if (!templateUsableOn(transport.capabilities.templates, resolvedTemplate.row)) {
     throw new BroadcastError(
       'template_not_approved',
-      'This template is local (created or edited in QR-code mode) and not approved by Meta — submit it first.',
+      'This template’s current version is not approved by Meta (local, draft or in review) — submit it and wait for approval.',
       400
     );
   }

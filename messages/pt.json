@@ -2617,7 +2617,7 @@
       "dbInsertFailed": "enviado à Meta, mas a gravação no banco de dados falhou: {message}",
       "conversationLookupFailed": "falha ao buscar a conversa: {message}",
       "conversationNotFound": "conversa não encontrada nesta conta",
-      "templateNotApproved": "O modelo \"{name}\" é local (criado ou editado no modo QR Code) e não foi aprovado pela Meta — envie-o para aprovação em Configurações › Modelos."
+      "templateNotApproved": "A versão atual do modelo \"{name}\" não está aprovada pela Meta (local, rascunho ou em análise) — envie-o em Configurações › Modelos e aguarde a aprovação."
     },
     "engine": {
       "needsContact": "{step} precisa de um contato",
@@ -2914,7 +2914,7 @@
       "templateNameRequired": "O nome do modelo é obrigatório",
       "templateMalformed": "O registro local do modelo está corrompido — use \"Sincronizar da Meta\" em Configurações para corrigi-lo antes de disparar.",
       "invalidPhoneFormat": "Formato de número de telefone inválido",
-      "templateNotApproved": "Este modelo é local (criado ou editado no modo QR Code) e não foi aprovado pela Meta — envie-o para aprovação em Configurações › Modelos."
+      "templateNotApproved": "A versão atual deste modelo não está aprovada pela Meta (local, rascunho ou em análise) — envie-o em Configurações › Modelos e aguarde a aprovação."
     },
     "whatsappConfig": {
       "fetchFailed": "Falha ao buscar a configuração",

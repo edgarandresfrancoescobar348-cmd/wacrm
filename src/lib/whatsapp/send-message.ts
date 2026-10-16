@@ -323,7 +323,7 @@ export async function sendMessageToConversation(
     if (!templateUsableOn(transport.capabilities.templates, templateRow)) {
       throw new SendMessageError(
         'template_not_approved',
-        'This template is local (created or edited in QR-code mode) and not approved by Meta — submit it in Settings → Templates first.',
+        'This template’s current version is not approved by Meta (local, draft or in review) — submit it in Settings → Templates and wait for approval.',
         400
       );
     }

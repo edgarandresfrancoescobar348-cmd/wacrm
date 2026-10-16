@@ -2617,7 +2617,7 @@
       "dbInsertFailed": "sent to Meta but DB insert failed: {message}",
       "conversationLookupFailed": "conversation lookup failed: {message}",
       "conversationNotFound": "conversation not found for this account",
-      "templateNotApproved": "Template \"{name}\" is local (created or edited in QR-code mode) and not approved by Meta — submit it in Settings › Templates first."
+      "templateNotApproved": "The current version of template \"{name}\" is not approved by Meta (local, draft or in review) — submit it in Settings › Templates and wait for approval."
     },
     "engine": {
       "needsContact": "{step} needs a contact",
@@ -2914,7 +2914,7 @@
       "templateNameRequired": "template_name is required",
       "templateMalformed": "Template row is malformed locally — run \"Sync from Meta\" in Settings to repair it before broadcasting.",
       "invalidPhoneFormat": "Invalid phone number format",
-      "templateNotApproved": "This template is local (created or edited in QR-code mode) and not approved by Meta — submit it in Settings › Templates first."
+      "templateNotApproved": "This template's current version is not approved by Meta (local, draft or in review) — submit it in Settings › Templates and wait for approval."
     },
     "whatsappConfig": {
       "fetchFailed": "Failed to fetch configuration",
