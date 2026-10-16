@@ -275,6 +275,7 @@
       "video": "Video",
       "audio": "Audio",
       "unavailable": "{label} no disponible",
+      "expired": "{label} — el archivo caducó en WhatsApp",
       "document": "Documento",
       "locationShared": "Ubicación compartida",
       "template": "Plantilla",

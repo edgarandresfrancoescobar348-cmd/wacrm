@@ -275,6 +275,7 @@
       "video": "Vídeo",
       "audio": "Áudio",
       "unavailable": "{label} indisponível",
+      "expired": "{label} — mídia expirada no WhatsApp",
       "document": "Documento",
       "locationShared": "Localização compartilhada",
       "template": "Modelo",

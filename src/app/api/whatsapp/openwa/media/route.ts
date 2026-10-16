@@ -1,20 +1,25 @@
 // GET /api/whatsapp/openwa/media?chat=<chatId>&id=<messageId>
 //
-// Streams an inbound attachment from the account's OpenWA gateway. Used
-// only when the media mirror is off (or failed) — mirrored media has a
-// durable storage URL. Any member of the account may read it, the same
+// Streams an attachment from the account's OpenWA gateway — live media
+// when the mirror is off (or failed), and imported history media, which
+// the gateway downloads from WhatsApp on first open (phase 5d). Once
+// served, the bytes are mirrored into storage when the account keeps a
+// copy of received media, so the next open doesn't go to WhatsApp. When
+// WhatsApp no longer has the file (gateway 410) the message is marked
+// `media_expired_at` and the bubble says so. Any member of the account may read it, the same
 // audience as the conversation itself; the message must be one of the
 // account's rows pointing at exactly this proxy URL, so the route can't
 // be used to pull arbitrary media off the number.
 
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { untrustedMediaHeaders } from '@/lib/media/safe-inline'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { downloadOpenWaMedia, OpenWaError } from '@/lib/whatsapp/openwa/client'
 import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
-import { openWaMediaProxyUrl } from '@/lib/whatsapp/openwa/events'
+import { mirrorMediaId, openWaMediaProxyUrl } from '@/lib/whatsapp/openwa/events'
+import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { requireOpenWaGateway } from '@/lib/whatsapp/openwa/gateway'
 
 export async function GET(request: Request) {
@@ -43,12 +48,54 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'WhatsApp (QR Code) not connected' }, { status: 400 })
     }
 
-    const { bytes, mimeType } = await downloadOpenWaMedia(
-      requireOpenWaGateway(),
-      row.session_id,
-      chatId,
-      messageId,
-    )
+    let fetched: Awaited<ReturnType<typeof downloadOpenWaMedia>>
+    try {
+      fetched = await downloadOpenWaMedia(requireOpenWaGateway(), row.session_id, chatId, messageId)
+    } catch (err) {
+      if (err instanceof OpenWaError && err.status === 410) {
+        // WhatsApp no longer has it: say so on the bubble, for good.
+        await admin.from('messages').update({ media_expired_at: new Date().toISOString() }).eq('id', owned.id)
+        return NextResponse.json({ error: 'Media expired on WhatsApp', code: 'media_expired' }, { status: 410 })
+      }
+      throw err
+    }
+    const { bytes, mimeType } = fetched
+
+    // Keep a copy, like live media (whatsapp_config.mirror_inbound_media):
+    // the next open is a storage URL, not a trip to WhatsApp.
+    after(async () => {
+      try {
+        const { data: config } = await admin
+          .from('whatsapp_config')
+          .select('mirror_inbound_media')
+          .eq('account_id', accountId)
+          .maybeSingle()
+        if (config?.mirror_inbound_media === false) return
+        const mirrored = await mirrorInboundMedia({
+          storage: admin.storage,
+          accountId,
+          mediaId: mirrorMediaId(messageId),
+          downloadUrl: 'openwa',
+          accessToken: '',
+          mimeType: owned.media_type || mimeType,
+          fileSize: bytes.byteLength,
+          download: async () => ({
+            buffer: Buffer.from(bytes),
+            contentType: owned.media_type || mimeType || 'application/octet-stream',
+          }),
+        })
+        if (mirrored) {
+          await admin
+            .from('messages')
+            .update({ media_url: mirrored })
+            .eq('id', owned.id)
+            .eq('media_url', openWaMediaProxyUrl(chatId, messageId))
+        }
+      } catch (err) {
+        console.error('[openwa media] mirror after first open failed:', err instanceof Error ? err.message : err)
+      }
+    })
+
     // The bytes are whatever a WhatsApp sender sent: only inert types render inline;
     // anything else downloads, sandboxed (see untrustedMediaHeaders).
     return new Response(new Uint8Array(bytes), {
@@ -59,7 +106,7 @@ export async function GET(request: Request) {
     if (err instanceof OpenWaError) {
       return NextResponse.json(
         { error: 'Media unavailable on the gateway' },
-        { status: err.status === 404 ? 404 : 502 },
+        { status: err.status === 404 ? 404 : err.status === 413 ? 413 : 502 },
       )
     }
     return toErrorResponse(err)

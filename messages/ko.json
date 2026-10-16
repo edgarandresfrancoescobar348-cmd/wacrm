@@ -275,6 +275,7 @@
       "video": "동영상",
       "audio": "오디오",
       "unavailable": "{label}을(를) 사용할 수 없습니다",
+      "expired": "{label} — WhatsApp에서 미디어가 만료됨",
       "document": "문서",
       "locationShared": "위치 공유됨",
       "template": "템플릿",

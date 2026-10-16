@@ -275,6 +275,7 @@
       "video": "Video",
       "audio": "Audio",
       "unavailable": "{label} unavailable",
+      "expired": "{label} — media expired on WhatsApp",
       "document": "Document",
       "locationShared": "Location shared",
       "template": "Template",

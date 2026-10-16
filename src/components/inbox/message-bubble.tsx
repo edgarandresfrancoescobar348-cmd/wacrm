@@ -22,6 +22,7 @@ import {
   MediaUnavailable,
   MediaVideoBubble,
 } from "./message-media";
+import { MentionText } from "./mention-text";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { KindContent, RevokedLine } from "./message-kind";
 import { useTranslations } from "next-intl";
@@ -157,11 +158,17 @@ function MessageContent({
     );
   }
 
+  // Media: playable unless WhatsApp said the file is gone (media_expired_at,
+  // set by the media proxy on a 410) — imported history media opens through
+  // the proxy, which fetches it from WhatsApp on first open.
+  const expired = Boolean(message.media_expired_at);
+  const playable = Boolean(message.media_url) && !expired;
+
   switch (message.content_type) {
     case "text":
       return (
         <p className={TEXT}>
-          {message.content_text}
+          <MentionText text={message.content_text} />
           {meta}
         </p>
       );
@@ -169,7 +176,7 @@ function MessageContent({
     case "image":
       return (
         <div>
-          {message.media_url ? (
+          {playable ? (
             <MediaImageBubble
               message={message}
               onOpen={openMedia}
@@ -177,15 +184,15 @@ function MessageContent({
               overlay={message.content_text ? undefined : metaOverlay}
             />
           ) : (
-            <MediaUnavailable label={t("photo")} t={t} />
+            <MediaUnavailable label={t("photo")} t={t} expired={expired} />
           )}
           {message.content_text ? (
             <p className={cn(TEXT, "px-1.5 pt-1.5 pb-1")}>
-              {message.content_text}
+              <MentionText text={message.content_text} />
               {meta}
             </p>
           ) : (
-            !message.media_url && <div className="px-1.5 pb-1">{metaBlock}</div>
+            !playable && <div className="px-1.5 pb-1">{metaBlock}</div>
           )}
         </div>
       );
@@ -193,14 +200,14 @@ function MessageContent({
     case "video":
       return (
         <div>
-          {message.media_url ? (
+          {playable ? (
             <MediaVideoBubble message={message} onOpen={openMedia} t={t} />
           ) : (
-            <MediaUnavailable label={t("video")} t={t} />
+            <MediaUnavailable label={t("video")} t={t} expired={expired} />
           )}
           {message.content_text ? (
             <p className={cn(TEXT, "px-1.5 pt-1.5 pb-1")}>
-              {message.content_text}
+              <MentionText text={message.content_text} />
               {meta}
             </p>
           ) : (
@@ -210,20 +217,20 @@ function MessageContent({
       );
 
     case "audio":
-      return message.media_url ? (
+      return playable ? (
         <MediaAudioBubble message={message} t={t} meta={metaBlock} />
       ) : (
         <div>
-          <MediaUnavailable label={t("audio")} t={t} />
+          <MediaUnavailable label={t("audio")} t={t} expired={expired} />
           {metaBlock}
         </div>
       );
 
     case "document":
-      if (!message.media_url) {
+      if (!playable) {
         return (
           <div>
-            <MediaUnavailable label={message.content_text || t("document")} t={t} />
+            <MediaUnavailable label={message.content_text || t("document")} t={t} expired={expired} />
             {metaBlock}
           </div>
         );

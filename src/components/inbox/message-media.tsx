@@ -39,14 +39,20 @@ const MEDIA_BOX = "max-h-[330px] max-w-[min(330px,100%)]";
 export function MediaUnavailable({
   label,
   t,
+  expired = false,
 }: {
   label: string;
   t: Translator;
+  /** WhatsApp no longer has the file (media proxy answered 410). */
+  expired?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-md bg-bubble-quote px-3 py-2 text-xs text-muted-foreground">
+    <div
+      className="flex items-center gap-2 rounded-md bg-bubble-quote px-3 py-2 text-xs text-muted-foreground"
+      data-testid={expired ? "media-expired" : "media-unavailable"}
+    >
       <ImageOff className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span>{t("unavailable", { label })}</span>
+      <span>{expired ? t("expired", { label }) : t("unavailable", { label })}</span>
     </div>
   );
 }

@@ -173,24 +173,28 @@ export interface MappedOpenWaMessage {
 export function mapOpenWaMessage(data: OpenWaMessageData): MappedOpenWaMessage {
   const body = data.body?.trim() ? data.body : null
   const base = { contentText: body, meta: null, hasMedia: false, revoked: false }
+  // A media KIND always has media to fetch, whether or not this payload
+  // describes it: history reads carried no `media` at all (phase 5d —
+  // every imported photo/audio/document was stored with no reference).
+  // The gateway's media route downloads it on demand.
   switch (data.type) {
     case 'text':
       return { ...base, contentType: 'text' }
     case 'image':
     case 'video':
     case 'audio':
-      return { ...base, contentType: data.type, hasMedia: !!data.media }
+      return { ...base, contentType: data.type, hasMedia: true }
     case 'voice':
-      return { ...base, contentType: 'audio', meta: { kind: 'voice' }, hasMedia: !!data.media }
+      return { ...base, contentType: 'audio', meta: { kind: 'voice' }, hasMedia: true }
     case 'sticker':
-      return { ...base, contentType: 'image', meta: { kind: 'sticker' }, contentText: null, hasMedia: !!data.media }
+      return { ...base, contentType: 'image', meta: { kind: 'sticker' }, contentText: null, hasMedia: true }
     case 'document':
       return {
         ...base,
         contentType: 'document',
         contentText: body ?? data.media?.filename ?? null,
         meta: { kind: 'document', filename: data.media?.filename ?? null, sizeBytes: data.media?.sizeBytes ?? null },
-        hasMedia: !!data.media,
+        hasMedia: true,
       }
     case 'location': {
       const loc = data.location
@@ -319,14 +323,14 @@ async function resolveOpenWaContent(
   }
 
   const mapped = mapOpenWaMessage(data)
-  if (!mapped.hasMedia || !data.media) {
+  if (!mapped.hasMedia || !data.id) {
     return { ...empty, contentType: mapped.contentType, contentText: mapped.contentText, meta: mapped.meta }
   }
 
   const sessionId = ctx.row.session_id!
   const chatId = data.chatId ?? data.from ?? ''
-  const messageId = data.id ?? ''
-  const mimeType = data.media.mimetype ?? null
+  const messageId = data.id
+  const mimeType = data.media?.mimetype || null
   const caption = mapped.contentText
   const proxyUrl = openWaMediaProxyUrl(chatId, messageId)
 
@@ -342,8 +346,8 @@ async function resolveOpenWaContent(
     downloadUrl: 'openwa',
     accessToken: '',
     mimeType,
-    fileSize: data.media.sizeBytes ?? null,
-    fileName: data.media.filename ?? null,
+    fileSize: data.media?.sizeBytes ?? null,
+    fileName: data.media?.filename ?? null,
     messageTimestamp: data.timestamp ?? null,
     // Inline base64 (≤ 1 MiB) or the gateway's media route.
     download: async () => {

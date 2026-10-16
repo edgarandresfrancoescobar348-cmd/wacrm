@@ -524,7 +524,8 @@ export async function downloadOpenWaMedia(
     creds,
     'GET',
     `/sessions/${enc(sessionId)}/messages/${enc(chatId)}/${enc(messageId)}/media`,
-    { raw: true, timeoutMs: 60_000 },
+    // The gateway may download it from WhatsApp first (≤ 60 s on its side).
+    { raw: true, timeoutMs: 75_000 },
   )
   const bytes = new Uint8Array(await res.arrayBuffer())
   return { bytes, mimeType: res.headers.get('content-type') }

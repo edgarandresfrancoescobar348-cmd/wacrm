@@ -7,6 +7,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   stored: 'text/html' as string | null,
   upstream: { bytes: Buffer.from('<script>fetch("/api/whatsapp/openwa")</script>'), mimeType: 'text/html' as string | null },
+  upstreamError: null as unknown,
+  mirror: true as boolean,
+  mirroredUrl: 'https://storage/chat-media/account-acct-1/inbound/1-image.jpg' as string | null,
+  updates: [] as { table: string; value: Record<string, unknown> }[],
+  after: [] as (() => Promise<void>)[],
+}))
+
+vi.mock('next/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/server')>()),
+  after: (cb: () => Promise<void>) => h.after.push(cb),
+}))
+vi.mock('@/lib/whatsapp/mirror-inbound-media', () => ({
+  mirrorInboundMedia: async () => h.mirroredUrl,
 }))
 
 vi.mock('@/lib/auth/account', () => ({
@@ -15,13 +28,23 @@ vi.mock('@/lib/auth/account', () => ({
 }))
 vi.mock('@/lib/flows/admin-client', () => ({
   supabaseAdmin: () => ({
-    from: () => {
-      const q = {
+    storage: {},
+    from: (table: string) => {
+      const q: Record<string, unknown> = {}
+      Object.assign(q, {
         select: () => q,
         eq: () => q,
         limit: () => q,
-        maybeSingle: async () => ({ data: { id: 'owned-media', media_type: h.stored }, error: null }),
-      }
+        update: (value: Record<string, unknown>) => {
+          h.updates.push({ table, value })
+          return q
+        },
+        maybeSingle: async () =>
+          table === 'whatsapp_config'
+            ? { data: { mirror_inbound_media: h.mirror }, error: null }
+            : { data: { id: 'owned-media', media_type: h.stored }, error: null },
+        then: (resolve: (v: unknown) => void) => resolve({ error: null }),
+      })
       return q
     },
   }),
@@ -29,13 +52,21 @@ vi.mock('@/lib/flows/admin-client', () => ({
 vi.mock('@/lib/whatsapp/openwa/connection', () => ({ loadOpenWaRow: async () => ({ session_id: 'sess-1' }) }))
 vi.mock('@/lib/whatsapp/openwa/events', () => ({
   openWaMediaProxyUrl: () => '/owned',
+  mirrorMediaId: () => '123',
 }))
 vi.mock('@/lib/whatsapp/openwa/gateway', () => ({
   requireOpenWaGateway: () => ({ baseUrl: 'https://gateway', apiKey: 'dummy' }),
 }))
 vi.mock('@/lib/whatsapp/openwa/client', () => ({
-  OpenWaError: class extends Error {},
-  downloadOpenWaMedia: async () => h.upstream,
+  OpenWaError: class extends Error {
+    constructor(message: string, readonly status: number) {
+      super(message)
+    }
+  },
+  downloadOpenWaMedia: async () => {
+    if (h.upstreamError) throw h.upstreamError
+    return h.upstream
+  },
 }))
 
 import { GET } from './route'
@@ -43,6 +74,10 @@ import { GET } from './route'
 const req = () => new Request('http://app/api/whatsapp/openwa/media?chat=5511999999999%40c.us&id=doc1')
 
 beforeEach(() => {
+  h.upstreamError = null
+  h.mirror = true
+  h.updates.length = 0
+  h.after.length = 0
   h.stored = 'text/html'
   h.upstream = { bytes: Buffer.from('<script>fetch("/api/whatsapp/openwa")</script>'), mimeType: 'text/html' }
 })
@@ -77,5 +112,34 @@ describe('OpenWA media proxy headers', () => {
     expect(res.headers.get('content-disposition')).toBe('inline')
     expect(res.headers.get('content-security-policy')).toContain('sandbox')
     expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+})
+
+// Phase 5d: imported history media is fetched through here on first open.
+describe('OpenWA media proxy — history media', () => {
+  it('WhatsApp no longer having the file → 410 media_expired, and the message is marked expired', async () => {
+    const { OpenWaError } = await import('@/lib/whatsapp/openwa/client')
+    h.upstreamError = new (OpenWaError as unknown as new (m: string, s: number) => Error)('gone', 410)
+    const res = await GET(req())
+    expect(res.status).toBe(410)
+    expect((await res.json()).code).toBe('media_expired')
+    expect(h.updates).toEqual([{ table: 'messages', value: { media_expired_at: expect.any(String) } }])
+  })
+
+  it('after the first open, the bytes are mirrored and the row points at the copy', async () => {
+    h.stored = 'image/jpeg'
+    h.upstream = { bytes: Buffer.from('JPG'), mimeType: 'image/jpeg' }
+    expect((await GET(req())).status).toBe(200)
+    for (const task of h.after) await task()
+    expect(h.updates).toEqual([{ table: 'messages', value: { media_url: h.mirroredUrl } }])
+  })
+
+  it('no copy when the account turned the media mirror off', async () => {
+    h.mirror = false
+    h.stored = 'image/jpeg'
+    h.upstream = { bytes: Buffer.from('JPG'), mimeType: 'image/jpeg' }
+    await GET(req())
+    for (const task of h.after) await task()
+    expect(h.updates).toEqual([])
   })
 })

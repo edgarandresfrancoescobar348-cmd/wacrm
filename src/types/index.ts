@@ -237,6 +237,8 @@ export interface Message {
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
+  /** Set when WhatsApp no longer has the file (media proxy answered 410). */
+  media_expired_at?: string | null;
   /**
    * MIME type of `media_url`'s content, as Meta reported it. Inbound
    * media only — outbound URLs already carry a filename and extension.
