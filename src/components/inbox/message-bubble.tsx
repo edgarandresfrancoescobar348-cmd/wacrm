@@ -49,6 +49,8 @@ interface MessageBubbleProps {
   showTail?: boolean;
   /** Group messages: the member's name on the first bubble of their run (WhatsApp colours it). */
   senderLabel?: string | null;
+  /** Who recorded a voice note — its photo or initials sit on the bubble, like WhatsApp. */
+  voiceAvatar?: { name: string; src?: string | null } | null;
 }
 
 /** WhatsApp-like name colours for group members, stable per sender. */
@@ -140,10 +142,12 @@ function MessageContent({
   meta,
   metaBlock,
   metaOverlay,
+  voiceAvatar,
 }: {
   message: Message;
   t: ReturnType<typeof useTranslations>;
   isAgent: boolean;
+  voiceAvatar?: { name: string; src?: string | null } | null;
   onOpenMedia?: (messageId: string) => void;
   /** Time + ticks floated at the end of the last text line. */
   meta: React.ReactNode;
@@ -241,7 +245,7 @@ function MessageContent({
 
     case "audio":
       return playable ? (
-        <MediaAudioBubble message={message} t={t} meta={metaBlock} onPlayed={() => markPlayed(message)} />
+        <MediaAudioBubble message={message} t={t} meta={metaBlock} onPlayed={() => markPlayed(message)} avatar={voiceAvatar} />
       ) : (
         <div>
           <MediaUnavailable label={t("audio")} t={t} expired={expired} />
@@ -383,6 +387,7 @@ export function MessageBubble({
   onOpenMedia,
   showTail = false,
   senderLabel = null,
+  voiceAvatar = null,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -488,6 +493,7 @@ export function MessageBubble({
           meta={meta}
           metaBlock={metaBlock}
           metaOverlay={metaOverlay}
+          voiceAvatar={voiceAvatar}
         />
       </div>
       {failure && (

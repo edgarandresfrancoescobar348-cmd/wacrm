@@ -19,6 +19,7 @@ import type { Message } from "@/types";
 import { downloadMediaMessage } from "@/lib/media/download";
 import { useMediaBlobUrl } from "@/hooks/use-media-blob-url";
 import { formatFileSize } from "@/lib/whatsapp/message-content";
+import { WaAvatar } from "@/components/layout/wa-panel";
 
 /**
  * The media renderers behind `<MessageBubble>`'s image / video / audio /
@@ -295,6 +296,7 @@ export function MediaAudioBubble({
   t,
   meta,
   onPlayed,
+  avatar,
 }: {
   message: Message;
   t: Translator;
@@ -302,6 +304,8 @@ export function MediaAudioBubble({
   meta?: React.ReactNode;
   /** A received voice note was played for the first time here. */
   onPlayed?: () => void;
+  /** Who recorded it: WhatsApp shows their photo (or initials) with the mic on it. */
+  avatar?: { name: string; src?: string | null } | null;
 }) {
   const { downloading, download } = useMediaDownload(message, t);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -368,20 +372,14 @@ export function MediaAudioBubble({
     setCurrent(el.currentTime);
   };
 
+  // WhatsApp's colours: green while a received voice note is unplayed,
+  // blue once played (by you, or — on your own — by the recipient).
+  const accent = played ? "text-read-ticks" : !isOwn ? "text-primary" : "text-foreground/60";
+  const knob = played ? "bg-read-ticks" : !isOwn ? "bg-primary" : "bg-foreground/60";
+
   return (
-    <div className="flex w-[min(300px,62vw)] items-center gap-2 pt-1">
+    <div className="group/voice relative flex w-[min(300px,62vw)] items-center gap-2 pt-1">
       <audio ref={audioRef} src={message.media_url} preload="metadata" className="hidden" />
-      {/* WhatsApp's mic: green while a received voice note is unplayed,
-          blue once played (by you, or — on your own — by the recipient). */}
-      <span
-        className={cn(
-          "relative flex size-11 shrink-0 items-center justify-center rounded-full bg-bubble-quote",
-          played ? "text-read-ticks" : !isOwn ? "text-primary" : "text-foreground/70",
-        )}
-        data-testid={played ? "voice-played" : "voice-unplayed"}
-      >
-        <Mic className="size-5" />
-      </span>
       <button
         type="button"
         onClick={toggle}
@@ -414,7 +412,7 @@ export function MediaAudioBubble({
           <span
             aria-hidden
             style={{ left: `calc(${progress * 100}% - 6px)` }}
-            className="absolute top-1/2 size-3 -translate-y-1/2 rounded-full bg-read-ticks"
+            className={cn("absolute top-1/2 size-3 -translate-y-1/2 rounded-full", knob)}
           />
         </button>
         <div className="mt-1 flex items-center justify-between gap-2 text-[11px] leading-[15px] text-foreground/60">
@@ -422,15 +420,21 @@ export function MediaAudioBubble({
           {meta}
         </div>
       </div>
+      {/* The recorder's photo (or initials) with the mic on its corner, like WhatsApp. */}
+      <span className="relative shrink-0" data-testid={played ? "voice-played" : "voice-unplayed"}>
+        <WaAvatar src={avatar?.src} name={avatar?.name || "?"} size={46} />
+        <Mic className={cn("absolute -bottom-0.5 -left-1.5 size-[18px] drop-shadow-[0_0_1px_rgba(0,0,0,0.35)]", accent)} strokeWidth={2.4} />
+      </span>
+      {/* WhatsApp has no download button on a voice note: here it shows on hover / focus. */}
       <button
         type="button"
         onClick={download}
         disabled={downloading}
         aria-label={t("download")}
         title={t("download")}
-        className="flex size-8 shrink-0 items-center justify-center rounded-full text-foreground/60 hover:bg-bubble-quote hover:text-foreground disabled:opacity-60"
+        className="absolute -top-1 right-12 flex size-7 items-center justify-center rounded-full bg-bubble-quote text-foreground/70 opacity-0 transition-opacity group-hover/voice:opacity-100 focus-visible:opacity-100 disabled:opacity-60 hover:text-foreground"
       >
-        {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+        {downloading ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
       </button>
     </div>
   );

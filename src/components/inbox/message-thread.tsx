@@ -929,6 +929,16 @@ export function MessageThread({
   // Your own chat, like WhatsApp: "Guilherme Varela (Você)" (avatars keep the bare name).
   const displayName = conversation.is_self ? `${baseName} ${t("you")}` : baseName;
   const messageGroups = groupMessagesByDate(messages);
+  // A voice note's photo: the contact (or the group member), or — yours —
+  // the agent who sent it, else you.
+  const voiceAvatarFor = (msg: Message): { name: string; src?: string | null } => {
+    if (isOutgoing(msg)) {
+      const p = profiles.find((x) => x.user_id === (msg.sender_id ?? user?.id));
+      return { name: p?.full_name || baseName, src: p?.avatar_url ?? null };
+    }
+    if (isGroup) return { name: msg.sender_name || baseName, src: null };
+    return { name: baseName, src: contact?.avatar_url ?? null };
+  };
   // WhatsApp's "Mensagem não lida/não ouvida: N" line above the messages
   // that were unread when the chat was opened (phase 5e).
   let dividerBeforeId: string | null = null;
@@ -1219,6 +1229,7 @@ export function MessageThread({
                           <MessageBubble
                             message={msg}
                             senderLabel={isGroup && firstOfRun ? msg.sender_name : null}
+                            voiceAvatar={msg.media_type?.startsWith("audio") ? voiceAvatarFor(msg) : null}
                             reply={reply}
                             reactions={msgReactions}
                             currentUserId={user?.id}
