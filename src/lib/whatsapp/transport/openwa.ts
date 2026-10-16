@@ -20,11 +20,13 @@ import { renderNumberedMenu } from '@/lib/whatsapp/inbound/numbered-menu'
 import { renderLocalTemplate, LOCAL_CAPTION_MAX } from '@/lib/whatsapp/template-local-render'
 import { getT } from '@/lib/i18n/translate'
 import {
+  listOpenWaMessages,
   openWaMarkRead,
   openWaReact,
   openWaSend,
   openWaTyping,
   OpenWaError,
+  normalizeOpenWaBaseUrl,
 } from '@/lib/whatsapp/openwa/client'
 import type { OpenWaConnection } from '@/lib/whatsapp/openwa/connection'
 import {
@@ -41,6 +43,9 @@ const t = getT('WhatsAppTransport')
 
 export const OPENWA_DEFAULT_BROADCAST_DELAY_MS = 8000
 
+/** OpenWA keeps a send's Idempotency-Key for 24 h (SEND_IDEMPOTENCY_TTL_MS). */
+export const OPENWA_IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000
+
 export function openWaCapabilities(broadcastDelayMs: number): TransportCapabilities {
   return {
     templates: 'local',
@@ -51,6 +56,7 @@ export function openWaCapabilities(broadcastDelayMs: number): TransportCapabilit
     broadcastDelayMs,
     // OpenWA's send routes honour an Idempotency-Key header (24 h).
     idempotentSends: true,
+    idempotencyWindowMs: OPENWA_IDEMPOTENCY_WINDOW_MS,
   }
 }
 
@@ -203,6 +209,25 @@ export function createOpenWaTransport(conn: OpenWaConnection): WhatsAppTransport
   return {
     provider: 'openwa',
     capabilities: openWaCapabilities(conn.broadcastDelayMs),
+    gateway: { url: normalizeOpenWaBaseUrl(conn.baseUrl), sessionId },
+
+    expectedBody(args) {
+      const rendered = renderTemplate(args)
+      return rendered.media ? rendered.text.slice(0, LOCAL_CAPTION_MAX) : rendered.text
+    },
+
+    async findSentMessage({ to, body, since }) {
+      const { messages } = await listOpenWaMessages(creds, sessionId, {
+        chatId: toOpenWaChatId(to),
+        // A little slack for clock skew between us and the gateway.
+        since: since - 120_000,
+        limit: 100,
+      })
+      const hit = (messages ?? []).find(
+        (m) => m.direction === 'outgoing' && (m.body ?? '') === body,
+      )
+      return hit ? (hit.waMessageId ?? hit.id) : null
+    },
 
     sendText: ({ to, text, contextMessageId, ...c }) => sendText(to, text, contextMessageId, c),
 

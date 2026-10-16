@@ -29,7 +29,7 @@ vi.mock('./broadcast-core', async (importOriginal) => ({
     h.order.push(`deliver ${plan.broadcastId} ${opts.sendBy > opts.deadline}`)
     return { attempted: 1, deferred: 0, interrupted: false }
   }),
-  finalizeBroadcastStatus: vi.fn(async (_db: unknown, id: string) => void h.order.push(`finalize ${id}`)),
+  finalizeBroadcastStatus: vi.fn(async (_db: unknown, id: string) => (h.order.push(`finalize ${id}`), true)),
 }))
 
 import { continuePausedBroadcasts } from './broadcast-continue'
@@ -60,18 +60,18 @@ beforeEach(() => {
 })
 
 describe('continuePausedBroadcasts (F8)', () => {
-  it('claims, clears the flag, plans the pending recipients and delivers the next pass', async () => {
+  it('claims, plans the pending recipients and delivers the next pass — the schedule is NOT cleared first (H4)', async () => {
     const r = await continuePausedBroadcasts(admin, { maxDurationSeconds: 300 })
     expect(r.continued).toEqual(['bc-api'])
     expect(h.filters).toEqual(expect.arrayContaining(['eq status=sending', 'not auto_resume_at is null', 'lte auto_resume_at']))
-    expect(h.updates).toEqual([{ auto_resume_at: null }])
+    expect(h.updates).toEqual([])
     expect(h.order).toEqual(['claim bc-api', 'plan bc-api pending', 'deliver bc-api true', 'release bc-api'])
   })
 
   it('leaves a broadcast whose pass is already running (lock held)', async () => {
     h.locked.add('bc-api')
     const r = await continuePausedBroadcasts(admin, { maxDurationSeconds: 300 })
-    expect(r).toEqual({ continued: [], busy: ['bc-api'] })
+    expect(r).toEqual({ continued: [], busy: ['bc-api'], rescheduled: [] })
     expect(h.order).toEqual(['claim bc-api'])
   })
 

@@ -284,6 +284,7 @@ describe('OpenWA transport — wire shape', () => {
       interactive: 'numbered_text',
       broadcastDelayMs: 8000,
       idempotentSends: true,
+      idempotencyWindowMs: 24 * 60 * 60 * 1000,
     })
     expect(t.transport().recipientVariants('5511912345678')).toEqual(['5511912345678'])
   })

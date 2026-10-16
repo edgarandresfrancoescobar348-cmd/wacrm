@@ -223,13 +223,11 @@ describe('planBroadcastResume', () => {
     expect(plan.planned).toEqual([
       {
         recipientRowId: 'r1',
-        idempotencyKey: 'broadcast-recipient:r1',
         phone: '15551234567',
         params: ['A123', 'Friday'],
       },
       {
         recipientRowId: 'r2',
-        idempotencyKey: 'broadcast-recipient:r2',
         phone: '15559876543',
         params: ['B456', 'Monday'],
       },
@@ -419,11 +417,11 @@ describe('planBroadcastResume', () => {
   });
 });
 
-// G7 (second review): a recipient interrupted mid-send (pending with a
-// send checkpoint) has an unknown outcome. On Meta — no send
-// de-duplication — it is failed instead of risking a duplicate.
-describe('planBroadcastResume — interrupted recipients (G7)', () => {
-  it('fails an interrupted recipient on Meta and plans the untouched ones', async () => {
+// A recipient interrupted mid-send is no longer decided by the planner:
+// its send attempt is reconciled (or put up for a decision) when its turn
+// comes — sql/broadcast-attempts.pg.test.ts (H5).
+describe('planBroadcastResume — interrupted recipients (third review)', () => {
+  it('plans an interrupted recipient instead of failing it blindly', async () => {
     const writes: PlanWrites = {};
     const { plan } = await planBroadcastResume(
       planDb(
@@ -431,8 +429,8 @@ describe('planBroadcastResume — interrupted recipients (G7)', () => {
           broadcast: BROADCAST,
           config: CONFIG,
           recipients: [
-            { ...recipient('r1', '+15551234567'), status: 'pending', send_started_at: '2026-10-15T10:00:00Z' },
-            { ...recipient('r2', '+15559876543'), status: 'pending', send_started_at: null },
+            { ...recipient('r1', '+15551234567'), status: 'pending' },
+            { ...recipient('r2', '+15559876543'), status: 'pending' },
           ],
         },
         writes,
@@ -441,9 +439,8 @@ describe('planBroadcastResume — interrupted recipients (G7)', () => {
       'bc-1',
       'pending',
     );
-    expect(writes.failedIds).toEqual(['r1']);
-    expect(String(writes.failedUpdate?.error_message)).toMatch(/Interrupted/);
-    expect(plan.planned.map((p) => p.recipientRowId)).toEqual(['r2']);
+    expect(writes.failedIds).toBeUndefined();
+    expect(plan.planned.map((p) => p.recipientRowId)).toEqual(['r1', 'r2']);
   });
 });
 

@@ -403,6 +403,33 @@ export function openWaSend(
   )
 }
 
+export interface OpenWaStoredMessage {
+  id: string
+  waMessageId?: string | null
+  chatId: string
+  body?: string | null
+  direction: 'incoming' | 'outgoing' | string
+  timestamp?: number | null
+  createdAt?: string
+}
+
+/** GET /sessions/:id/messages — the gateway's stored history, newest first. */
+export function listOpenWaMessages(
+  creds: OpenWaCredentials,
+  sessionId: string,
+  query: { chatId: string; since?: number; limit?: number },
+  opts: { deadline?: number } = {},
+) {
+  const params = new URLSearchParams({ chatId: query.chatId, limit: String(query.limit ?? 50) })
+  if (query.since !== undefined) params.set('since', String(Math.floor(query.since)))
+  return openWaRequest<{ messages: OpenWaStoredMessage[] }>(
+    creds,
+    'GET',
+    `/sessions/${enc(sessionId)}/messages?${params.toString()}`,
+    { deadline: opts.deadline },
+  )
+}
+
 export function openWaReact(
   creds: OpenWaCredentials,
   sessionId: string,

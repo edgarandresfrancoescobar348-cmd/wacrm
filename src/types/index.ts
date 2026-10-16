@@ -427,7 +427,9 @@ export interface Deal {
 }
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
-export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
+/** `unknown`: the send's outcome could not be established and it can't
+ *  be safely resent — awaiting a person's decision (migration 056). */
+export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed' | 'unknown';
 
 export interface Broadcast {
   id: string;

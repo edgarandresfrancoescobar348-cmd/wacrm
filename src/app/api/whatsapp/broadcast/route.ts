@@ -21,6 +21,8 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit'
 import { getT } from '@/lib/i18n/translate'
+import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { sendBroadcastRecipient } from '@/lib/whatsapp/broadcast-attempts'
 
 const t = getT('Api')
 
@@ -31,11 +33,21 @@ export const maxDuration = 300
 
 interface BroadcastResult {
   phone: string
-  /** `deferred`: not attempted — out of this request's time budget
-   *  (paced QR connection); the wizard re-queues it. */
-  status: 'sent' | 'failed' | 'deferred'
+  /**
+   * `deferred`: not attempted — out of this request's time budget
+   *   (paced QR connection); the wizard re-queues it.
+   * `pending`: its send attempt is still open (the gateway is still
+   *   running it, or its outcome is being established) — the server
+   *   finishes it (continuation); the wizard leaves the row alone.
+   * `unknown`: the outcome could not be established and the message
+   *   can't be safely resent — a person decides on the broadcast page.
+   */
+  status: 'sent' | 'failed' | 'deferred' | 'pending' | 'unknown'
   whatsapp_message_id?: string
   error?: string
+  /** The server already recorded this outcome on the recipient row
+   *  (send attempts, migration 056) — the wizard must not overwrite it. */
+  persisted?: boolean
 }
 
 /**
@@ -201,9 +213,75 @@ export async function POST(request: Request) {
         continue
       }
 
-      const idempotencyKey = recipient.recipient_id
-        ? `broadcast-recipient:${recipient.recipient_id}`
-        : undefined
+      // A wizard row: the send goes through its durable send attempt —
+      // checkpoint before the send, frozen payload and key, outcome
+      // recorded on the row (broadcast-attempts.ts).
+      if (recipient.recipient_id) {
+        const admin = supabaseAdmin()
+        let outcome: Awaited<ReturnType<typeof sendBroadcastRecipient>>
+        try {
+          outcome = await sendBroadcastRecipient(
+            admin,
+            {
+              accountId,
+              transport,
+              sendBy,
+              pace: () =>
+                paceBroadcastSend(accountId, transport.capabilities.broadcastDelayMs, { deadline }),
+            },
+            recipient.recipient_id,
+            {
+              to: sanitized,
+              templateName: template_name,
+              language: resolvedTemplate.language,
+              template: templateRow,
+              params: recipient.params ?? [],
+              ...(recipient.messageParams ? { messageParams: recipient.messageParams } : {}),
+            },
+          )
+        } catch (error) {
+          // A write the send depends on failed (or the row isn't this
+          // account's): nothing was sent past a failed checkpoint. The
+          // row stays as the database knows it.
+          console.error('[broadcast] send attempt failed:', error)
+          results.push({ phone: recipient.phone, status: 'deferred' })
+          deferredCount++
+          continue
+        }
+        const r = outcome.result
+        switch (r.status) {
+          case 'sent':
+            results.push({
+              phone: recipient.phone,
+              status: 'sent',
+              ...(r.messageId ? { whatsapp_message_id: r.messageId } : {}),
+              persisted: true,
+            })
+            sentCount++
+            break
+          case 'failed':
+            results.push({ phone: recipient.phone, status: 'failed', error: r.error, persisted: true })
+            failedCount++
+            break
+          case 'unknown':
+            results.push({ phone: recipient.phone, status: 'unknown', error: r.error, persisted: true })
+            break
+          case 'pending':
+            results.push({ phone: recipient.phone, status: 'pending', persisted: true })
+            break
+          case 'skipped':
+            // Already sent (or no longer pending): nothing to report over.
+            results.push({ phone: recipient.phone, status: 'sent', persisted: true })
+            break
+          case 'deferred':
+            results.push({ phone: recipient.phone, status: 'deferred' })
+            deferredCount++
+            break
+        }
+        continue
+      }
+
+      // Older callers without a recipient row: a plain send, no attempt.
       const sendArgs = {
         templateName: template_name,
         language: resolvedTemplate.language,
@@ -211,7 +289,6 @@ export async function POST(request: Request) {
         messageParams: recipient.messageParams,
         params: recipient.params ?? [],
         sendBy,
-        idempotencyKey,
       }
       // Slow send-independent work (a media header to inline) BEFORE the
       // paced slot — the slot then only waits on the provider.
@@ -249,14 +326,6 @@ export async function POST(request: Request) {
 
       // Retry with phone variants on "not in allowed list" so numbers
       // that differ only in a trunk-prefix 0 still reach recipients.
-      // Checkpoint BEFORE the external effect (the wizard's row).
-      if (recipient.recipient_id) {
-        await supabase
-          .from('broadcast_recipients')
-          .update({ send_started_at: new Date().toISOString() })
-          .eq('id', recipient.recipient_id)
-      }
-
       let sentMessageId: string | null = null
       let lastError: string | null = null
       try {
@@ -268,15 +337,6 @@ export async function POST(request: Request) {
         )
         sentMessageId = result.messageId
       } catch (error) {
-        // Aborted at the budget: outcome unknown. Where the provider
-        // de-duplicates (same key) the wizard may safely re-queue it;
-        // otherwise report it failed rather than risk a duplicate.
-        const budgetHit = error instanceof SendBudgetExceededError || Date.now() >= sendBy - 1000
-        if (budgetHit && transport.capabilities.idempotentSends && idempotencyKey) {
-          results.push({ phone: recipient.phone, status: 'deferred' })
-          deferredCount++
-          continue
-        }
         lastError =
           error instanceof Error ? error.message : t('common.unknownError')
       }

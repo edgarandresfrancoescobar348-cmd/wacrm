@@ -61,6 +61,12 @@ export interface TransportCapabilities {
    * as "interrupted" rather than risk a duplicate.
    */
   idempotentSends: boolean
+  /**
+   * How long the provider remembers an idempotency key (OpenWA: 24 h,
+   * per gateway and session). A send attempt older than this is never
+   * resent automatically — past it the key protects nothing.
+   */
+  idempotencyWindowMs?: number
 }
 
 /** Options every send accepts (broadcast time budget, de-duplication). */
@@ -145,6 +151,24 @@ export interface WhatsAppTransport {
    * itself only waits on the provider. Optional; cached per transport.
    */
   prepareTemplate?(args: SendTemplateArgs): Promise<void>
+  /**
+   * The text the customer will receive for this template send (QR mode
+   * renders it locally), used to recognise the message later in echoes,
+   * stored messages and gateway history. Null where the provider renders.
+   */
+  expectedBody?(args: SendTemplateArgs): string | null
+  /**
+   * Look the provider's history up for an outgoing message to `to` with
+   * exactly `body`, sent at or after `since` (epoch ms). Returns its
+   * message id, or null when none is found (which does NOT prove it
+   * wasn't sent). Optional: only gateways that keep history.
+   */
+  findSentMessage?(args: { to: string; body: string; since: number }): Promise<string | null>
+  /**
+   * Identity of the gateway + session that de-duplicates sends (OpenWA).
+   * A send attempt is only ever resent to the same one.
+   */
+  readonly gateway?: { url: string; sessionId: string }
   /**
    * Mark the inbound message read and show "typing…". Best-effort —
    * callers swallow failures; the reply that follows is what matters.

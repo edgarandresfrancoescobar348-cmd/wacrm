@@ -72,6 +72,10 @@ export const recipientStatusConfig: Record<RecipientStatus, StatusDisplay> = {
     label: "failed",
     classes: "bg-red-500/10 text-red-400 border-red-500/20",
   },
+  unknown: {
+    label: "unconfirmed",
+    classes: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  },
 };
 
 /**

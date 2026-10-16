@@ -773,7 +773,8 @@
       "delivered": "Delivered",
       "read": "Read",
       "replied": "Replied",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "unconfirmed": "Unconfirmed"
     },
     "detail": {
       "backToBroadcasts": "Back to Broadcasts",
@@ -823,7 +824,13 @@
       "toastResumeStartedCapped": "Sending {count} recipients in the background. {remaining} more will need another run.",
       "toastResumeFailed": "Could not resume: {error}",
       "unknownError": "Unknown error",
-      "unknownContact": "Unknown"
+      "unknownContact": "Unknown",
+      "outcomeTitle": "{count, plural, one {# recipient} other {# recipients}} with an unconfirmed send",
+      "outcomeHint": "The gateway could not confirm whether these messages went out, and sending again could message them twice. Check the chats, then record what happened.",
+      "outcomeMarkSent": "They arrived",
+      "outcomeMarkNotSent": "Not sent (allow retry)",
+      "toastOutcomeSaved": "Recorded for {count, plural, one {# recipient} other {# recipients}}.",
+      "toastOutcomeFailed": "Could not record the decision: {error}"
     },
     "new": {
       "title": "New Broadcast",

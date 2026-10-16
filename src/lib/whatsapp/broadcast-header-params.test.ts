@@ -150,17 +150,8 @@ function plan(sendTemplate: (a: SendTemplateArgs) => Promise<{ messageId: string
 }
 
 describe('deliverBroadcast — header params', () => {
-  it('hands the header value to the transport as messageParams.headerText', async () => {
-    const recipients = new Map([['r1', { status: 'pending' } as Row]])
-    const sends: SendTemplateArgs[] = []
-    await deliverBroadcast(
-      deliverDb(recipients),
-      plan(async (a) => (sends.push(a), { messageId: 'm1' }), [{ recipientRowId: 'r1', phone: '5511966660001', params: ['Ana'], headerText: '#101' }]),
-    )
-    expect(sends[0]).toMatchObject({ params: ['Ana'], messageParams: { headerText: '#101' } })
-    expect(recipients.get('r1')!.status).toBe('sent')
-  })
-
+  // The header value reaching the transport is covered against a real
+  // PostgreSQL: sql/broadcast-attempts.pg.test.ts (frozen in the attempt).
   it('fails a recipient frozen without the header value instead of sending {{1}}', async () => {
     const recipients = new Map([['r1', { status: 'pending' } as Row]])
     const send = vi.fn(async () => ({ messageId: 'm1' }))

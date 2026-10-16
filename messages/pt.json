@@ -773,7 +773,8 @@
       "delivered": "Entregue",
       "read": "Lida",
       "replied": "Respondida",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "unconfirmed": "Não confirmado"
     },
     "detail": {
       "backToBroadcasts": "Voltar aos disparos",
@@ -823,7 +824,13 @@
       "toastResumeStartedCapped": "Enviando para {count} destinatários em segundo plano. Outros {remaining} precisarão de mais uma execução.",
       "toastResumeFailed": "Não foi possível retomar: {error}",
       "unknownError": "Erro desconhecido",
-      "unknownContact": "Desconhecido"
+      "unknownContact": "Desconhecido",
+      "outcomeTitle": "{count, plural, one {# destinatário} other {# destinatários}} com envio não confirmado",
+      "outcomeHint": "O gateway não conseguiu confirmar se estas mensagens saíram, e reenviar poderia mandá-las duas vezes. Confira as conversas e registre o que aconteceu.",
+      "outcomeMarkSent": "Foram entregues",
+      "outcomeMarkNotSent": "Não enviadas (permitir nova tentativa)",
+      "toastOutcomeSaved": "Registrado para {count, plural, one {# destinatário} other {# destinatários}}.",
+      "toastOutcomeFailed": "Não foi possível registrar a decisão: {error}"
     },
     "new": {
       "title": "Novo disparo",

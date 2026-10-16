@@ -91,20 +91,21 @@ export async function POST(
     }
     claimedId = id;
 
+    // Service-role client from here: the send attempts and the retry of
+    // failed recipients are service-role operations, and every query
+    // below is filtered by the caller's account (the claim above already
+    // proved the broadcast is theirs).
+    const admin = supabaseAdmin();
     const { plan, remaining, unsendable } = await planBroadcastResume(
-      supabase,
+      admin,
       accountId,
       id,
       scope
     );
 
-    await markBroadcastSending(supabase, id);
+    await markBroadcastSending(admin, id);
     claimedId = null; // ownership passes to the after() block
 
-    // Service-role client for the fan-out: it outlives the request, and
-    // every id in the plan was already resolved through an
-    // account-scoped read above.
-    const admin = supabaseAdmin();
     const deadline = broadcastSendDeadline(maxDuration, startedAt);
     const sendBy = broadcastSendBy(maxDuration, startedAt);
     // Recipients this pass can actually reach within its budget — the
@@ -121,7 +122,9 @@ export async function POST(
           '[broadcast-resume] delivery threw:',
           err instanceof Error ? err.message : err
         );
-        // Don't leave it mid-flight — settle whatever did land.
+        // Don't leave it mid-flight — settle whatever did land. Anything
+        // still pending keeps the schedule the pass set at its start, so
+        // the continuation picks it up.
         await finalizeBroadcastStatus(admin, id).catch(() => {});
       } finally {
         await releaseBroadcastDelivery(admin, id);

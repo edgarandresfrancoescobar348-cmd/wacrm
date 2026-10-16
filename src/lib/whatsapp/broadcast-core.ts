@@ -22,11 +22,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import {
   loadAccountTransport,
-  SendBudgetExceededError,
-  sendWithRecipientVariants,
   TransportNotConfiguredError,
   type WhatsAppTransport,
 } from '@/lib/whatsapp/transport';
+import {
+  sendBroadcastRecipient,
+  type RecipientSendContext,
+} from '@/lib/whatsapp/broadcast-attempts';
 import { paceBroadcastSend, type PaceOptions } from '@/lib/whatsapp/transport/pacing';
 import {
   HEADER_TEXT_REQUIRED_MESSAGE,
@@ -70,8 +72,6 @@ export interface CreateBroadcastParams {
 
 interface PlannedRecipient {
   recipientRowId: string;
-  /** Provider de-duplication key; defaults to the recipient row. */
-  idempotencyKey?: string;
   phone: string;
   params: string[];
   /** Value for a TEXT header {{1}}, when the template has one. */
@@ -312,18 +312,47 @@ export async function loadBroadcastTransport(
   }
 }
 
+/** A pass that dies mid-way is picked up by the continuation after this. */
+export const DEAD_MAN_MS = 10 * 60 * 1000;
+
+/** A broadcast write the delivery depends on failed. */
+export class BroadcastStoreError extends Error {
+  constructor(step: string, cause?: { message?: string } | null) {
+    super(`broadcast ${step} failed${cause?.message ? `: ${cause.message}` : ''}`);
+    this.name = 'BroadcastStoreError';
+  }
+}
+
 /**
- * Fan out a {@link BroadcastPlan}: send each recipient's template
- * (phone-variant retry) and stamp its `broadcast_recipients` row.
- * Best-effort per recipient — one failure never aborts the rest.
+ * When the continuation (cron) should look at this broadcast next; null
+ * once nothing is left. Checked — a lost schedule strands recipients.
+ */
+export async function scheduleContinuation(
+  db: SupabaseClient,
+  broadcastId: string,
+  at: number | null
+): Promise<void> {
+  const { error } = await db
+    .from('broadcasts')
+    .update({ auto_resume_at: at === null ? null : new Date(at).toISOString() })
+    .eq('id', broadcastId);
+  if (error) throw new BroadcastStoreError('schedule', error);
+}
+
+/**
+ * Fan out a {@link BroadcastPlan}: send each recipient through its
+ * durable send attempt (broadcast-attempts.ts) and let the attempt
+ * record the outcome. Best-effort per recipient — one failed send never
+ * aborts the rest; a failed WRITE does (the pass stops, the schedule
+ * set at its start brings the continuation back).
  * Designed to run inside `after()`.
  *
  * The per-status count columns on `broadcasts` are owned by the DB
  * aggregate trigger (migrations 003/005): each recipient-row update
- * below advances them automatically, and later Meta delivery/read
- * webhooks keep advancing them. We therefore never write those columns
- * here — only the terminal `status` — otherwise a manual value would
- * race and clobber the trigger-maintained counts.
+ * advances them automatically, and later delivery/read webhooks keep
+ * advancing them. We therefore never write those columns here — only
+ * the terminal `status` — otherwise a manual value would race and
+ * clobber the trigger-maintained counts.
  */
 export async function deliverBroadcast(
   db: SupabaseClient,
@@ -341,127 +370,86 @@ export async function deliverBroadcast(
   const now = opts.pace?.now ?? Date.now;
   let attempted = 0;
   let interrupted = false;
+  let nextDue: number | null = null;
+  const due = (at: number) => {
+    nextDue = nextDue === null ? at : Math.min(nextDue, at);
+  };
+
+  // Dead-man switch: if this pass dies, the continuation comes back.
+  await scheduleContinuation(db, plan.broadcastId, now() + DEAD_MAN_MS);
+
+  const ctx: RecipientSendContext = {
+    accountId: plan.accountId,
+    transport: plan.transport,
+    sendBy: opts.sendBy,
+    now,
+    pace: () =>
+      paceBroadcastSend(plan.accountId, plan.transport.capabilities.broadcastDelayMs, {
+        ...opts.pace,
+        deadline: opts.deadline,
+      }),
+  };
+
   for (const recipient of plan.planned) {
-    let sentMessageId: string | null = null;
-    let lastError: string | null = null;
-    const templateArgs = {
+    // A header {{1}} without a value (a row frozen before the template
+    // gained one, resumed later): never send a literal {{1}} (QR) or a
+    // request Meta rejects — fail the recipient before any attempt.
+    if (templateHeaderTextMissing(plan.templateRow, { headerText: recipient.headerText })) {
+      const { error } = await db
+        .from('broadcast_recipients')
+        .update({ status: 'failed', error_message: HEADER_TEXT_REQUIRED_MESSAGE })
+        .eq('id', recipient.recipientRowId)
+        .eq('status', 'pending');
+      if (error) throw new BroadcastStoreError('recipient update', error);
+      attempted++;
+      continue;
+    }
+
+    const { result, stop } = await sendBroadcastRecipient(db, ctx, recipient.recipientRowId, {
       to: recipient.phone,
       templateName: plan.templateName,
       language: plan.templateLanguage,
       template: plan.templateRow,
       params: recipient.params,
       ...(recipient.headerText ? { messageParams: { headerText: recipient.headerText } } : {}),
-      sendBy: opts.sendBy,
-      // De-duplicated by providers that support it (OpenWA): a recipient
-      // interrupted mid-send can be re-sent by the next pass safely.
-      idempotencyKey: recipient.idempotencyKey ?? `broadcast-recipient:${recipient.recipientRowId}`,
-    };
-
-    // 0. A header {{1}} without a value (a row frozen before the
-    //    template gained one, resumed later): never send a literal
-    //    {{1}} (QR) or a request Meta rejects — fail the recipient.
-    if (templateHeaderTextMissing(plan.templateRow, { headerText: recipient.headerText })) {
-      lastError = HEADER_TEXT_REQUIRED_MESSAGE;
-    }
-
-    // 1. Slow, send-independent work (a media header to inline) BEFORE a
-    //    paced slot is reserved — the slot then only waits on the
-    //    provider. Cached per transport, so it runs once per pass.
-    if (!lastError) {
-      try {
-        await plan.transport.prepareTemplate?.(templateArgs);
-      } catch (error) {
-        if (error instanceof SendBudgetExceededError) break;
-        lastError = error instanceof Error ? error.message : 'Unknown error';
-      }
-    }
-
-    // 2. Provider pacing (a no-op on Meta) bounded by the time budget,
-    //    re-checked after the wait. Out of budget: stop; the rest stays
-    //    `pending` — the checkpoint the next pass continues from.
-    if (!lastError) {
-      const mayStart = await paceBroadcastSend(
-        plan.accountId,
-        plan.transport.capabilities.broadcastDelayMs,
-        { ...opts.pace, deadline: opts.deadline }
-      );
-      if (!mayStart) break;
-    }
-    attempted++;
-
-    // 3. Checkpoint BEFORE the external effect: a recipient still pending
-    //    with send_started_at set was interrupted mid-send (see
-    //    planBroadcastResume for how the next pass treats it).
-    if (!lastError) {
-      await db
-        .from('broadcast_recipients')
-        .update({ send_started_at: new Date(now()).toISOString() })
-        .eq('id', recipient.recipientRowId);
-
-      try {
-        const { result } = await sendWithRecipientVariants(
-          plan.transport,
-          recipient.phone,
-          true,
-          (to) => plan.transport.sendTemplate({ ...templateArgs, to })
-        );
-        sentMessageId = result.messageId;
-      } catch (error) {
-        // Cut off by the budget (aborted at sendBy): the outcome is
-        // unknown — leave the row pending with its checkpoint and end
-        // the pass; never record it as failed or sent.
-        const budgetHit =
-          error instanceof SendBudgetExceededError ||
-          (opts.sendBy !== undefined && now() >= opts.sendBy - 1000);
-        if (budgetHit) {
-          interrupted = true;
-          break;
-        }
-        lastError = error instanceof Error ? error.message : 'Unknown error';
-      }
-    }
-
-    if (sentMessageId) {
-      await db
-        .from('broadcast_recipients')
-        .update({
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          whatsapp_message_id: sentMessageId,
-          error_message: null,
-        })
-        .eq('id', recipient.recipientRowId);
+    });
+    if (result.status === 'deferred') {
+      due(now());
     } else {
-      await db
-        .from('broadcast_recipients')
-        .update({
-          status: 'failed',
-          error_message: lastError || 'Unknown error',
-        })
-        .eq('id', recipient.recipientRowId);
+      attempted++;
+      if (result.status === 'pending') due(result.retryAt);
+    }
+    if (stop) {
+      interrupted = result.status !== 'deferred';
+      due(now());
+      break;
     }
   }
 
-  const deferred = plan.planned.length - attempted + (interrupted ? 1 : 0);
-  // Recipients left by the budget: the cron continuation picks the
-  // broadcast up on its next run (no manual Resume needed).
-  await db
-    .from('broadcasts')
-    .update({ auto_resume_at: deferred > 0 ? new Date(now()).toISOString() : null })
-    .eq('id', plan.broadcastId);
-  await finalizeBroadcastStatus(db, plan.broadcastId);
+  const finished = await finalizeBroadcastStatus(db, plan.broadcastId);
+  // Recipients still pending (out of budget, backoff, a resendable
+  // unknown): the cron continuation picks the broadcast up when due — no
+  // manual Resume needed. Nothing pending: no schedule.
+  await scheduleContinuation(
+    db,
+    plan.broadcastId,
+    finished ? null : (nextDue ?? now())
+  );
+  const deferred = plan.planned.length - attempted;
   return { attempted, deferred, interrupted };
 }
 
 /**
  * Flip a broadcast out of `sending` once no recipient is left pending.
+ * Returns true when it did (nothing pending), false when work remains.
  *
  * Derived from the recipient rows rather than from a counter local to
  * one delivery pass: a resume (issue #472) delivers only the leftovers,
  * so "nothing sent *this* pass" must not mark a campaign failed when
  * 800 of its 1 000 recipients went out earlier. `failed` means every
- * single recipient failed; anything else that reached Meta is `sent`,
- * with the per-recipient failures visible in `failed_count`.
+ * single recipient failed; anything else that reached the provider is
+ * `sent`, with the per-recipient failures visible in `failed_count` and
+ * unconfirmed ones (`unknown`) awaiting a decision on the detail page.
  *
  * Per-status counts stay trigger-owned (migrations 003/005) — only the
  * terminal `status` is written here.
@@ -469,31 +457,32 @@ export async function deliverBroadcast(
 export async function finalizeBroadcastStatus(
   db: SupabaseClient,
   broadcastId: string
-): Promise<void> {
-  const countWhere = async (status: string): Promise<number> => {
-    const { count } = await db
+): Promise<boolean> {
+  const countWhere = async (status: string | null): Promise<number> => {
+    let q = db
       .from('broadcast_recipients')
       .select('id', { count: 'exact', head: true })
-      .eq('broadcast_id', broadcastId)
-      .eq('status', status);
+      .eq('broadcast_id', broadcastId);
+    if (status) q = q.eq('status', status);
+    const { count, error } = await q;
+    if (error) throw new BroadcastStoreError('recipient count', error);
     return count ?? 0;
   };
 
-  // Still work outstanding (a capped resume pass) — leave it 'sending'
-  // so the UI keeps offering Resume.
-  if ((await countWhere('pending')) > 0) return;
+  // Still work outstanding — leave it 'sending'.
+  if ((await countWhere('pending')) > 0) return false;
 
   const failed = await countWhere('failed');
-  const { count: total } = await db
-    .from('broadcast_recipients')
-    .select('id', { count: 'exact', head: true })
-    .eq('broadcast_id', broadcastId);
+  const total = await countWhere(null);
 
-  await db
+  const { error } = await db
     .from('broadcasts')
     .update({
-      status: failed > 0 && failed === (total ?? 0) ? 'failed' : 'sent',
+      status: failed > 0 && failed === total ? 'failed' : 'sent',
       updated_at: new Date().toISOString(),
     })
-    .eq('id', broadcastId);
+    .eq('id', broadcastId)
+    .eq('status', 'sending');
+  if (error) throw new BroadcastStoreError('status', error);
+  return true;
 }

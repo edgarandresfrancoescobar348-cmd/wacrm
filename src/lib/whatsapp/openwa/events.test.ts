@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
   orFilters: [] as string[],
   staleSession: false,
   failMirror: false,
+  rpcs: [] as { fn: string; args: Record<string, unknown> }[],
+  rpcError: null as { message: string } | null,
 }))
 
 vi.mock('@/lib/whatsapp/inbound/ingest', () => ({
@@ -37,6 +39,10 @@ import type { OpenWaConnectionRow } from './connection'
 
 const admin = {
   storage: {},
+  rpc: async (fn: string, args: Record<string, unknown>) => {
+    h.rpcs.push({ fn, args })
+    return { data: null, error: h.rpcError }
+  },
   from: (table: string) => ({
     update: (patch: Record<string, unknown>) => {
       h.updates.push({ table, patch })
@@ -73,6 +79,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.updates.length = 0
   h.orFilters.length = 0
+  h.rpcs.length = 0
+  h.rpcError = null
   h.staleSession = false
   h.failMirror = false
 })
@@ -274,6 +282,37 @@ describe('session events', () => {
 })
 
 describe('message.sent (phone echo)', () => {
+  // Third review (H5/H6): an echo is evidence. A broadcast send whose
+  // outcome was unknown is reconciled from it — never resent.
+  it('offers the echo to the broadcast attempt reconciliation first', async () => {
+    await handleOpenWaEvent(
+      env('message.sent', { id: 'true_5511988887777@c.us_AB', chatId: '5511988887777@c.us', body: 'Olá Ana', type: 'text', fromMe: true }),
+      ctx(),
+    )
+    expect(h.rpcs).toEqual([
+      {
+        fn: 'broadcast_attempt_reconcile_echo',
+        args: {
+          p_account_id: 'acct-1',
+          p_to_phone: '5511988887777',
+          p_body: 'Olá Ana',
+          p_message_id: 'true_5511988887777@c.us_AB',
+          p_sent_at: '2026-10-15T22:17:00.250Z',
+        },
+      },
+    ])
+  })
+
+  it('a failed reconciliation fails the delivery (OpenWA redelivers)', async () => {
+    h.rpcError = { message: 'connection reset' }
+    await expect(
+      handleOpenWaEvent(
+        env('message.sent', { id: 'x', chatId: '5511988887777@c.us', body: 'Olá', type: 'text', fromMe: true }),
+        ctx(),
+      ),
+    ).rejects.toThrow(/reconcile/)
+  })
+
   it('records the echo straight away (no fixed settle delay)', async () => {
     const outcome = await handleOpenWaEvent(
       env('message.sent', { id: 'true_5511988887777@c.us_AB', chatId: '5511988887777@c.us', to: '5511988887777@c.us', body: 'enviado do celular', type: 'text', fromMe: true }),

@@ -773,7 +773,8 @@
       "delivered": "Entregado",
       "read": "Leído",
       "replied": "Respondido",
-      "unknown": "Desconocido"
+      "unknown": "Desconocido",
+      "unconfirmed": "Sin confirmar"
     },
     "detail": {
       "backToBroadcasts": "Volver a difusiones",
@@ -823,7 +824,13 @@
       "toastResumeStartedCapped": "Enviando a {count} destinatarios en segundo plano. Otros {remaining} necesitarán otra ejecución.",
       "toastResumeFailed": "No se pudo reanudar: {error}",
       "unknownError": "Error desconocido",
-      "unknownContact": "Desconocido"
+      "unknownContact": "Desconocido",
+      "outcomeTitle": "{count, plural, one {# destinatario} other {# destinatarios}} con envío sin confirmar",
+      "outcomeHint": "El gateway no pudo confirmar si estos mensajes salieron, y reenviarlos podría mandarlos dos veces. Revisa los chats y registra lo que pasó.",
+      "outcomeMarkSent": "Llegaron",
+      "outcomeMarkNotSent": "No enviados (permitir reintento)",
+      "toastOutcomeSaved": "Registrado para {count, plural, one {# destinatario} other {# destinatarios}}.",
+      "toastOutcomeFailed": "No se pudo registrar la decisión: {error}"
     },
     "new": {
       "title": "Nueva difusión",

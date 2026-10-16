@@ -3,6 +3,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  CircleHelp,
   CornerDownLeft,
   Loader2,
   PencilLine,
@@ -65,6 +66,7 @@ const RECIPIENT: Record<RecipientStatus, WaStatusStyle> = {
   read: { ...BLUE, icon: CheckCheck },
   replied: { ...GREEN, icon: CornerDownLeft },
   failed: { ...RED, icon: AlertCircle },
+  unknown: { ...MUTED, icon: CircleHelp },
 };
 
 export function broadcastStatusStyle(status: string): WaStatusStyle {

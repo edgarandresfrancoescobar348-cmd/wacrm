@@ -26,6 +26,7 @@ import {
   ArrowLeft,
   Check,
   CheckCheck,
+  CircleHelp,
   Download,
   Loader2,
   MessageCircle,
@@ -150,6 +151,7 @@ const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
   'read',
   'replied',
   'failed',
+  'unknown',
 ];
 
 /**
@@ -193,6 +195,7 @@ export default function BroadcastDetailPage() {
   const [resumingScope, setResumingScope] = useState<
     'pending' | 'failed' | null
   >(null);
+  const [deciding, setDeciding] = useState<'sent' | 'not_sent' | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -308,6 +311,36 @@ export default function BroadcastDetailPage() {
     }
   }
 
+  /**
+   * A person's decision on recipients whose send outcome is unknown
+   * (the gateway couldn't say whether it went out, and resending could
+   * message them twice): after checking the chat, record it as sent, or
+   * as not sent — which a "Retry failed" then sends with a new attempt.
+   */
+  async function handleOutcome(outcome: 'sent' | 'not_sent') {
+    setDeciding(outcome);
+    try {
+      const res = await fetch(`/api/whatsapp/broadcast/${broadcastId}/outcome`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outcome }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(t('toastOutcomeFailed', { error: payload?.error || `HTTP ${res.status}` }));
+        return;
+      }
+      toast.success(t('toastOutcomeSaved', { count: payload.decided ?? 0 }));
+      await fetchData();
+    } catch (err) {
+      toast.error(
+        t('toastOutcomeFailed', { error: err instanceof Error ? err.message : t('unknownError') }),
+      );
+    } finally {
+      setDeciding(null);
+    }
+  }
+
   async function handleDelete() {
     setDeleting(true);
     const supabase = createClient();
@@ -354,6 +387,7 @@ export default function BroadcastDetailPage() {
 
   const pendingCount = recipients.filter((r) => r.status === 'pending').length;
   const retryableCount = recipients.filter((r) => r.status === 'failed').length;
+  const unconfirmedCount = recipients.filter((r) => r.status === 'unknown').length;
   // A campaign whose tab went away sits in 'sending' with recipients
   // still pending and nothing left to move them. Name that state rather
   // than leaving a permanently pulsing "sending" badge.
@@ -482,6 +516,31 @@ export default function BroadcastDetailPage() {
                       {t('retryFailed', { count: retryableCount })}
                     </Button>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* Unconfirmed sends (migration 056): the outcome could not be
+                established and a resend could message the customer twice,
+                so a person decides after checking the chat. */}
+            {unconfirmedCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-hover-surface p-4 text-sm">
+                <div className="flex min-w-0 flex-[1_1_16rem] items-start gap-3">
+                  <CircleHelp className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="font-medium">{t('outcomeTitle', { count: unconfirmedCount })}</p>
+                    <p className="mt-0.5 text-muted-foreground">{t('outcomeHint')}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => handleOutcome('sent')} disabled={deciding !== null}>
+                    {deciding === 'sent' ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                    {t('outcomeMarkSent')}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleOutcome('not_sent')} disabled={deciding !== null}>
+                    {deciding === 'not_sent' ? <Loader2 className="size-3.5 animate-spin" /> : <AlertCircle className="size-3.5" />}
+                    {t('outcomeMarkNotSent')}
+                  </Button>
                 </div>
               </div>
             )}

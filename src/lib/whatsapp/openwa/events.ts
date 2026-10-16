@@ -31,6 +31,7 @@ import {
 } from './client'
 import { configStatusFor, type OpenWaConnectionRow } from './connection'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { reconcileAttemptFromEcho } from '@/lib/whatsapp/broadcast-attempts'
 
 export interface OpenWaEnvelope {
   event: string
@@ -379,6 +380,17 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       const chatId = msg.chatId ?? msg.to ?? ''
       const phone = await resolveChatPhone(ctx, chatId)
       if (!phone) return 'ignored_no_phone'
+      // A broadcast send whose outcome we couldn't establish (gateway
+      // timeout, "outcome unknown"): this echo proves it went out —
+      // reconcile its attempt instead of ever resending it. Essential:
+      // a failure is retried (the delivery is answered non-2xx).
+      await reconcileAttemptFromEcho(ctx.admin, {
+        accountId,
+        toPhone: phone,
+        body: msg.body ?? null,
+        messageId: msg.id,
+        sentAt: envelopeInstant(env),
+      })
       // Our own API sends echo back here too, often before the send call
       // has returned. Whichever writes first wins the unique
       // (conversation_id, message_id); the sender then merges its own

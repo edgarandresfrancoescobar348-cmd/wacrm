@@ -80,9 +80,13 @@ interface BroadcastApiResult {
   phone: string;
   /** `deferred`: the server ran out of its time budget before this
    *  recipient (paced QR connection) — re-queued, not failed. */
-  status: 'sent' | 'failed' | 'deferred';
+  status: 'sent' | 'failed' | 'deferred' | 'pending' | 'unknown';
   whatsapp_message_id?: string;
   error?: string;
+  /** The server recorded the outcome on the row itself (its durable send
+   *  attempt) — never written over from here. `pending`/`unknown` are
+   *  the server's to finish (continuation / a person's decision). */
+  persisted?: boolean;
 }
 
 /** contactId → (customFieldId → value). */
@@ -414,7 +418,6 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         throw new Error(t('fetchRecipientsFailed'));
       }
 
-      let failedCount = 0;
       const totalRecipients = recipients.length;
 
       // Media-header templates (image/video/document) require a media
@@ -487,7 +490,8 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             const result = phone ? resultsByPhone.get(phone) : undefined;
 
             // Out of the request's time budget: send it in a later batch.
-            // Bounded, so a server that can never fit it can't loop.
+            // Bounded; past that it stays pending and the server's
+            // continuation (scheduled at finalize below) sends it.
             if (result?.status === 'deferred') {
               const tries = (deferrals.get(recipient.id) ?? 0) + 1;
               deferrals.set(recipient.id, tries);
@@ -495,17 +499,21 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
                 recipients.push(recipient);
                 continue;
               }
+              continue;
             }
 
-            if (!result || result.status === 'deferred') {
-              failedCount++;
+            // The server owns these rows now (send attempts): an open
+            // attempt (`pending`) or one awaiting a decision (`unknown`).
+            if (result?.persisted) {
+              continue;
+            }
+
+            if (!result) {
               await supabase
                 .from('broadcast_recipients')
-                .update({
-                  status: 'failed',
-                  error_message: result ? t('unknownError') : t('noPhoneOnContact'),
-                })
-                .eq('id', recipient.id);
+                .update({ status: 'failed', error_message: t('noPhoneOnContact') })
+                .eq('id', recipient.id)
+                .eq('status', 'pending');
               continue;
             }
 
@@ -520,7 +528,6 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
                 })
                 .eq('id', recipient.id);
             } else {
-              failedCount++;
               await supabase
                 .from('broadcast_recipients')
                 .update({
@@ -531,16 +538,11 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             }
           }
         } catch (err) {
-          for (const recipient of batch) {
-            failedCount++;
-            await supabase
-              .from('broadcast_recipients')
-              .update({
-                status: 'failed',
-                error_message: err instanceof Error ? err.message : t('unknownError'),
-              })
-              .eq('id', recipient.id);
-          }
+          // The batch request itself failed. Rows the server already
+          // claimed are its to finish; the rest stay pending and the
+          // continuation scheduled at finalize sends them — nothing is
+          // written over a send that may have gone out.
+          console.error('[broadcast] batch request failed:', err);
         }
 
         const progressPct =
@@ -553,14 +555,12 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       }
 
       // ── Step 5: Finalize status ───────────────────────────────────
-      // Aggregate counts are maintained by the DB trigger (migration
-      // 003); we only flip the final status here.
+      // Settled server-side from the recipient rows (aggregate counts are
+      // trigger-owned, migration 003): anything left pending — an open
+      // send attempt, a deferred recipient — gets the automatic
+      // continuation instead of a final status written over it.
       setProgress(95);
-      const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
-      await supabase
-        .from('broadcasts')
-        .update({ status: finalStatus })
-        .eq('id', broadcast.id);
+      await fetch(`/api/whatsapp/broadcast/${broadcast.id}/finalize`, { method: 'POST' });
 
       setProgress(100);
       return broadcast.id;

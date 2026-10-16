@@ -122,7 +122,6 @@ export interface ResumePlan {
 interface RecipientRow {
   id: string;
   status?: string;
-  send_started_at?: string | null;
   template_params: unknown;
   contact: { phone?: string | null } | { phone?: string | null }[] | null;
 }
@@ -168,7 +167,7 @@ export async function planBroadcastResume(
     error: recError,
   } = await db
     .from('broadcast_recipients')
-    .select('id, status, send_started_at, template_params, contact:contacts(phone)', {
+    .select('id, status, template_params, contact:contacts(phone)', {
       count: 'exact',
     })
     .eq('broadcast_id', broadcastId)
@@ -186,44 +185,30 @@ export async function planBroadcastResume(
 
   const rows = (rawRows ?? []) as RecipientRow[];
 
-  // Loaded up front: how an interrupted recipient is treated depends on
-  // whether the provider de-duplicates sends.
   const transport = await loadBroadcastTransport(db, accountId);
 
   // A recipient whose contact has no usable phone can never send. Stamp
   // it failed now: leaving it 'pending' would keep the broadcast in
   // 'sending' forever, which is the very symptom being fixed.
+  // (A recipient interrupted mid-send is NOT decided here any more: its
+  // send attempt is reconciled — or put up for a decision — when its
+  // turn comes; see broadcast-attempts.ts.)
   const sendable: RecipientRow[] = [];
   const unsendable: string[] = [];
-  const interrupted: string[] = [];
   for (const row of rows) {
     const sanitized = sanitizePhoneForMeta(contactPhone(row) ?? '');
     if (!isValidE164(sanitized)) unsendable.push(row.id);
-    // Pending with a send checkpoint: an earlier pass was cut off
-    // mid-send and the outcome is unknown. Re-send only when the
-    // provider de-duplicates (OpenWA, same idempotency key); otherwise
-    // fail it rather than risk messaging the customer twice.
-    else if (row.status === 'pending' && row.send_started_at && !transport.capabilities.idempotentSends) {
-      interrupted.push(row.id);
-    } else sendable.push(row);
-  }
-  for (const ids of chunk(interrupted)) {
-    await db
-      .from('broadcast_recipients')
-      .update({
-        status: 'failed',
-        error_message: 'Interrupted mid-send; not re-sent to avoid a duplicate message',
-      })
-      .in('id', ids);
+    else sendable.push(row);
   }
   for (const ids of chunk(unsendable)) {
-    await db
+    const { error } = await db
       .from('broadcast_recipients')
       .update({
         status: 'failed',
         error_message: 'No valid phone number on contact',
       })
       .in('id', ids);
+    if (error) throw new BroadcastError('internal', 'Failed to update recipients', 500);
   }
 
   const slice = sendable.slice(0, RESUME_MAX_PER_REQUEST);
@@ -262,6 +247,24 @@ export async function planBroadcastResume(
     );
   }
 
+  // Retrying failed recipients: they become `pending` NOW, in one
+  // statement, so a pass interrupted halfway leaves them resumable for
+  // the continuation instead of stranded as `failed` (H7). Each gets a
+  // new send attempt (new key) when its turn comes — the previous one is
+  // known failed.
+  const retried = slice.filter((row) => row.status === 'failed').map((row) => row.id);
+  for (const ids of chunk(retried)) {
+    const { error } = await db.rpc('broadcast_retry_failed', {
+      p_account_id: accountId,
+      p_broadcast_id: broadcastId,
+      p_recipient_ids: ids,
+    });
+    if (error) {
+      console.error('[broadcast-resume] retry failed:', error.message);
+      throw new BroadcastError('internal', 'Failed to queue the retry', 500);
+    }
+  }
+
   const plan: BroadcastPlan = {
     accountId,
     broadcastId,
@@ -271,12 +274,6 @@ export async function planBroadcastResume(
     templateRow: resolvedTemplate.row,
     planned: slice.map((row) => ({
       recipientRowId: row.id,
-      // A deliberate retry of a FAILED recipient must not be swallowed by
-      // the provider's de-duplication of the earlier attempt.
-      idempotencyKey:
-        row.status === 'failed'
-          ? `broadcast-recipient:${row.id}:retry:${Date.now()}`
-          : `broadcast-recipient:${row.id}`,
       phone: sanitizePhoneForMeta(contactPhone(row) ?? ''),
       // Frozen as a plain array, or as { body, headerText } when the
       // template's header has a variable (v1 broadcasts).
@@ -297,10 +294,11 @@ export async function markBroadcastSending(
   db: SupabaseClient,
   broadcastId: string
 ): Promise<void> {
-  await db
+  const { error } = await db
     .from('broadcasts')
     .update({ status: 'sending', updated_at: new Date().toISOString() })
     .eq('id', broadcastId);
+  if (error) throw new BroadcastError('internal', 'Failed to mark the broadcast sending', 500);
 }
 
 function frozenParams(value: unknown): { params: string[]; headerText?: string } {
