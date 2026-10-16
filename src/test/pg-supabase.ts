@@ -76,6 +76,9 @@ function selectList(table: string, cols: string): string {
     .join(', ')
 }
 
+/** The request line Kong accepts in front of PostgREST, minus the path and other params. */
+const URI_LIMIT = 7800
+
 class Builder implements PromiseLike<Result> {
   private op: 'select' | 'insert' | 'update' | 'delete' = 'select'
   private conflict: { cols: string; ignore: boolean } | null = null
@@ -89,6 +92,8 @@ class Builder implements PromiseLike<Result> {
   private lim: number | null = null
   private off = 0
   private one: 'single' | 'maybe' | null = null
+  /** Query-string length the `.in()` filters take (see URI_LIMIT). */
+  private urlChars = 0
 
   constructor(
     private readonly client: PgSupabase,
@@ -137,6 +142,9 @@ class Builder implements PromiseLike<Result> {
     return this
   }
   in(c: string, vs: unknown[]) {
+    // postgrest-js: `col=in.(a,b)`, a value with , ( ) quoted, URL-encoded.
+    this.urlChars += `${c}=in.(${vs.map((v) => (/[,()]/.test(String(v)) ? `"${v}"` : String(v))).join(',')})`.length
+    this.urlChars += vs.reduce<number>((n, v) => n + encodeURIComponent(String(v)).length - String(v).length, 0)
     this.where.push(vs.length ? `t.${ident(c)} IN (${vs.map(lit).join(', ')})` : 'false')
     return this
   }
@@ -259,6 +267,9 @@ class Builder implements PromiseLike<Result> {
     if (this.client.shouldFail({ table: this.table, op: this.op, keys: key })) {
       return { data: null, error: { message: `injected failure: ${this.op} ${this.table}` } }
     }
+    // Filters travel in the URL, and the local stack's gateway refuses a
+    // request line over 8 KB (measured: 414 "URI too long" past ~8130).
+    if (this.urlChars > URI_LIMIT) return { data: null, error: { message: 'URI too long' } }
     let out: string
     try {
       out = await this.client.pg.sql(this.sql())

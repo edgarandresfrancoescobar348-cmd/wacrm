@@ -51,6 +51,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { chunkForUrl } from '@/lib/supabase/paged-query'
 import { previewFor, trailingAlbumCount } from '@/lib/whatsapp/message-content'
 import type { MediaMeta } from '@/types'
 import {
@@ -607,12 +608,16 @@ async function importChat(
   const quoted = history.filter((m) => m.quotedMessage?.id)
   if (quoted.length) {
     const ids = [...new Set(quoted.map((m) => m.quotedMessage!.id!))]
-    const { data: targets } = await admin
-      .from('messages')
-      .select('id, message_id')
-      .eq('conversation_id', conversationId)
-      .in('message_id', ids)
-    const byProvider = new Map((targets ?? []).map((t: { id: string; message_id: string }) => [t.message_id, t.id]))
+    const byProvider = new Map<string, string>()
+    // Sliced: a long chat quotes hundreds of messages, and the filter is in the URL.
+    for (const slice of chunkForUrl(ids)) {
+      const { data: targets } = await admin
+        .from('messages')
+        .select('id, message_id')
+        .eq('conversation_id', conversationId)
+        .in('message_id', slice)
+      for (const t of (targets ?? []) as { id: string; message_id: string }[]) byProvider.set(t.message_id, t.id)
+    }
     for (const m of quoted) {
       const target = byProvider.get(m.quotedMessage!.id!)
       if (!target) continue
@@ -710,13 +715,18 @@ async function refreshStoredMessages(
   conversationId: string,
   rows: (IncomingMessageRow & { message_id: string })[],
 ): Promise<void> {
-  const { data, error } = await admin
-    .from('messages')
-    .select('id, message_id, sender_type, status, content_meta, is_forwarded, forwarding_score, media_meta')
-    .eq('conversation_id', conversationId)
-    .in('message_id', rows.map((r) => r.message_id))
-  if (error) throw new HistoryStoreError('messages (refresh lookup)', error)
-  const byId = new Map(((data ?? []) as (StoredMessageState & { message_id: string })[]).map((m) => [m.message_id, m]))
+  // Sliced by URL length: the ids go in the query string, and a batch of
+  // WhatsApp ids (50–100 characters each) overflows it — "URI too long".
+  const byId = new Map<string, StoredMessageState & { message_id: string }>()
+  for (const slice of chunkForUrl(rows.map((r) => r.message_id))) {
+    const { data, error } = await admin
+      .from('messages')
+      .select('id, message_id, sender_type, status, content_meta, is_forwarded, forwarding_score, media_meta')
+      .eq('conversation_id', conversationId)
+      .in('message_id', slice)
+    if (error) throw new HistoryStoreError('messages (refresh lookup)', error)
+    for (const m of (data ?? []) as (StoredMessageState & { message_id: string })[]) byId.set(m.message_id, m)
+  }
   for (const row of rows) {
     const existing = byId.get(row.message_id)
     const patch = existing ? refreshPatch(existing, row) : null
@@ -786,12 +796,12 @@ async function requeueTransientFailures(admin: SupabaseClient, job: HistoryImpor
     .filter((c) => c.error && TRANSIENT_CHAT_ERROR.test(c.error))
     .map((c) => c.chat_id)
   if (!ids.length) return 0
-  for (let i = 0; i < ids.length; i += 100) {
+  for (const slice of chunkForUrl(ids)) {
     const { error: upErr } = await admin
       .from('whatsapp_history_import_chats')
       .update({ status: 'pending', attempts: 0, error: null, updated_at: new Date().toISOString() })
       .eq('account_id', job.account_id)
-      .in('chat_id', ids.slice(i, i + 100))
+      .in('chat_id', slice)
     if (upErr) throw new HistoryStoreError('requeue', upErr)
   }
   // They were counted as errors when they failed; they aren't.

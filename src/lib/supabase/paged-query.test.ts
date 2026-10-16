@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 
 import {
   chunk,
+  chunkForUrl,
+  IN_URL_BUDGET,
   fetchAllInChunks,
   fetchAllPages,
   IN_CHUNK_SIZE,
@@ -19,6 +21,26 @@ function cappedSource(total: number, maxRows: number) {
   };
   return { fetchPage, calls };
 }
+
+describe('chunkForUrl', () => {
+  const wid = (i: number) => `false_120363012345678901@g.us_3EB0${String(i).padStart(18, '0')}_5511987654321@c.us`;
+  const encoded = (vs: string[]) => vs.reduce((n, v) => n + encodeURIComponent(v).length + 7, 0);
+
+  it('keeps every slice of long ids under the URL budget, all values once, in order', () => {
+    const ids = Array.from({ length: 2000 }, (_, i) => wid(i));
+    const slices = chunkForUrl(ids);
+    expect(slices.flat()).toEqual(ids);
+    for (const s of slices) expect(encoded(s)).toBeLessThanOrEqual(IN_URL_BUDGET);
+    // a count-based slice of 100 would not fit
+    expect(encoded(ids.slice(0, IN_CHUNK_SIZE))).toBeGreaterThan(8192);
+  });
+
+  it('short values are capped by count; a single oversized value still gets its own slice', () => {
+    expect(chunkForUrl(Array.from({ length: 250 }, (_, i) => i)).map((c) => c.length)).toEqual([IN_CHUNK_SIZE, IN_CHUNK_SIZE, 50]);
+    expect(chunkForUrl(['x'.repeat(5000), 'a'])).toEqual([['x'.repeat(5000)], ['a']]);
+    expect(chunkForUrl([])).toEqual([]);
+  });
+});
 
 describe('chunk', () => {
   it('splits into slices no larger than the size', () => {

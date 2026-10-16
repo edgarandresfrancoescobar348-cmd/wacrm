@@ -449,6 +449,48 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(await pg.sql(`SELECT status FROM public.messages WHERE message_id = 'r-1'`)).toBe('read')
   })
 
+  // Phase 5f (real account, Mac): "Importar de novo" stuck at 1/1402 —
+  // the refresh lookup put a whole batch of stored WhatsApp ids in one
+  // `.in()`, and the URL overflowed: "messages (refresh lookup) failed: URI
+  // too long". Real-length ids, 2000 in one chat; every 10th quotes the
+  // one before (200 quoted ids), and every 100th was read meanwhile (only
+  // those change, so the test stays fast — the lookup covers all 2000).
+  it('a re-import of a 2000-message chat (real-length ids) refreshes it — the lookups are sliced, no "URI too long"', async () => {
+    const ANA_ID = CHATS[0].id
+    const N = 2000
+    const wid = (i: number) => `true_${ANA_ID}_3EB0${i.toString(16).toUpperCase().padStart(16, '0')}C767D26A8D`
+    let readEvery = 0
+    historyHook = (chatId) =>
+      chatId === ANA_ID
+        ? [
+            200,
+            Array.from({ length: N }, (_, i) =>
+              msg(ANA_ID, wid(i), {
+                fromMe: true,
+                body: `m${i}`,
+                ack: readEvery && i % readEvery === 0 ? 3 : 1,
+                timestamp: T0 + i,
+                ...(i % 10 === 1 ? { quotedMessage: { id: wid(i - 1), body: 'x' } } : {}),
+              }),
+            ),
+            0,
+            {},
+          ]
+        : undefined
+    const jobState = () => pg.sql(`SELECT status || '|' || errors || '|' || coalesce(last_error, '') FROM public.whatsapp_history_imports WHERE account_id = '${ACCT}'`)
+    const runLong = () => runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 240_000, pauseMs: 0, callIntervalMs: 0 })
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await runLong()
+    expect(await jobState()).toBe('done|0|')
+    readEvery = 100
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await runLong()
+    expect(await jobState()).toBe('done|0|')
+    expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'true_${ANA_ID}_%'`)).toBe(N)
+    expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'true_${ANA_ID}_%' AND status = 'read'`)).toBe(N / 100)
+    expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'true_${ANA_ID}_%' AND reply_to_message_id IS NOT NULL`)).toBe(N / 10)
+  }, 120_000)
+
   // Phase 5c (real account): 8 chats reimported after 429s, yet the job ended
   // done with errors=24 (one per attempt) and a stale ThrottlerException.
   it('errors counts the chats still failed at the end, not attempts; none → no last_error', async () => {

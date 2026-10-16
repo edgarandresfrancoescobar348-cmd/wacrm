@@ -15,6 +15,39 @@ export function chunk<T>(values: readonly T[], size = IN_CHUNK_SIZE): T[][] {
   return chunks;
 }
 
+/**
+ * A filter list for `.in()`, sliced by the length it takes in the URL.
+ * PostgREST filters travel in the query string, and the gateway in front
+ * of it refuses a request line over ~8 KB with "URI too long" (414): a
+ * count-based slice isn't enough when the values are long — a WhatsApp
+ * message id is 50–100 characters once encoded. Each slice stays under
+ * `maxChars` encoded characters and `maxItems` values.
+ */
+export const IN_URL_BUDGET = 3000;
+
+export function chunkForUrl<T extends string | number>(
+  values: readonly T[],
+  maxChars = IN_URL_BUDGET,
+  maxItems = IN_CHUNK_SIZE,
+): T[][] {
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let used = 0;
+  for (const v of values) {
+    // quotes (%22 ×2) a value with reserved characters may get, plus the comma
+    const cost = encodeURIComponent(String(v)).length + 7;
+    if (current.length && (used + cost > maxChars || current.length >= maxItems)) {
+      chunks.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(v);
+    used += cost;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
 export async function fetchAllPages<T>(
   fetchPage: (from: number, to: number) => PromiseLike<PageResult<T>>,
   pageSize = PAGE_SIZE,

@@ -158,6 +158,9 @@ now ships inside wacrm, next to the official Meta Cloud API.
 
 ### Fixed
 
+- QR Code: "Importar de novo" no longer stalls on a long chat with
+  `messages (refresh lookup) failed: URI too long` — the lookups of
+  messages already stored (and of quoted messages) are sliced by URL length.
 - Delivery receipts that arrive before their message exists are kept and
   applied when it appears; ticks never move backwards (official API too).
 - A quoted reply to an older numbered menu maps to that menu's options.
