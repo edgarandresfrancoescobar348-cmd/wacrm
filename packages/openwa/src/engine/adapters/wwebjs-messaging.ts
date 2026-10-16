@@ -64,17 +64,43 @@ export function extractWwebjsCall(msg: Message): { video: boolean; missed: boole
  * instead of base64. Used when downloads are disabled, the size pre-gate trips, the aggregate history
  * budget is spent, or the download fails/times out.
  */
+/** wacrm patch: largest preview carried in a marker (base64 chars) — WhatsApp's are a few KB. */
+const MAX_THUMBNAIL_CHARS = 150_000;
+
 export function declaredOnlyMedia(msg: Message): IncomingMessage['media'] {
-  const data = (msg as unknown as { _data?: { size?: number; mimetype?: string; filename?: string; duration?: unknown } })
-    ._data;
-  // wacrm patch: the length WhatsApp declares for audio/video (seconds, sometimes a numeric string).
+  const data = (
+    msg as unknown as {
+      _data?: {
+        size?: number;
+        mimetype?: string;
+        filename?: string;
+        duration?: unknown;
+        pageCount?: unknown;
+        body?: unknown;
+      };
+    }
+  )._data;
+  // wacrm patch: what WhatsApp declares about the media without downloading it — the length of an
+  // audio/video (seconds, sometimes a numeric string), a document's page count, and the JPEG preview
+  // WhatsApp Web keeps in the raw `body` of an image/video/sticker/document (the message's own `body`
+  // is the caption). Only a base64 JPEG of reasonable size is passed on.
   const duration = Number(data?.duration);
+  const pageCount = Number(data?.pageCount);
+  const thumbnail =
+    typeof data?.body === 'string' &&
+    data.body.startsWith('/9j/') &&
+    data.body.length <= MAX_THUMBNAIL_CHARS &&
+    /^[A-Za-z0-9+/=]+$/.test(data.body)
+      ? data.body
+      : undefined;
   return {
     mimetype: data?.mimetype ?? '',
     filename: data?.filename || undefined,
     omitted: true,
     sizeBytes: coerceDeclaredSize(data?.size),
     ...(Number.isFinite(duration) && duration > 0 ? { durationSeconds: Math.round(duration) } : {}),
+    ...(Number.isFinite(pageCount) && pageCount > 0 ? { pageCount: Math.trunc(pageCount) } : {}),
+    ...(thumbnail ? { thumbnail } : {}),
   };
 }
 

@@ -64,6 +64,41 @@ describe('history media marker (wacrm patch)', () => {
   });
 });
 
+describe('history payload for WhatsApp parity (wacrm patch)', () => {
+  it('carries the ticks, the forwarded flag, page count and the JPEG preview WhatsApp keeps', async () => {
+    const thumb = '/9j/4AAQSkZJRgABAQAAAQABAAD' + 'A'.repeat(40);
+    const pdf = historyMessage({
+      id: { _serialized: `true_${CHAT}_PDF` },
+      fromMe: true,
+      from: 'me@c.us',
+      to: CHAT,
+      type: 'document',
+      body: '3 ANTECEDENTES.pdf',
+      ack: 3,
+      isForwarded: true,
+      forwardingScore: 5,
+      _data: { mimetype: 'application/pdf', filename: '3 ANTECEDENTES.pdf', size: 2_097_152, pageCount: 1, body: thumb },
+    });
+    const caption = historyMessage({
+      id: { _serialized: `false_${CHAT}_IMG` },
+      type: 'image',
+      body: 'legenda',
+      ack: 4,
+      _data: { mimetype: 'image/jpeg', size: 1000, body: 'not a jpeg <script>' },
+    });
+    const chat = { fetchMessages: jest.fn().mockResolvedValue([pdf, caption]) };
+    const messaging = makeMessaging({ getChatById: jest.fn().mockResolvedValue(chat) });
+    const [doc, img] = await messaging.getChatHistory(CHAT, 2000, false);
+    expect(doc).toMatchObject({ ack: 3, isForwarded: true, forwardingScore: 5 });
+    expect(doc.media).toMatchObject({ pageCount: 1, sizeBytes: 2_097_152, thumbnail: thumb, filename: '3 ANTECEDENTES.pdf' });
+    expect(img.ack).toBe(4);
+    expect(img.isForwarded).toBeUndefined();
+    // Only a base64 JPEG is passed on as a preview.
+    expect(img.media?.thumbnail).toBeUndefined();
+    expect(img.body).toBe('legenda');
+  });
+});
+
 describe('downloadMessageMedia (wacrm patch)', () => {
   const withPage = (answer: unknown) => {
     const evaluate = jest.fn().mockResolvedValue(answer);

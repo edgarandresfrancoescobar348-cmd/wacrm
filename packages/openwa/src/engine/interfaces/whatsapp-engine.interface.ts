@@ -110,6 +110,15 @@ export interface IncomingMessage {
    * code can skip these without matching an engine-specific pseudo-JID (e.g. `status@broadcast`).
    */
   isStatusBroadcast?: boolean;
+  /**
+   * wacrm patch: delivery state as the engine reports it on the message itself (whatsapp-web.js `ack`:
+   * -1 error, 0 pending, 1 sent to server, 2 delivered, 3 read, 4 played). Meaningful on the account's
+   * own (fromMe) messages; lets a history read carry the ticks the live `message.ack` events gave.
+   */
+  ack?: number;
+  /** wacrm patch: WhatsApp shows "Forwarded" (and "Forwarded many times" from score 4). */
+  isForwarded?: boolean;
+  forwardingScore?: number;
   /** WhatsApp ephemeral/disappearing-messages timer in seconds. Set per-chat on each message
    *  in the raw payload. 0 or undefined = no disappearing timer.
    *  Known values: 86400 (24h), 604800 (7d), 7776000 (90d). */
@@ -198,6 +207,13 @@ export interface IncomingMessage {
     sizeBytes?: number;
     /** wacrm patch: audio/video length in seconds, when the engine reports it (history markers). */
     durationSeconds?: number;
+    /** wacrm patch: a document's page count, when WhatsApp knows it (history markers). */
+    pageCount?: number;
+    /**
+     * wacrm patch: the small JPEG preview WhatsApp keeps for an image, video, sticker or document
+     * (base64, no data: prefix) — shown before the media itself is downloaded. History markers only.
+     */
+    thumbnail?: string;
   };
   quotedMessage?: {
     id: string;

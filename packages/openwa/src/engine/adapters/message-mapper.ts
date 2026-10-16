@@ -76,6 +76,10 @@ export interface RawMessageFields {
   mentionedIds?: string[];
   /** Raw wwebjs payload; `notifyName` carries the sender's push name without an extra lookup. */
   _data?: { notifyName?: string; ephemeralDuration?: number };
+  /** wacrm patch: whatsapp-web.js delivery state and forwarding flags (see IncomingMessage). */
+  ack?: number;
+  isForwarded?: boolean;
+  forwardingScore?: number;
   /** Set on `order` messages: the placed order's id, and the single-order token that unlocks its items. */
   orderId?: string;
   token?: string;
@@ -129,6 +133,17 @@ export function buildIncomingMessageBase(msg: RawMessageFields): IncomingMessage
   // @mentioned WIDs, when present — used for command targeting (e.g. `/tr grant @user`).
   if (msg.mentionedIds && msg.mentionedIds.length > 0) {
     incoming.mentionedIds = msg.mentionedIds;
+  }
+
+  // wacrm patch: ticks and the "Forwarded" label, as the message object carries them.
+  if (typeof msg.ack === 'number' && Number.isFinite(msg.ack)) {
+    incoming.ack = msg.ack;
+  }
+  if (msg.isForwarded) {
+    incoming.isForwarded = true;
+    if (typeof msg.forwardingScore === 'number' && msg.forwardingScore > 0) {
+      incoming.forwardingScore = msg.forwardingScore;
+    }
   }
 
   // Flag senders identified by a WhatsApp privacy id (`@lid`) so engine-neutral code can opt to
