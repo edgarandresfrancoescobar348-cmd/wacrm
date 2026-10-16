@@ -30,15 +30,15 @@ export interface FailRule {
   times?: number
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 export function lit(v: unknown): string {
   if (v === null || v === undefined) return 'NULL'
   if (typeof v === 'number') return String(v)
   if (typeof v === 'boolean') return v ? 'true' : 'false'
-  // uuid[] arguments (recipient ids); any other array is JSON.
-  if (Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string' && UUID.test(x))) {
-    return `'{${(v as string[]).join(',')}}'`
+  // A flat array of strings is a Postgres array (uuid[] / text[]
+  // arguments, as PostgREST coerces them); any other array is JSON.
+  if (Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string')) {
+    const inner = (v as string[]).map((x) => `"${x.replace(/["\\]/g, (c) => `\\${c}`)}"`).join(',')
+    return `'{${inner.replace(/'/g, "''")}}'`
   }
   if (typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`
   return `'${String(v).replace(/'/g, "''")}'`

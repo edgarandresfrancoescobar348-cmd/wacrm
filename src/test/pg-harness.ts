@@ -95,3 +95,39 @@ GRANT SELECT, INSERT, UPDATE ON public.messages, public.broadcast_recipients TO 
 GRANT SELECT ON public.conversations, public.broadcasts TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 `
+
+/**
+ * MINIMAL_SCHEMA plus every column/table the WhatsApp migrations 053–059
+ * and the code under test touch (contacts, conversation/contact link,
+ * broadcast and recipient columns, the two connection tables). Column
+ * names match the real tables.
+ */
+export const WA_SCHEMA = MINIMAL_SCHEMA + `
+CREATE TABLE public.contacts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid, phone text);
+ALTER TABLE public.conversations ADD COLUMN contact_id uuid, ADD COLUMN status text NOT NULL DEFAULT 'open';
+ALTER TABLE public.messages ADD COLUMN content_text text;
+ALTER TABLE public.broadcasts ADD COLUMN template_name text, ADD COLUMN template_language text,
+  ADD COLUMN delivery_locked_at timestamptz, ADD COLUMN updated_at timestamptz;
+ALTER TABLE public.broadcast_recipients ADD COLUMN contact_id uuid, ADD COLUMN template_params jsonb,
+  ADD CONSTRAINT broadcast_recipients_status_check
+    CHECK (status IN ('pending','sent','delivered','read','replied','failed'));
+CREATE TABLE public.whatsapp_config(account_id uuid PRIMARY KEY, user_id uuid, provider text NOT NULL DEFAULT 'meta',
+  status text NOT NULL DEFAULT 'disconnected' CHECK (status IN ('connected','disconnected')), connected_at timestamptz,
+  updated_at timestamptz);
+CREATE TABLE public.whatsapp_openwa_config(id uuid NOT NULL DEFAULT gen_random_uuid(), account_id uuid PRIMARY KEY,
+  base_url text, api_key text, engine text, session_id text, session_name text, webhook_id text, webhook_secret text,
+  status text, phone text, push_name text, last_error text, restriction jsonb, reconnect_attempts int,
+  status_updated_at timestamptz, connected_at timestamptz, broadcast_delay_ms int, updated_at timestamptz,
+  status_event_at timestamptz);
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+`
+
+/** The WhatsApp migrations in order (each idempotent). */
+export const WA_MIGRATIONS = [
+  '053_inbound_completion.sql',
+  '054_broadcast_send_checkpoint.sql',
+  '056_broadcast_send_attempts.sql',
+  '057_inbound_fanout_outbox.sql',
+  '058_openwa_status_mirror.sql',
+  '059_send_evidence.sql',
+]

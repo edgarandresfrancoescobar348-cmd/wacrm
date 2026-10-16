@@ -14,7 +14,7 @@
 // ============================================================
 
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
-import { SendBudgetExceededError } from '@/lib/whatsapp/transport/types'
+import { SendBudgetExceededError, UncertainSendError } from '@/lib/whatsapp/transport/types'
 
 export const OPENWA_ALLOWED_HOSTS_ENV = 'OPENWA_ALLOWED_HOSTS'
 
@@ -213,8 +213,17 @@ export async function openWaRequest<T = unknown>(
 
   if (opts.raw) return response as unknown as T
   if (response.status === 204) return undefined as T
-  const text = await response.text()
-  return (text ? JSON.parse(text) : undefined) as T
+  // The request was accepted: anything that goes wrong reading the answer
+  // leaves the effect UNKNOWN (K7) — never a definitive failure.
+  try {
+    const text = await response.text()
+    return (text ? JSON.parse(text) : undefined) as T
+  } catch (err) {
+    throw new UncertainSendError(
+      `OpenWA answered ${response.status} but the response could not be read`,
+      err,
+    )
+  }
 }
 
 /** Rejects with SendBudgetExceededError if `work` hasn't settled by `deadline`. */
@@ -369,6 +378,14 @@ export interface OpenWaSendResult {
   timestamp: number
 }
 
+/** A 2xx send answer must carry the message id; otherwise the outcome is unknown. */
+function requireMessageId(r: OpenWaSendResult | undefined, status = 200): OpenWaSendResult {
+  if (!r || typeof r.messageId !== 'string' || !r.messageId) {
+    throw new UncertainSendError(`OpenWA answered ${status} without a message id`)
+  }
+  return r
+}
+
 export function openWaSend(
   creds: OpenWaCredentials,
   sessionId: string,
@@ -400,7 +417,7 @@ export function openWaSend(
       deadline: opts.sendBy === undefined ? cap : Math.min(opts.sendBy, cap),
       idempotencyKey: opts.idempotencyKey,
     },
-  )
+  ).then((r) => requireMessageId(r))
 }
 
 export interface OpenWaStoredMessage {

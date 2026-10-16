@@ -41,6 +41,9 @@ export async function startFakeOpenWa(apiKey = 'test-openwa-key'): Promise<FakeO
       requests.push(record)
       const send = (status: number, body: unknown) => {
         res.writeHead(status, { 'content-type': 'application/json' })
+        // `{ __raw: '…' }` sends the bytes as they are (a truncated or
+        // non-JSON answer).
+        if (body && typeof body === 'object' && '__raw' in body) return res.end(String((body as { __raw: unknown }).__raw))
         res.end(body === undefined ? '' : JSON.stringify(body))
       }
       if (req.headers['x-api-key'] !== apiKey) {

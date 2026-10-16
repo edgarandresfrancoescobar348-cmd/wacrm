@@ -158,12 +158,13 @@ export interface WhatsAppTransport {
    */
   expectedBody?(args: SendTemplateArgs): string | null
   /**
-   * Look the provider's history up for an outgoing message to `to` with
-   * exactly `body`, sent at or after `since` (epoch ms). Returns its
-   * message id, or null when none is found (which does NOT prove it
-   * wasn't sent). Optional: only gateways that keep history.
+   * Look the provider's history up for outgoing messages to `to` with
+   * exactly `body`, sent between `since` and `until` (epoch ms, the
+   * attempt's tries). Returns EVERY matching message id — the caller
+   * settles only an unambiguous match. Empty does NOT prove it wasn't
+   * sent. Optional: only gateways that keep history.
    */
-  findSentMessage?(args: { to: string; body: string; since: number }): Promise<string | null>
+  findSentMessages?(args: { to: string; body: string; since: number; until: number }): Promise<string[]>
   /**
    * Identity of the gateway + session that de-duplicates sends (OpenWA).
    * A send attempt is only ever resent to the same one.
@@ -208,6 +209,22 @@ export function budgetTimeout(sendBy: number | undefined, cap: number, now = Dat
   const left = sendBy - now
   if (left <= 0) throw new SendBudgetExceededError()
   return Math.min(cap, left)
+}
+
+/**
+ * The request reached the provider (it answered 2xx) but its answer
+ * could not be read — truncated, not JSON, missing the message id. The
+ * message may well have been sent: callers must treat the outcome as
+ * UNKNOWN (same idempotency key on a retry), never as a failure.
+ * Transports throw this for anything that goes wrong after the request
+ * left; any other error means the request never went out or was
+ * definitively refused.
+ */
+export class UncertainSendError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message)
+    this.name = 'UncertainSendError'
+  }
 }
 
 /** No WhatsApp connection usable for sending on this account. */

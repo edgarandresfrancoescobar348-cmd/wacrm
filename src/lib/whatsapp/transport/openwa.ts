@@ -216,17 +216,22 @@ export function createOpenWaTransport(conn: OpenWaConnection): WhatsAppTransport
       return rendered.media ? rendered.text.slice(0, LOCAL_CAPTION_MAX) : rendered.text
     },
 
-    async findSentMessage({ to, body, since }) {
+    async findSentMessages({ to, body, since, until }) {
       const { messages } = await listOpenWaMessages(creds, sessionId, {
         chatId: toOpenWaChatId(to),
-        // A little slack for clock skew between us and the gateway.
-        since: since - 120_000,
+        since: since - 5_000,
         limit: 100,
       })
-      const hit = (messages ?? []).find(
-        (m) => m.direction === 'outgoing' && (m.body ?? '') === body,
-      )
-      return hit ? (hit.waMessageId ?? hit.id) : null
+      // Every outgoing message with exactly this text inside the
+      // attempt's tries (first contact − 5 s … latest try + 2 min): the
+      // caller settles only an unambiguous match (K2).
+      return (messages ?? [])
+        .filter((m) => m.direction === 'outgoing' && (m.body ?? '') === body)
+        .filter((m) => {
+          const at = typeof m.timestamp === 'number' ? m.timestamp * 1000 : m.createdAt ? Date.parse(m.createdAt) : NaN
+          return Number.isFinite(at) && at >= since - 5_000 && at <= until + 120_000
+        })
+        .map((m) => m.waMessageId ?? m.id)
     },
 
     sendText: ({ to, text, contextMessageId, ...c }) => sendText(to, text, contextMessageId, c),

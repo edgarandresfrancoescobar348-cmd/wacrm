@@ -11,6 +11,7 @@
 
 import { isBusinessScopedUserId } from './wa-identity'
 import { getT } from '@/lib/i18n/translate'
+import { UncertainSendError } from './transport/types'
 
 const ti = getT('Validation.interactive')
 
@@ -79,6 +80,25 @@ export class MetaApiError extends Error {
     this.httpStatus = fields.httpStatus
     this.details = fields.details ?? null
   }
+}
+
+/**
+ * Read the message id out of a 2xx send answer. Meta accepted the
+ * request, so an unreadable or malformed answer leaves the outcome
+ * UNKNOWN (UncertainSendError) — never a failure that invites a resend.
+ */
+async function readSentMessageId(response: Response): Promise<{ messageId: string }> {
+  let data: { messages?: { id?: unknown }[] }
+  try {
+    data = await response.json()
+  } catch (err) {
+    throw new UncertainSendError(`Meta answered ${response.status} but the response could not be read`, err)
+  }
+  const id = data?.messages?.[0]?.id
+  if (typeof id !== 'string' || !id) {
+    throw new UncertainSendError(`Meta answered ${response.status} without a message id`)
+  }
+  return { messageId: id }
 }
 
 /**
@@ -385,8 +405,7 @@ export async function sendTextMessage(
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
-  const data = await response.json()
-  return { messageId: data.messages[0].id }
+  return readSentMessageId(response)
 }
 
 export type MediaKind = 'image' | 'video' | 'document' | 'audio'
@@ -453,8 +472,7 @@ export async function sendMediaMessage(
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
-  const data = await response.json()
-  return { messageId: data.messages[0].id }
+  return readSentMessageId(response)
 }
 
 import type { MessageTemplate } from '@/types'
@@ -573,8 +591,7 @@ export async function sendTemplateMessage(
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
-  const data = await response.json()
-  return { messageId: data.messages[0].id }
+  return readSentMessageId(response)
 }
 
 // ============================================================
@@ -832,8 +849,7 @@ export async function sendReactionMessage(
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
-  const data = await response.json()
-  return { messageId: data.messages[0].id }
+  return readSentMessageId(response)
 }
 
 // ============================================================
@@ -1010,8 +1026,7 @@ export async function sendInteractiveButtons(
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
-  const data = await response.json()
-  return { messageId: data.messages[0].id }
+  return readSentMessageId(response)
 }
 
 export interface InteractiveListRow {
@@ -1141,8 +1156,7 @@ export async function sendInteractiveList(
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
-  const data = await response.json()
-  return { messageId: data.messages[0].id }
+  return readSentMessageId(response)
 }
 
 function validateInteractiveBody(bodyText: string): void {

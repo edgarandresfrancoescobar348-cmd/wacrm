@@ -16,7 +16,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { MINIMAL_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
+import { WA_MIGRATIONS, WA_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
 import { PgSupabase } from '@/test/pg-supabase'
 import type { SendTemplateArgs, WhatsAppTransport } from '@/lib/whatsapp/transport'
 import { OpenWaError } from '@/lib/whatsapp/openwa/client'
@@ -73,8 +73,10 @@ function openWaTransport(
     },
     gateway: { url: 'http://gw.test', sessionId: opts.session ?? 'session-1' },
     expectedBody: body,
-    findSentMessage: async ({ to, body: b }: { to: string; body: string }) =>
-      opts.history?.get(`${to}|${b}`) ?? null,
+    findSentMessages: async ({ to, body: b }: { to: string; body: string }) => {
+      const id = opts.history?.get(`${to}|${b}`)
+      return id ? [id] : []
+    },
     recipientVariants: (p: string) => [p],
     isRecipientRetryable: () => false,
     async sendTemplate(args: SendTemplateArgs) {
@@ -118,19 +120,10 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
 
   beforeAll(async () => {
     pg = await startPg()
-    await pg.sql(MINIMAL_SCHEMA)
-    await pg.sql(`
-      CREATE TABLE public.contacts(id uuid PRIMARY KEY, account_id uuid, phone text);
-      ALTER TABLE public.conversations ADD COLUMN contact_id uuid;
-      ALTER TABLE public.messages ADD COLUMN content_text text;
-      ALTER TABLE public.broadcasts ADD COLUMN template_name text, ADD COLUMN template_language text,
-        ADD COLUMN delivery_locked_at timestamptz, ADD COLUMN updated_at timestamptz;
-      ALTER TABLE public.broadcast_recipients ADD COLUMN contact_id uuid, ADD COLUMN template_params jsonb,
-        ADD CONSTRAINT broadcast_recipients_status_check
-          CHECK (status IN ('pending','sent','delivered','read','replied','failed'));
-      INSERT INTO public.accounts VALUES ('${ACCT}');`)
-    await pg.migrate('054_broadcast_send_checkpoint.sql')
-    if (process.env.PROVE_OLD_ATTEMPTS !== '1') await pg.migrate('056_broadcast_send_attempts.sql')
+    await pg.sql(WA_SCHEMA)
+    await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}');`)
+    if (process.env.PROVE_OLD_ATTEMPTS === '1') await pg.migrate('054_broadcast_send_checkpoint.sql')
+    else for (const m of WA_MIGRATIONS) await pg.migrate(m)
     db = new PgSupabase(pg)
   }, 60_000)
   afterAll(() => pg?.stop())
@@ -146,7 +139,7 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
       DELETE FROM public.messages; DELETE FROM public.conversations; DELETE FROM public.contacts;
       INSERT INTO public.broadcasts(id, account_id, status, template_name, template_language)
         VALUES ('${BC}', '${ACCT}', 'sending', 'pedido', 'pt_BR');
-      INSERT INTO public.contacts SELECT ('00000000-0000-0000-0000-00000000020' || i)::uuid, '${ACCT}', '551196666000' || i FROM generate_series(1,3) i;
+      INSERT INTO public.contacts(id, account_id, phone) SELECT ('00000000-0000-0000-0000-00000000020' || i)::uuid, '${ACCT}', '551196666000' || i FROM generate_series(1,3) i;
       INSERT INTO public.broadcast_recipients(id, broadcast_id, contact_id, status, template_params)
         SELECT ('00000000-0000-0000-0000-00000000010' || i)::uuid, '${BC}', ('00000000-0000-0000-0000-00000000020' || i)::uuid,
                'pending', jsonb_build_array('Cliente ' || i) FROM generate_series(1,3) i;`)

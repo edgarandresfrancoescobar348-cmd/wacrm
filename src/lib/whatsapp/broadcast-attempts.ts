@@ -29,6 +29,7 @@ import { MetaApiError } from '@/lib/whatsapp/meta-api'
 import { OpenWaError } from '@/lib/whatsapp/openwa/client'
 import {
   SendBudgetExceededError,
+  UncertainSendError,
   sendWithRecipientVariants,
   type SendTemplateArgs,
   type WhatsAppTransport,
@@ -133,6 +134,11 @@ export function classifySendError(transport: WhatsAppTransport, err: unknown): T
   if (err instanceof SendBudgetExceededError) {
     // Thrown before the request left (no time left to start it).
     return { kind: 'retry_later', code: 'budget', message, outOfBudget: true }
+  }
+  if (err instanceof UncertainSendError || err instanceof SyntaxError) {
+    // Accepted by the provider, answer unreadable (K7): the message may
+    // be out. Same key next time (where the provider de-duplicates).
+    return { kind: 'unknown', code: 'response_unreadable', message, resendable: transport.capabilities.idempotentSends }
   }
   const idempotent = transport.capabilities.idempotentSends
   if (err instanceof OpenWaError) {
@@ -278,42 +284,74 @@ export async function holdAttempt(
   if (error) throw new AttemptStoreError('hold', error)
 }
 
+export type Reconciliation =
+  | { kind: 'sent'; messageId: string }
+  /** Evidence exists but does not single this attempt out — held for a person. */
+  | { kind: 'ambiguous' }
+  | { kind: 'none' }
+
+function settled(data: unknown): Reconciliation {
+  const r = (data ?? {}) as { outcome?: string; message_id?: string }
+  if (r.outcome === 'sent' && r.message_id) return { kind: 'sent', messageId: r.message_id }
+  if (r.outcome === 'ambiguous') return { kind: 'ambiguous' }
+  return { kind: 'none' }
+}
+
 /**
  * Establish an unknown attempt's outcome from what we can see: a stored
  * outgoing message (an echo already recorded), then the gateway's
- * history. Returns the provider message id when found.
+ * history of the SAME gateway and session. Evidence settles the attempt
+ * only when unambiguous: exactly one unreserved message and no other
+ * open send that could own it (broadcast_attempt_settle_evidence, K2);
+ * otherwise the attempt is held for a person.
  */
 export async function reconcileAttempt(
   db: SupabaseClient,
   accountId: string,
   attempt: SendAttempt,
   transport: WhatsAppTransport,
-): Promise<string | null> {
+): Promise<Reconciliation> {
   const { data: stored, error } = await db.rpc('broadcast_attempt_reconcile_stored', {
     p_account_id: accountId,
     p_attempt_id: attempt.id,
   })
   if (error) throw new AttemptStoreError('reconcile (stored)', error)
-  if (typeof stored === 'string' && stored) return stored
+  const fromStore = settled(stored)
+  if (fromStore.kind !== 'none') return fromStore
 
-  if (!attempt.expected_body || !attempt.first_sent_at || !transport.findSentMessage) return null
-  if (attempt.provider !== transport.provider) return null
-  if (transport.gateway && attempt.gateway_url && attempt.gateway_url !== transport.gateway.url) return null
-  let found: string | null = null
+  if (!attempt.expected_body || !attempt.first_sent_at || !transport.findSentMessages) return { kind: 'none' }
+  if (attempt.provider !== transport.provider) return { kind: 'none' }
+  // History belongs to one gateway AND session: another one's history
+  // proves nothing about this attempt.
+  if (
+    !transport.gateway ||
+    attempt.gateway_url !== transport.gateway.url ||
+    attempt.gateway_session_id !== transport.gateway.sessionId
+  ) {
+    return { kind: 'none' }
+  }
+  let ids: string[] = []
   try {
-    found = await transport.findSentMessage({
+    ids = await transport.findSentMessages({
       to: attempt.to_phone,
       body: attempt.expected_body,
       since: Date.parse(attempt.first_sent_at),
+      until: Date.parse(attempt.started_at ?? attempt.first_sent_at),
     })
   } catch (err) {
     // History unavailable: not evidence either way.
     console.warn('[broadcast-attempts] gateway history lookup failed:', err instanceof Error ? err.message : err)
-    return null
+    return { kind: 'none' }
   }
-  if (!found) return null
-  await finishAttempt(db, accountId, attempt, { kind: 'sent', messageId: found, resolvedBy: 'history' })
-  return found
+  if (ids.length === 0) return { kind: 'none' }
+  const { data, error: settleErr } = await db.rpc('broadcast_attempt_settle_evidence', {
+    p_account_id: accountId,
+    p_attempt_id: attempt.id,
+    p_message_ids: ids,
+    p_source: 'history',
+  })
+  if (settleErr) throw new AttemptStoreError('reconcile (history)', settleErr)
+  return settled(data)
 }
 
 /** OpenWA `message.sent`: does this echo prove an open attempt? */
@@ -395,11 +433,14 @@ export async function sendBroadcastRecipient(
   }
   if (attempt.lease_until && Date.parse(attempt.lease_until) > now()) return done({ status: 'deferred' })
 
-  // 2. Reached the provider before and its outcome is open: find out
-  //    before sending anything again.
-  if (attempt.first_sent_at && attempt.state !== 'pending') {
+  // 2. Reached the provider before and its outcome is open — whatever
+  //    the attempt's state says (K1): find out before sending again.
+  if (attempt.first_sent_at) {
     const found = await reconcileAttempt(db, accountId, attempt, transport)
-    if (found) return done({ status: 'sent', messageId: found })
+    if (found.kind === 'sent') return done({ status: 'sent', messageId: found.messageId })
+    if (found.kind === 'ambiguous') {
+      return done({ status: 'unknown', error: 'Ambiguous evidence — check the chat' })
+    }
     if (!canResend(attempt, transport, now())) {
       const reason = 'Outcome unknown and not safely resendable (provider window, gateway or key) — check the chat'
       await holdAttempt(db, accountId, attempt, reason)
@@ -443,7 +484,11 @@ export async function sendBroadcastRecipient(
     const { result } = await sendWithRecipientVariants(transport, frozen.to, true, (to) =>
       transport.sendTemplate({ ...args, to }),
     )
-    await finishAttempt(db, accountId, attempt, { kind: 'sent', messageId: result.messageId })
+    const state = await finishAttempt(db, accountId, attempt, { kind: 'sent', messageId: result.messageId })
+    if (state === 'ambiguous') {
+      // The provider's id already proves another attempt (K2): held.
+      return done({ status: 'unknown', error: `Message ${result.messageId} already proves another send` })
+    }
     return done({ status: 'sent', messageId: result.messageId })
   } catch (err) {
     if (err instanceof AttemptStoreError) throw err
