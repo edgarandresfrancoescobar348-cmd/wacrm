@@ -43,6 +43,9 @@ export async function reopenClosedConversation(
     // Best-effort, same as the conversation update this follows: a failed
     // re-open must not abort inbound processing (and make Meta redeliver).
     console.error('Error re-opening conversation:', error)
+    // …unless the caller can safely retry it (an OpenWA delivery answers
+    // non-2xx and is redelivered; this update is idempotent).
+    if (opts.throwOnError) throw new Error(`re-opening conversation failed: ${error.message}`)
     return false
   }
 

@@ -109,3 +109,16 @@ describe('reopenClosedConversation', () => {
     spy.mockRestore()
   })
 })
+
+// G5 (second review): an OpenWA delivery must not be acknowledged when
+// the reopen failed — the caller asks for the error and is redelivered.
+describe('reopenClosedConversation — throwOnError (G5)', () => {
+  it('throws instead of swallowing when the caller can retry', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { client } = stubClient({ message: 'connection reset' })
+    await expect(
+      reopenClosedConversation(client, { id: 'conv-1', status: 'closed' }, { throwOnError: true }),
+    ).rejects.toThrow(/re-opening conversation failed/)
+    spy.mockRestore()
+  })
+})
