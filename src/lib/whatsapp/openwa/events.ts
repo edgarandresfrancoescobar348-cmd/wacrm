@@ -284,6 +284,18 @@ function identityFor(phone: string, name: string): WaIdentity {
   return { phone, waUserId: null, waParentUserId: null, waUsername: null, name }
 }
 
+/**
+ * The envelope's dispatch time at FULL (millisecond) precision — the
+ * newest-wins watermark for session state and edits. Must not go through
+ * the Unix-seconds format used for message timestamps: truncating to the
+ * second made a later event in the same second as a live refresh look
+ * older, and dropped it (second review G6).
+ */
+export function envelopeInstant(env: OpenWaEnvelope): string {
+  const ms = env.timestamp ? Date.parse(env.timestamp) : NaN
+  return new Date(Number.isFinite(ms) ? ms : Date.now()).toISOString()
+}
+
 function envelopeSeconds(env: OpenWaEnvelope, fallback?: number): string {
   if (typeof fallback === 'number' && Number.isFinite(fallback)) return String(Math.floor(fallback))
   const ms = env.timestamp ? Date.parse(env.timestamp) : NaN
@@ -467,7 +479,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
         accountId,
         target,
         // Gateway event time — edits apply newest-wins (see ingest).
-        { kind: 'edited', at: new Date(Number(envelopeSeconds(env)) * 1000).toISOString(), text: body },
+        { kind: 'edited', at: envelopeInstant(env), text: body },
         { throwOnFailure: true },
       )
       return 'mutation'
@@ -547,7 +559,7 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   // the newest one applied (a late redelivery, a replayed capture) must
   // not overwrite newer state — e.g. an old "disconnected" over a live
   // session.
-  const eventAt = new Date(Number(envelopeSeconds(env)) * 1000).toISOString()
+  const eventAt = envelopeInstant(env)
   patch.status_event_at = eventAt
   const { data: applied, error } = await ctx.admin
     .from('whatsapp_openwa_config')

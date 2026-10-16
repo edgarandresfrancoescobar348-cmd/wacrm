@@ -294,8 +294,8 @@ describe('message.sent (phone echo)', () => {
 describe('session events are newest-wins (F4)', () => {
   it('applies only when not older than the last applied event', async () => {
     await handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx())
-    expect(h.updates[0].patch.status_event_at).toBe('2026-10-15T22:17:00.000Z')
-    expect(h.orFilters[0]).toBe('status_event_at.is.null,status_event_at.lte.2026-10-15T22:17:00.000Z')
+    expect(h.updates[0].patch.status_event_at).toBe('2026-10-15T22:17:00.250Z')
+    expect(h.orFilters[0]).toBe('status_event_at.is.null,status_event_at.lte.2026-10-15T22:17:00.250Z')
   })
 
   it('an older event changes nothing — not even the active-connection flag', async () => {
@@ -312,5 +312,56 @@ describe('session mirror failure (G5)', () => {
     await expect(
       handleOpenWaEvent(env('session.status', { sessionId: 'sess-1', status: 'disconnected' }), ctx()),
     ).rejects.toThrow(/mirror/)
+  })
+})
+
+// G6 (second review): watermarks keep milliseconds. A fake that EVALUATES
+// the newest-wins filter against a stored watermark, like PostgreSQL.
+describe('session / edit watermark precision (G6)', () => {
+  function watermarkAdmin(state: { watermark: string; status: string }) {
+    return {
+      from: (table: string) => ({
+        update: (patch: Record<string, unknown>) => {
+          let bound = ''
+          const q = {
+            eq: () => q,
+            or: (f: string) => ((bound = f.split('.lte.')[1] ?? ''), q),
+            select: async () => {
+              if (table !== 'whatsapp_openwa_config') return { data: [], error: null }
+              if (Date.parse(state.watermark) > Date.parse(bound)) return { data: [], error: null }
+              state.status = String(patch.status)
+              state.watermark = String(patch.status_event_at)
+              return { data: [{ id: 'row' }], error: null }
+            },
+            then: (r: (v: unknown) => unknown) => r({ error: null }),
+          }
+          return q
+        },
+      }),
+    } as unknown as SupabaseClient
+  }
+
+  it('a disconnect 800 ms after a live refresh (same second) is applied', async () => {
+    const state = { watermark: '2026-10-15T10:00:00.100Z', status: 'ready' }
+    await handleOpenWaEvent(
+      { event: 'session.disconnected', sessionId: 'sess-1', timestamp: '2026-10-15T10:00:00.900Z', data: { reason: 'actual disconnect' } },
+      { ...ctx(), admin: watermarkAdmin(state) },
+    )
+    expect(state.status).toBe('disconnected')
+    expect(state.watermark).toBe('2026-10-15T10:00:00.900Z')
+  })
+
+  it('an event 1 ms older than the watermark is still ignored', async () => {
+    const state = { watermark: '2026-10-15T10:00:00.900Z', status: 'disconnected' }
+    await handleOpenWaEvent(
+      { event: 'session.status', sessionId: 'sess-1', timestamp: '2026-10-15T10:00:00.899Z', data: { status: 'ready' } },
+      { ...ctx(), admin: watermarkAdmin(state) },
+    )
+    expect(state.status).toBe('disconnected')
+  })
+
+  it('edits carry the millisecond instant (two edits in one second keep their order)', async () => {
+    await handleOpenWaEvent(env('message.edited', { messageId: 'm', body: 'v2' }), ctx())
+    expect(h.applyMessageMutation).toHaveBeenLastCalledWith('acct-1', 'm', expect.objectContaining({ at: '2026-10-15T22:17:00.250Z' }), { throwOnFailure: true })
   })
 })
