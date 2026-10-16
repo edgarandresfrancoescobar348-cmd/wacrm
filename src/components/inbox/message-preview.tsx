@@ -11,10 +11,10 @@ import { useTranslations } from "next-intl";
 import {
   Ban,
   BarChart3,
+  Camera,
   EyeOff,
   FileText,
   Headphones,
-  Image as ImageIcon,
   LayoutTemplate,
   MapPin,
   Mic,
@@ -51,7 +51,8 @@ export function previewParts(
   const d = token.detail;
   switch (token.kind) {
     case "image":
-      return { icon: ImageIcon, label: d || t("photo") };
+      // WhatsApp's camera, not a picture frame.
+      return { icon: Camera, label: d || t("photo") };
     case "video":
       return { icon: Video, label: d || t("video") };
     case "audio":
@@ -70,7 +71,7 @@ export function previewParts(
     case "revoked":
       return { icon: Ban, label: t("revoked") };
     case "album":
-      return { icon: ImageIcon, label: t("album", { count: Number(d) || 2 }) };
+      return { icon: Camera, label: t("album", { count: Number(d) || 2 }) };
     case "sticker":
       return { icon: Sticker, label: t("sticker") };
     case "location":

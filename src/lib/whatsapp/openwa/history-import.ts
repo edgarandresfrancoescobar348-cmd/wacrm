@@ -797,7 +797,7 @@ export async function runHistoryImport(
       job.status = 'importing'
       job.chats_total = total
       await updateJob(admin, job.account_id, { status: 'importing', chats_total: total, last_error: null })
-      log(job.account_id, `listed ${total} individual chats in ${((now() - listStarted) / 1000).toFixed(1)} s`)
+      log(job.account_id, `listed ${total} chats (one-to-one and groups) in ${((now() - listStarted) / 1000).toFixed(1)} s`)
     }
 
     while (now() < opts.deadline) {

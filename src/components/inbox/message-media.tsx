@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
 import { downloadMediaMessage } from "@/lib/media/download";
 import { useMediaBlobUrl } from "@/hooks/use-media-blob-url";
+import { formatFileSize } from "@/lib/whatsapp/message-content";
 
 /**
  * The media renderers behind `<MessageBubble>`'s image / video / audio /
@@ -32,6 +33,13 @@ import { useMediaBlobUrl } from "@/hooks/use-media-blob-url";
  */
 
 type Translator = ReturnType<typeof useTranslations>;
+
+/** WhatsApp's JPEG preview (media_meta.thumbnail), as an <img> src. */
+function thumbnailSrc(message: Message): string | null {
+  const b64 = message.media_meta?.thumbnail;
+  return b64 && /^[A-Za-z0-9+/=]+$/.test(b64) ? `data:image/jpeg;base64,${b64}` : null;
+}
+
 
 /** Inline media size cap, shared so the four bubbles can't drift apart. */
 const MEDIA_BOX = "max-h-[330px] max-w-[min(330px,100%)]";
@@ -147,7 +155,17 @@ export function MediaImageBubble({
   }
 
   if (status !== "ready" || !src) {
-    return (
+    // WhatsApp's own preview while the photo downloads (phase 5e).
+    const thumb = thumbnailSrc(message);
+    return thumb ? (
+      <div className="relative w-fit" data-testid="media-thumbnail">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={thumb} alt={t("imageAlt")} className={cn(MEDIA_BOX, "block min-w-40 rounded-[6px] object-cover blur-[2px]")} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
+        </div>
+      </div>
+    ) : (
       <MediaPlaceholder>
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </MediaPlaceholder>
@@ -214,6 +232,7 @@ export function MediaVideoBubble({
         src={message.media_url}
         controls
         preload="metadata"
+        poster={thumbnailSrc(message) ?? undefined}
         className={cn(MEDIA_BOX, "rounded-[6px]")}
       />
       {/* Top-right, clear of the native controls — and always visible, since
@@ -275,17 +294,23 @@ export function MediaAudioBubble({
   message,
   t,
   meta,
+  onPlayed,
 }: {
   message: Message;
   t: Translator;
   /** Time + ticks row, rendered under the track on the right. */
   meta?: React.ReactNode;
+  /** A received voice note was played for the first time here. */
+  onPlayed?: () => void;
 }) {
   const { downloading, download } = useMediaDownload(message, t);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
-  const [duration, setDuration] = useState(0);
+  // WhatsApp's declared length shows before the audio loads (phase 5e).
+  const [duration, setDuration] = useState(message.media_meta?.durationSeconds ?? 0);
+  const isOwn = message.sender_type === "agent" || message.sender_type === "bot";
+  const [played, setPlayed] = useState(Boolean(message.media_meta?.played));
   const bars = useMemo(() => waveformBars(message.id), [message.id]);
   const progress = duration > 0 ? Math.min(1, current / duration) : 0;
 
@@ -296,7 +321,13 @@ export function MediaAudioBubble({
     const onMeta = () => {
       if (Number.isFinite(el.duration)) setDuration(el.duration);
     };
-    const onPlay = () => setPlaying(true);
+    const onPlay = () => {
+      setPlaying(true);
+      setPlayed((was) => {
+        if (!was && !isOwn) onPlayed?.();
+        return true;
+      });
+    };
     const onPause = () => setPlaying(false);
     const onEnded = () => {
       setPlaying(false);
@@ -316,7 +347,7 @@ export function MediaAudioBubble({
       el.removeEventListener("pause", onPause);
       el.removeEventListener("ended", onEnded);
     };
-  }, []);
+  }, [isOwn, onPlayed]);
 
   const toggle = () => {
     const el = audioRef.current;
@@ -340,7 +371,15 @@ export function MediaAudioBubble({
   return (
     <div className="flex w-[min(300px,62vw)] items-center gap-2 pt-1">
       <audio ref={audioRef} src={message.media_url} preload="metadata" className="hidden" />
-      <span className="relative flex size-11 shrink-0 items-center justify-center rounded-full bg-bubble-quote text-foreground/70">
+      {/* WhatsApp's mic: green while a received voice note is unplayed,
+          blue once played (by you, or — on your own — by the recipient). */}
+      <span
+        className={cn(
+          "relative flex size-11 shrink-0 items-center justify-center rounded-full bg-bubble-quote",
+          played ? "text-read-ticks" : !isOwn ? "text-primary" : "text-foreground/70",
+        )}
+        data-testid={played ? "voice-played" : "voice-unplayed"}
+      >
         <Mic className="size-5" />
       </span>
       <button
@@ -424,10 +463,20 @@ export function MediaDocumentBubble({
 }) {
   const { downloading, download } = useMediaDownload(message, t);
   const ext = fileExtension(message);
+  const thumb = thumbnailSrc(message);
+  const pages = message.media_meta?.pageCount;
+  const size = formatFileSize(message.media_meta?.sizeBytes);
+  // "1 página · 2 MB · pdf", like WhatsApp.
+  const details = [pages ? t("pages", { count: pages }) : null, size, ext ? ext.toLowerCase() : null].filter(Boolean).join(" · ");
 
   return (
     <div className="w-[min(320px,62vw)] pt-0.5">
-      <div className="flex items-center gap-2 rounded-md bg-bubble-quote p-2.5">
+      {/* The document's first page, as WhatsApp previews it. */}
+      {thumb ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={thumb} alt="" className="mb-0.5 block h-[110px] w-full rounded-t-md object-cover object-top" data-testid="document-thumbnail" />
+      ) : null}
+      <div className={cn("flex items-center gap-2 bg-bubble-quote p-2.5", thumb ? "rounded-b-md" : "rounded-md")}>
         <a
           href={message.media_url}
           target="_blank"
@@ -442,8 +491,8 @@ export function MediaDocumentBubble({
             <span className="line-clamp-2 text-[14px] leading-[19px] break-words text-foreground">
               {message.content_text || t("document")}
             </span>
-            <span className="block text-[12px] leading-4 text-foreground/60">
-              {ext ? ext.toLowerCase() : t("document")}
+            <span className="block text-[12px] leading-4 text-foreground/60" data-testid="document-details">
+              {details || t("document")}
             </span>
           </span>
         </a>

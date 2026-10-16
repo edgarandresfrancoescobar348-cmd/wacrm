@@ -607,7 +607,7 @@ function InboxPageInner() {
           a message body) forces the flex child past its share and pushes
           the contact panel off-screen on the right. Issue #165. */}
       <div className="flex h-full min-w-0 flex-1">
-        {activeConversation && activeContact ? (
+        {activeConversation && (activeContact || activeConversation.is_group) ? (
           <MessageThread
             conversation={activeConversation}
             contact={activeContact}

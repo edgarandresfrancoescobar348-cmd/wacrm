@@ -183,3 +183,11 @@ export function mapsUrl(meta: { latitude: number; longitude: number; url?: strin
   if (meta.url && /^https:\/\//.test(meta.url)) return meta.url
   return `https://www.google.com/maps/search/?api=1&query=${meta.latitude},${meta.longitude}`
 }
+
+/** 2097152 → "2 MB", 3879731 → "3,7 MB", 52000 → "51 kB" — WhatsApp's document line (phase 5e). */
+export function formatFileSize(bytes: number | null | undefined): string | null {
+  if (!bytes || bytes <= 0) return null
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`
+  const mb = bytes / (1024 * 1024)
+  return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`.replace('.', ',')
+}

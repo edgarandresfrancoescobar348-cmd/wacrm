@@ -209,8 +209,8 @@ update: the client in `src/lib/whatsapp/openwa/client.ts` targets the v0.25 API.
 
 When a QR session becomes ready (and from **Importar de novo** in Settings →
 WhatsApp → QR Code), wacrm imports the individual chats the linked phone
-holds: `GET /sessions/:id/chats` (groups, channels, status and broadcasts
-are skipped), then per chat `GET …/messages/:chatId/history?deep=true`. On
+holds: `GET /sessions/:id/chats` (one-to-one chats and groups; channels,
+status and broadcasts are skipped), then per chat `GET …/messages/:chatId/history?deep=true`. On
 engines without live history (Baileys answers 501) only the messages the
 gateway stored are imported, and the page says the history is limited.
 
@@ -260,6 +260,41 @@ gateway stored are imported, and the page says the history is limited.
   media proxy, downloaded only when opened.
 - WhatsApp's link-time placeholders (type `unknown`, no content) are
   skipped here and on the webhook.
+
+## WhatsApp parity (QR Code inbox)
+
+The QR-code inbox follows the linked phone (migration 067):
+
+- **Names** like the phone: the saved address-book name, else the business's
+  verified name, else the sender's own profile name shown as `~Name`, else
+  the number formatted (`+55 62 99842-3737`). `contacts.name_source` says
+  where the name came from; a name a wacrm user typed (`manual`, set by a
+  trigger for every edit from the app) is never overwritten by WhatsApp.
+- **Ticks** from WhatsApp's `ack`, in the import and live (sent ✓, delivered
+  ✓✓, read blue ✓✓, played).
+- **Groups** are listed like on the phone — name, sender name per message
+  in a stable colour, preview `Luciana Alves: …`, replies — and you can
+  answer in them. They are not CRM contacts and never run bots, automations,
+  flows, AI, broadcasts or the public API (`/api/v1` lists no groups).
+  Status, broadcast lists and channels stay out.
+- **Message details:** "Encaminhada" / "Encaminhada com frequência"; a
+  document's first-page preview and "1 página · 2 MB · pdf"; photo and video
+  previews before the download; a voice note's length before it loads, green
+  mic while unplayed and blue once played (`media_meta.played`); a deleted
+  message reads "Mensagem apagada"; the "Mensagem não lida/não ouvida: N"
+  line where the unread messages begin. Previews: "Mensagem de voz (0:09)",
+  "x.pdf · 1 página", "4 fotos", "Mensagem apagada".
+- **The chat list:** archived chats sit under "Arquivadas" (and out of the
+  unread total), pinned chats on top, then WhatsApp's order; each chat's
+  unread count is the phone's. The gateway sends no webhook for archiving,
+  pinning or reading on the phone, so the scheduler re-reads the chat list
+  (≤ once a minute per account, paced) and mirrors archived, pinned, unread,
+  group names and saved names. Opening a chat in wacrm marks it read on the
+  phone (`POST /api/whatsapp/openwa/read`).
+- **Session state** never goes backwards: a session event older than the
+  last one applied is ignored (its time is the event's, not the redelivery's),
+  and while the row says disconnected the inbox re-checks the gateway
+  (`GET /api/whatsapp/openwa?verify=1`, at most every 20 s).
 
 ## Limits
 

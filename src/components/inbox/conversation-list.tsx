@@ -13,8 +13,12 @@ import {
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import {
+  Archive,
+  ArrowLeft,
   ChevronDown,
   EllipsisVertical,
+  Pin,
+  Users,
   LayoutTemplate,
   Plug,
   UserPlus,
@@ -65,7 +69,7 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: "bg-muted-foreground",
 };
 
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "groups";
 
 export function ConversationList({
   activeConversationId,
@@ -89,6 +93,8 @@ export function ConversationList({
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
+  // WhatsApp's "Arquivadas" (QR mode): archived chats live behind one row.
+  const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
@@ -183,10 +189,13 @@ export function ConversationList({
   }, [tags]);
 
   const filtered = useMemo(() => {
-    let result = conversations;
+    // Archived chats (mirrored from the phone) only in their own view.
+    let result = conversations.filter((c) => Boolean(c.archived) === showArchived);
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "groups") {
+      result = result.filter((c) => c.is_group);
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -204,7 +213,7 @@ export function ConversationList({
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter((c) => {
-        const name = c.contact?.name?.toLowerCase() ?? "";
+        const name = (c.is_group ? c.group_name : c.contact?.name)?.toLowerCase() ?? "";
         const phone = c.contact?.phone?.toLowerCase() ?? "";
         const lastMsg = c.last_message_text?.toLowerCase() ?? "";
         return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
@@ -213,7 +222,7 @@ export function ConversationList({
 
     // Most recent first, like WhatsApp — realtime patches rows in place.
     return byRecency(result);
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, showArchived]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -236,9 +245,15 @@ export function ConversationList({
   );
 
   const unreadTotal = useMemo(
-    () => conversations.filter((c) => c.unread_count > 0).length,
+    () => conversations.filter((c) => c.unread_count > 0 && !c.archived).length,
     [conversations],
   );
+  const archivedCount = useMemo(() => conversations.filter((c) => c.archived).length, [conversations]);
+  const archivedUnread = useMemo(
+    () => conversations.filter((c) => c.archived && c.unread_count > 0).length,
+    [conversations],
+  );
+  const hasGroups = useMemo(() => conversations.some((c) => c.is_group), [conversations]);
 
   return (
     <WaListPanel
@@ -287,7 +302,7 @@ export function ConversationList({
       filters={
         <div className="space-y-2">
           <WaChipRow>
-            {FILTER_OPTIONS.map((opt) => (
+            {[...FILTER_OPTIONS, ...(hasGroups ? [{ label: t("filterGroups"), value: "groups" as InboxFilter }] : [])].map((opt) => (
               <WaChip
                 key={opt.value}
                 active={filter === opt.value}
@@ -401,6 +416,32 @@ export function ConversationList({
       }
       banner={banner}
     >
+      {showArchived ? (
+        <button
+          type="button"
+          onClick={() => setShowArchived(false)}
+          className="flex w-full items-center gap-4 px-6 py-3 text-left text-[15px] text-foreground hover:bg-hover-surface"
+          data-testid="archived-back"
+        >
+          <ArrowLeft className="size-5 text-muted-foreground" />
+          {t("archived")}
+        </button>
+      ) : archivedCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => setShowArchived(true)}
+          className="flex w-full items-center gap-4 px-6 py-3 text-left hover:bg-hover-surface"
+          data-testid="archived-row"
+        >
+          <span className="flex size-[49px] shrink-0 items-center justify-center">
+            <Archive className="size-5 text-muted-foreground" />
+          </span>
+          <span className="flex-1 text-[17px] text-foreground">{t("archived")}</span>
+          {archivedUnread > 0 ? (
+            <span className="text-xs font-medium text-primary-text">{archivedUnread}</span>
+          ) : null}
+        </button>
+      ) : null}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -447,7 +488,10 @@ function ConversationItem({
 }: ConversationItemProps) {
   const previewOf = usePreviewParts();
   const contact = conversation.contact;
-  const displayName = (contact && contactDisplayName(contact)) || t("unknown");
+  const isGroup = Boolean(conversation.is_group);
+  const displayName = isGroup
+    ? conversation.group_name || t("group")
+    : (contact && contactDisplayName(contact)) || t("unknown");
   const unread = conversation.unread_count > 0;
 
   const handleClick = useCallback(() => {
@@ -466,12 +510,24 @@ function ConversationItem({
     <WaListRow
       onClick={handleClick}
       active={isActive}
-      avatar={<WaAvatar src={contact?.avatar_url} name={displayName} size={49} />}
+      avatar={
+        isGroup && !conversation.group_avatar_url ? (
+          <span className="flex size-[49px] shrink-0 items-center justify-center rounded-full bg-hover-surface" aria-hidden>
+            <Users className="size-6 text-muted-foreground" />
+          </span>
+        ) : (
+          <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact?.avatar_url} name={displayName} size={49} />
+        )
+      }
       title={displayName}
       meta={time}
       metaHighlight={unread}
       subtitle={
         <>
+          {/* A group's preview names who wrote it, like WhatsApp: "Luciana Alves: …". */}
+          {isGroup && conversation.last_message_sender ? (
+            <span className="shrink-0">{conversation.last_message_sender}:</span>
+          ) : null}
           {MediaIcon ? <MediaIcon className="size-4 shrink-0" /> : null}
           <span className="truncate">
             <MentionText text={preview.label} plain />
@@ -487,6 +543,9 @@ function ConversationItem({
             />
           )}
           <WaUnreadBadge count={conversation.unread_count} />
+          {conversation.pinned_at ? (
+            <Pin className="size-4 rotate-45 text-muted-foreground" aria-label={t("pinned")} data-testid="pinned" />
+          ) : null}
         </>
       }
     />

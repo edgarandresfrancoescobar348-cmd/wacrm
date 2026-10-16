@@ -24,4 +24,15 @@ describe('byRecency (inbox order)', () => {
     ]
     expect(byRecency(rows).map((c) => c.id)).toEqual(['recent', 'old', 'empty-new', 'empty-old'])
   })
+
+  // Phase 5e: pinned chats stay on top like WhatsApp.
+  it('pinned first (latest pin on top), then by the last message', () => {
+    const rows = [
+      { id: 'recent', last_message_at: '2026-10-16T17:13:00Z' },
+      { id: 'pinned-old', last_message_at: '2026-10-01T10:00:00Z', pinned_at: '2026-09-01T00:00:00Z' },
+      { id: 'pinned-new', last_message_at: '2026-10-02T10:00:00Z', pinned_at: '2026-10-10T00:00:00Z' },
+      { id: 'older', last_message_at: '2026-10-16T15:00:00Z' },
+    ]
+    expect(byRecency(rows).map((c) => c.id)).toEqual(['pinned-new', 'pinned-old', 'recent', 'older'])
+  })
 })

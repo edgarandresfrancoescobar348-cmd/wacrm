@@ -31,4 +31,10 @@ describe('contactDisplayName', () => {
     expect(contactDisplayName({ name: '+55 11 93373-9259', phone: null })).toBe('+55 11 93373-9259')
     expect(contactDisplayName({ name: 'Loja 24h', phone: '5511933739259' })).toBe('Loja 24h')
   })
+
+  it('a name that is only the push name reads "~Name", like WhatsApp', () => {
+    expect(contactDisplayName({ name: 'Pedro', name_source: 'push', phone: '5511933739259' })).toBe('~Pedro')
+    expect(contactDisplayName({ name: 'Pedro Henrique', name_source: 'saved', phone: '5511933739259' })).toBe('Pedro Henrique')
+    expect(contactDisplayName({ name: 'Ana', name_source: 'manual' })).toBe('Ana')
+  })
 })

@@ -2,7 +2,7 @@
 // and list previews like WhatsApp's — never "[text]" or empty.
 import { describe, expect, it } from 'vitest'
 
-import { contentTypeForKind, mapsUrl, parsePreviewToken, parseVcards, previewFor } from './message-content'
+import { contentTypeForKind, formatFileSize, mapsUrl, parsePreviewToken, parseVcards, previewFor } from './message-content'
 import { mapOpenWaMessage } from './openwa/events'
 import { previewParts } from '@/components/inbox/message-preview'
 
@@ -105,5 +105,17 @@ describe('previewFor / previewParts — like WhatsApp, never "[text]" or empty',
   })
   it('maps link', () => {
     expect(mapsUrl({ latitude: -23.5, longitude: -46.6 })).toBe('https://www.google.com/maps/search/?api=1&query=-23.5,-46.6')
+  })
+})
+
+describe('formatFileSize (phase 5e: "1 página · 2 MB · pdf")', () => {
+  it('reads like WhatsApp', () => {
+    expect(formatFileSize(2_097_152)).toBe('2 MB')
+    expect(formatFileSize(3_879_731)).toBe('3,7 MB')
+    expect(formatFileSize(15_000_000)).toBe('14 MB')
+    expect(formatFileSize(52_000)).toBe('51 kB')
+    expect(formatFileSize(10)).toBe('1 kB')
+    expect(formatFileSize(0)).toBeNull()
+    expect(formatFileSize(null)).toBeNull()
   })
 })

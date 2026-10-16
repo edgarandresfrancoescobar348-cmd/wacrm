@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction } from "@/types";
 import {
+  Forward,
   Clock,
   Check,
   CheckCheck,
@@ -26,6 +27,7 @@ import { MentionText } from "./mention-text";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { KindContent, RevokedLine } from "./message-kind";
 import { useTranslations } from "next-intl";
+import { createClient } from "@/lib/supabase/client";
 
 interface MessageBubbleProps {
   message: Message;
@@ -45,6 +47,27 @@ interface MessageBubbleProps {
    * incoming, top-right for outgoing). Follow-up bubbles have none.
    */
   showTail?: boolean;
+  /** Group messages: the member's name on the first bubble of their run (WhatsApp colours it). */
+  senderLabel?: string | null;
+}
+
+/** WhatsApp-like name colours for group members, stable per sender. */
+const SENDER_COLORS = ["#e542a3", "#1f7aec", "#e5900e", "#02a698", "#9c27b0", "#d6524b", "#2fae48", "#5e6ad2", "#c45c00", "#0aa1c8"];
+export function senderColor(key: string): string {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (Math.imul(h, 31) + key.charCodeAt(i)) | 0;
+  return SENDER_COLORS[Math.abs(h) % SENDER_COLORS.length];
+}
+
+/** A received voice note played here: WhatsApp's mic turns blue (media_meta.played). */
+function markPlayed(message: Message) {
+  void createClient()
+    .from("messages")
+    .update({ media_meta: { ...(message.media_meta ?? {}), played: true } })
+    .eq("id", message.id)
+    .then(({ error }) => {
+      if (error) console.warn("Failed to mark the voice note played:", error.message);
+    });
 }
 
 /**
@@ -218,7 +241,7 @@ function MessageContent({
 
     case "audio":
       return playable ? (
-        <MediaAudioBubble message={message} t={t} meta={metaBlock} />
+        <MediaAudioBubble message={message} t={t} meta={metaBlock} onPlayed={() => markPlayed(message)} />
       ) : (
         <div>
           <MediaUnavailable label={t("audio")} t={t} expired={expired} />
@@ -359,6 +382,7 @@ export function MessageBubble({
   onToggleReaction,
   onOpenMedia,
   showTail = false,
+  senderLabel = null,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -431,6 +455,24 @@ export function MessageBubble({
         )}
       >
         {showTail && <BubbleTail side={isAgent ? "out" : "in"} />}
+        {senderLabel && !isAgent ? (
+          <p
+            className={cn("text-[12.8px] font-medium leading-[22px]", isVisual && "px-1.5")}
+            style={{ color: senderColor(message.sender_wa_id || senderLabel) }}
+            data-testid="sender-label"
+          >
+            {senderLabel}
+          </p>
+        ) : null}
+        {message.is_forwarded ? (
+          <p
+            className={cn("flex items-center gap-1 text-[12.5px] italic leading-[20px] text-foreground/60", isVisual && "px-1.5")}
+            data-testid="forwarded"
+          >
+            <Forward className="size-3.5" />
+            {(message.forwarding_score ?? 0) >= 4 ? t("forwardedMany") : t("forwarded")}
+          </p>
+        ) : null}
         {reply && (
           <ReplyQuote
             authorLabel={reply.authorLabel}

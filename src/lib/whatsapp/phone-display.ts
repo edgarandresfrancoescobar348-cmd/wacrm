@@ -33,12 +33,14 @@ const PHONE_LIKE = /^\+?[\d\s().-]{6,}$/
  */
 export function contactDisplayName(contact: {
   name?: string | null
+  name_source?: string | null
   phone?: string | null
   wa_username?: string | null
   wa_user_id?: string | null
 }): string {
   const name = contact.name?.trim()
-  if (name && !PHONE_LIKE.test(name)) return name
+  // Only the sender's own profile name: WhatsApp shows "~Name" (phase 5e).
+  if (name && !PHONE_LIKE.test(name)) return contact.name_source === 'push' ? `~${name}` : name
   if (contact.phone?.trim()) return formatPhoneDisplay(contact.phone)
   if (name) return formatPhoneDisplay(name.replace(/[^\d+]/g, ''))
   return contactHandle(contact)

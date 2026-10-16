@@ -23,7 +23,7 @@ now ships inside wacrm, next to the official Meta Cloud API.
 > `058_openwa_status_mirror.sql`, `059_send_evidence.sql`,
 > `060_fanout_outcomes.sql`, `061_connection_lock.sql`,
 > `062_message_content_meta.sql`, `063_whatsapp_history_import.sql` and
-> `064_openwa_embedded_gateway.sql`, `065_history_import_empty_conversations.sql` and `066_history_media.sql`, in order. All additive except 064 (drops the per-account gateway URL/key) and 065 (deletes empty conversations the history import created); existing rows
+> `064_openwa_embedded_gateway.sql`, `065_history_import_empty_conversations.sql`, `066_history_media.sql` and `067_whatsapp_parity.sql`, in order. All additive except 064 (drops the per-account gateway URL/key) and 065 (deletes empty conversations the history import created); existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -45,6 +45,17 @@ now ships inside wacrm, next to the official Meta Cloud API.
 
 ### Added
 
+- **The QR-code inbox looks like the phone's WhatsApp** (apply
+  `067_whatsapp_parity.sql`): names like the phone (saved > verified >
+  `~push name` > formatted number; names you edit are never overwritten),
+  ticks, groups (with each member's name, never a CRM contact, no bots),
+  "Encaminhada", document previews with pages and size, photo/video
+  previews, voice-note length and played state, "Mensagem apagada",
+  "Arquivadas", pinned chats on top, the phone's order and unread counts —
+  kept in sync every minute — and reading a chat here reads it on the phone.
+- **Fixed:** a late, redelivered "disconnected" session event could
+  overwrite a newer "ready"; older session events are now ignored and the
+  banner re-checks the gateway when the row says disconnected.
 - **The WhatsApp gateway is part of wacrm.** OpenWA v0.25.0 is vendored in
   `packages/openwa` (`git subtree`; update with `git subtree pull`) and
   `npm run dev`, `npm run build`/`start` and `docker compose up` build and

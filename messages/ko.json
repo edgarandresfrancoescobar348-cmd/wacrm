@@ -182,7 +182,11 @@
       "menuQuickReplies": "빠른 답장",
       "menuWhatsappSettings": "WhatsApp 연결",
       "newContact": "새 연락처",
-      "clearSearch": "검색 지우기"
+      "clearSearch": "검색 지우기",
+      "archived": "보관됨",
+      "group": "그룹",
+      "pinned": "고정됨",
+      "filterGroups": "그룹"
     },
     "messageThread": {
       "backToConversations": "대화 목록으로 돌아가기",
@@ -216,7 +220,10 @@
       "assignmentUpdateFailed": "담당자 변경에 실패했습니다",
       "networkError": "네트워크 오류",
       "documentFallback": "문서",
-      "you": "나"
+      "you": "나",
+      "group": "그룹",
+      "unreadDivider": "읽지 않은 메시지 {count}개",
+      "unheardDivider": "듣지 않은 메시지 {count}개"
     },
     "sessionTimer": {
       "expired": "만료됨",
@@ -296,7 +303,10 @@
       "playbackFailed": "오디오를 재생할 수 없습니다",
       "revoked": "삭제됨",
       "revokedTitle": "연락처가 모든 사람에게서 이 메시지를 삭제했습니다",
-      "edited": "수정됨"
+      "edited": "수정됨",
+      "pages": "{count}페이지",
+      "forwarded": "전달됨",
+      "forwardedMany": "여러 번 전달됨"
     },
     "mediaViewer": {
       "counter": "{total}개 중 {index}번째",

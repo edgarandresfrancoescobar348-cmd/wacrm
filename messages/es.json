@@ -182,7 +182,11 @@
       "menuQuickReplies": "Respuestas rápidas",
       "menuWhatsappSettings": "Conexión de WhatsApp",
       "newContact": "Nuevo contacto",
-      "clearSearch": "Borrar búsqueda"
+      "clearSearch": "Borrar búsqueda",
+      "archived": "Archivados",
+      "group": "Grupo",
+      "pinned": "Fijado",
+      "filterGroups": "Grupos"
     },
     "messageThread": {
       "backToConversations": "Volver a las conversaciones",
@@ -216,7 +220,10 @@
       "assignmentUpdateFailed": "Error al actualizar la asignación",
       "networkError": "error de red",
       "documentFallback": "Documento",
-      "you": "Tú"
+      "you": "Tú",
+      "group": "Grupo",
+      "unreadDivider": "{count, plural, one {Mensaje no leído: #} other {Mensajes no leídos: #}}",
+      "unheardDivider": "{count, plural, one {Mensaje no escuchado: #} other {Mensajes no escuchados: #}}"
     },
     "sessionTimer": {
       "expired": "Expirada",
@@ -296,7 +303,10 @@
       "playbackFailed": "No se pudo reproducir este audio",
       "revoked": "eliminado",
       "revokedTitle": "El contacto eliminó este mensaje para todos",
-      "edited": "editado"
+      "edited": "editado",
+      "pages": "{count, plural, one {# página} other {# páginas}}",
+      "forwarded": "Reenviado",
+      "forwardedMany": "Reenviado muchas veces"
     },
     "mediaViewer": {
       "counter": "{index} de {total}",

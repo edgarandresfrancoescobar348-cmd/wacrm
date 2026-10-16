@@ -26,6 +26,7 @@ import {
   ArrowLeft,
   RefreshCw,
   PanelRightOpen,
+  Users,
   PanelRightClose,
 } from "lucide-react";
 import {
@@ -304,6 +305,14 @@ export function MessageThread({
 
   const conversationId = conversation?.id;
   const hasUnread = (conversation?.unread_count ?? 0) > 0;
+  // The unread count when this chat was opened — the divider stays where
+  // it was even after the count is reset (phase 5e).
+  const unreadAtOpen = useMemo(
+    () => conversation?.unread_count ?? 0,
+    // Captured per conversation on purpose: not refreshed when the reset lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversation?.id],
+  );
 
   const mediaMessageId =
     openMedia && openMedia.conversationId === conversationId
@@ -902,7 +911,9 @@ export function MessageThread({
 
   // Nothing selected. The inbox page renders its own <EmptyPane>; this
   // fallback only shows for callers that mount the thread unconditionally.
-  if (!conversation || !contact) {
+  // A WhatsApp group (QR mode) has no CRM contact.
+  const isGroup = Boolean(conversation?.is_group);
+  if (!conversation || (!contact && !isGroup)) {
     return (
       <div className="wa-wallpaper flex min-w-0 flex-1">
         <WaEmptyState
@@ -914,8 +925,21 @@ export function MessageThread({
     );
   }
 
-  const displayName = displayNameOf(contact);
+  const displayName = isGroup ? conversation.group_name || t("group") : displayNameOf(contact!);
   const messageGroups = groupMessagesByDate(messages);
+  // WhatsApp's "Mensagem não lida/não ouvida: N" line above the messages
+  // that were unread when the chat was opened (phase 5e).
+  let dividerBeforeId: string | null = null;
+  let dividerAllVoice = true;
+  if (unreadAtOpen > 0) {
+    let seen = 0;
+    for (let i = messages.length - 1; i >= 0 && seen < unreadAtOpen; i--) {
+      if (messages[i].sender_type !== "customer") continue;
+      seen++;
+      dividerBeforeId = messages[i].id;
+      if (messages[i].content_meta?.kind !== "voice") dividerAllVoice = false;
+    }
+  }
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
   );
@@ -954,14 +978,20 @@ export function MessageThread({
                 <ArrowLeft className="h-5 w-5" />
               </button>
             )}
-            <WaAvatar src={contact.avatar_url} name={displayName} size={40} />
+            {isGroup && !conversation.group_avatar_url ? (
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-hover-surface" aria-hidden>
+                <Users className="size-5 text-muted-foreground" />
+              </span>
+            ) : (
+              <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact!.avatar_url} name={displayName} size={40} />
+            )}
           </>
         }
         title={displayName}
         subtitle={
           <>
             {/* The number only when the title is a name, not the number again. */}
-            {contactHandleDisplay(contact) !== displayName ? contactHandleDisplay(contact) : null}
+            {contact && contactHandleDisplay(contact) !== displayName ? contactHandleDisplay(contact) : null}
             {/* 24h session window — red once it has expired. Not
                 rendered on a QR-code connection (no window there). */}
             {serviceWindow && (
@@ -1087,7 +1117,7 @@ export function MessageThread({
             )}
 
             {/* Contact-info panel toggle — desktop only (#258). */}
-            {onToggleContactPanel && (
+            {onToggleContactPanel && !isGroup && (
               <WaIconButton
                 icon={contactPanelOpen ? PanelRightClose : PanelRightOpen}
                 label={contactPanelOpen ? t("hideContactPanel") : t("showContactPanel")}
@@ -1131,7 +1161,11 @@ export function MessageThread({
                 <div>
                   {group.messages.map((msg, i) => {
                     const prev = i > 0 ? group.messages[i - 1] : null;
-                    const firstOfRun = !prev || isOutgoing(prev) !== isOutgoing(msg);
+                    // In a group, a new member speaking starts a new run (and gets their name).
+                    const firstOfRun =
+                      !prev ||
+                      isOutgoing(prev) !== isOutgoing(msg) ||
+                      (isGroup && (prev.sender_wa_id ?? prev.sender_name) !== (msg.sender_wa_id ?? msg.sender_name));
                     const parent = msg.reply_to_message_id
                       ? messagesById.get(msg.reply_to_message_id)
                       : null;
@@ -1140,7 +1174,9 @@ export function MessageThread({
                           authorLabel:
                             parent.sender_type === "agent" || parent.sender_type === "bot"
                               ? t("you")
-                              : (contact && displayNameOf(contact)) || t("unknown"),
+                              : isGroup
+                                ? parent.sender_name || t("unknown")
+                                : (contact && displayNameOf(contact)) || t("unknown"),
                           preview: buildReplyPreview(parent, tQuote),
                         }
                       : null;
@@ -1157,8 +1193,15 @@ export function MessageThread({
                       void postReaction(msg.id, next);
                     };
                     return (
+                      <div key={msg.id}>
+                      {msg.id === dividerBeforeId ? (
+                        <div className="my-3 flex justify-center" data-testid="unread-divider">
+                          <span className="rounded-lg bg-surface/90 px-3 py-1 text-[12.5px] font-medium text-foreground/80 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
+                            {dividerAllVoice ? t("unheardDivider", { count: unreadAtOpen }) : t("unreadDivider", { count: unreadAtOpen })}
+                          </span>
+                        </div>
+                      ) : null}
                       <div
-                        key={msg.id}
                         className={cn(
                           firstOfRun ? "mt-3 first:mt-0" : "mt-0.5",
                           isOutgoing(msg) ? "pr-2" : "pl-2",
@@ -1173,6 +1216,7 @@ export function MessageThread({
                         >
                           <MessageBubble
                             message={msg}
+                            senderLabel={isGroup && firstOfRun ? msg.sender_name : null}
                             reply={reply}
                             reactions={msgReactions}
                             currentUserId={user?.id}
@@ -1181,6 +1225,7 @@ export function MessageThread({
                             showTail={firstOfRun}
                           />
                         </MessageActions>
+                      </div>
                       </div>
                     );
                   })}

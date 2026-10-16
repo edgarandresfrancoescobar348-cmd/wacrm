@@ -182,7 +182,11 @@
       "menuQuickReplies": "Quick replies",
       "menuWhatsappSettings": "WhatsApp connection",
       "newContact": "New contact",
-      "clearSearch": "Clear search"
+      "clearSearch": "Clear search",
+      "archived": "Archived",
+      "group": "Group",
+      "pinned": "Pinned",
+      "filterGroups": "Groups"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -216,7 +220,10 @@
       "assignmentUpdateFailed": "Failed to update assignment",
       "networkError": "network error",
       "documentFallback": "Document",
-      "you": "You"
+      "you": "You",
+      "group": "Group",
+      "unreadDivider": "{count, plural, one {# unread message} other {# unread messages}}",
+      "unheardDivider": "{count, plural, one {# unheard message} other {# unheard messages}}"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -296,7 +303,10 @@
       "playbackFailed": "Couldn't play this audio",
       "revoked": "deleted",
       "revokedTitle": "The contact deleted this message for everyone",
-      "edited": "edited"
+      "edited": "edited",
+      "pages": "{count, plural, one {# page} other {# pages}}",
+      "forwarded": "Forwarded",
+      "forwardedMany": "Forwarded many times"
     },
     "mediaViewer": {
       "counter": "{index} of {total}",

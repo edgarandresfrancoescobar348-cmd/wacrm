@@ -9,6 +9,8 @@ interface Recency {
   id: string
   last_message_at?: string | null
   created_at?: string | null
+  /** Pinned on the phone (QR mode, migration 067): above everything else. */
+  pinned_at?: string | null
 }
 
 const time = (v: string | null | undefined): number => {
@@ -24,6 +26,11 @@ const time = (v: string | null | undefined): number => {
  */
 export function byRecency<T extends Recency>(conversations: readonly T[]): T[] {
   return [...conversations].sort((a, b) => {
+    // Pinned chats first, like WhatsApp — the most recently pinned on top.
+    const aPin = time(a.pinned_at)
+    const bPin = time(b.pinned_at)
+    if (Number.isFinite(aPin) !== Number.isFinite(bPin)) return Number.isFinite(aPin) ? -1 : 1
+    if (Number.isFinite(aPin) && aPin !== bPin) return bPin - aPin
     const aHas = Number.isFinite(time(a.last_message_at))
     const bHas = Number.isFinite(time(b.last_message_at))
     if (aHas !== bHas) return aHas ? -1 : 1
