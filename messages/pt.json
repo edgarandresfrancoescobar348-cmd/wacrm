@@ -186,7 +186,8 @@
       "archived": "Arquivadas",
       "group": "Grupo",
       "pinned": "Fixada",
-      "filterGroups": "Grupos"
+      "filterGroups": "Grupos",
+      "you": "(Você)"
     },
     "messageThread": {
       "backToConversations": "Voltar às conversas",
@@ -220,7 +221,7 @@
       "assignmentUpdateFailed": "Falha ao atualizar a atribuição",
       "networkError": "erro de rede",
       "documentFallback": "Documento",
-      "you": "Você",
+      "you": "(Você)",
       "group": "Grupo",
       "unreadDivider": "{count, plural, one {Mensagem não lida: #} other {Mensagens não lidas: #}}",
       "unheardDivider": "{count, plural, one {Mensagem não ouvida: #} other {Mensagens não ouvidas: #}}"

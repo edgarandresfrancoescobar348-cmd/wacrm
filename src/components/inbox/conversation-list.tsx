@@ -489,9 +489,11 @@ function ConversationItem({
   const previewOf = usePreviewParts();
   const contact = conversation.contact;
   const isGroup = Boolean(conversation.is_group);
-  const displayName = isGroup
+  const baseName = isGroup
     ? conversation.group_name || t("group")
     : (contact && contactDisplayName(contact)) || t("unknown");
+  // Your own chat, like WhatsApp: "Guilherme Varela (Você)".
+  const displayName = conversation.is_self ? `${baseName} ${t("you")}` : baseName;
   const unread = conversation.unread_count > 0;
 
   const handleClick = useCallback(() => {
@@ -516,7 +518,7 @@ function ConversationItem({
             <Users className="size-6 text-muted-foreground" />
           </span>
         ) : (
-          <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact?.avatar_url} name={displayName} size={49} />
+          <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact?.avatar_url} name={baseName} size={49} />
         )
       }
       title={displayName}

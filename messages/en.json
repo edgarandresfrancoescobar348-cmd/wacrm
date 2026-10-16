@@ -186,7 +186,8 @@
       "archived": "Archived",
       "group": "Group",
       "pinned": "Pinned",
-      "filterGroups": "Groups"
+      "filterGroups": "Groups",
+      "you": "(You)"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -220,7 +221,7 @@
       "assignmentUpdateFailed": "Failed to update assignment",
       "networkError": "network error",
       "documentFallback": "Document",
-      "you": "You",
+      "you": "(You)",
       "group": "Group",
       "unreadDivider": "{count, plural, one {# unread message} other {# unread messages}}",
       "unheardDivider": "{count, plural, one {# unheard message} other {# unheard messages}}"

@@ -925,7 +925,9 @@ export function MessageThread({
     );
   }
 
-  const displayName = isGroup ? conversation.group_name || t("group") : displayNameOf(contact!);
+  const baseName = isGroup ? conversation.group_name || t("group") : displayNameOf(contact!);
+  // Your own chat, like WhatsApp: "Guilherme Varela (Você)" (avatars keep the bare name).
+  const displayName = conversation.is_self ? `${baseName} ${t("you")}` : baseName;
   const messageGroups = groupMessagesByDate(messages);
   // WhatsApp's "Mensagem não lida/não ouvida: N" line above the messages
   // that were unread when the chat was opened (phase 5e).
@@ -983,7 +985,7 @@ export function MessageThread({
                 <Users className="size-5 text-muted-foreground" />
               </span>
             ) : (
-              <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact!.avatar_url} name={displayName} size={40} />
+              <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact!.avatar_url} name={baseName} size={40} />
             )}
           </>
         }
