@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { byRecency } from "@/lib/conversations/order";
+import { contactDisplayName } from "@/lib/whatsapp/phone-display";
 import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
@@ -445,7 +446,7 @@ function ConversationItem({
 }: ConversationItemProps) {
   const previewOf = usePreviewParts();
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t("unknown");
+  const displayName = (contact && contactDisplayName(contact)) || t("unknown");
   const unread = conversation.unread_count > 0;
 
   const handleClick = useCallback(() => {

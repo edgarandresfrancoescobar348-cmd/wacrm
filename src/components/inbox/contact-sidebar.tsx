@@ -24,6 +24,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import { formatDateTimeMedium, formatMoney } from "@/lib/locale-format";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { contactDisplayName, contactHandleDisplay } from '@/lib/whatsapp/phone-display';
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -148,8 +149,9 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
     );
   }
 
-  const displayName = contact.name || contactHandle(contact);
-  const handle = contactHandle(contact);
+  const displayName = contactDisplayName(contact);
+  // Shown formatted (+55 11 93373-9259); the copy button copies the raw number.
+  const handle = contactHandleDisplay(contact);
 
   return (
     <WaDrawerPanel

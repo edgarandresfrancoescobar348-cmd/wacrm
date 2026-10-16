@@ -63,7 +63,7 @@ import { TemplatePicker } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
-import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { contactDisplayName as displayNameOf, contactHandleDisplay } from "@/lib/whatsapp/phone-display";
 import { toast } from "sonner";
 
 interface ReplyDraft {
@@ -784,7 +784,7 @@ export function MessageThread({
   }, [reactions]);
 
   const contactDisplayName =
-    contact?.name || (contact ? contactHandle(contact) : "") || t("customer");
+    (contact ? displayNameOf(contact) : "") || t("customer");
 
   // Author label for a quoted message: "You" when we sent the parent,
   // contact name when the customer sent it.
@@ -907,7 +907,7 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contactHandle(contact);
+  const displayName = displayNameOf(contact);
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -953,7 +953,8 @@ export function MessageThread({
         title={displayName}
         subtitle={
           <>
-            {contactHandle(contact)}
+            {/* The number only when the title is a name, not the number again. */}
+            {contactHandleDisplay(contact) !== displayName ? contactHandleDisplay(contact) : null}
             {/* 24h session window — red once it has expired. Not
                 rendered on a QR-code connection (no window there). */}
             {serviceWindow && (
@@ -1132,7 +1133,7 @@ export function MessageThread({
                           authorLabel:
                             parent.sender_type === "agent" || parent.sender_type === "bot"
                               ? t("you")
-                              : contact?.name || contact?.phone || t("unknown"),
+                              : (contact && displayNameOf(contact)) || t("unknown"),
                           preview: buildReplyPreview(parent, tQuote),
                         }
                       : null;
