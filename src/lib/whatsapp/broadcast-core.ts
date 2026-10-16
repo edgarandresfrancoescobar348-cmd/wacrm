@@ -214,7 +214,9 @@ export async function createBroadcast(
       p_total_recipients: deduped.length,
       p_contact_ids: deduped.map((r) => r.contactId),
       // Frozen per-recipient params (migration 038) — without them a
-      // resume of this broadcast has no way to reconstruct {{1}}.
+      // resume of this broadcast has no way to reconstruct {{1}}. Sent as
+      // ONE JSON array (element i = recipient i's params); the RPC takes
+      // JSONB since 055 — as JSONB[] PostgREST made it a 2-D array.
       p_template_params: deduped.map((r) => r.params),
     }
   );

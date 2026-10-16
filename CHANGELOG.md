@@ -18,7 +18,8 @@ gateway, next to the official Meta Cloud API.
 > `048_openwa_delivery_state.sql`, `049_openwa_replay_guards.sql` and
 > `050_message_status_pending.sql`, `051_definer_search_path.sql`,
 > `052_apply_message_receipt.sql`, `053_inbound_completion.sql` and
-> `054_broadcast_send_checkpoint.sql`, in order. All additive; existing rows
+> `054_broadcast_send_checkpoint.sql` and `055_broadcast_params_jsonb.sql`,
+> in order. All additive; existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -26,7 +27,8 @@ gateway, next to the official Meta Cloud API.
 > session-event watermark; 050 `message_status_pending` and the triggers that
 > apply early delivery receipts; 051 pins the definer functions'
 > search_path; 052 the atomic receipt function; 053 inbound completion;
-> 054 the broadcast send checkpoint and automatic continuation flag.
+> 054 the broadcast send checkpoint and automatic continuation flag; 055
+> fixes per-recipient params on `POST /api/v1/broadcasts`.
 
 ### Added
 
@@ -74,6 +76,9 @@ gateway, next to the official Meta Cloud API.
   (`/api/automations/cron`, or `/api/whatsapp/broadcast/cron`) — also for
   public-API broadcasts. A send cut off mid-way is re-sent only where the
   provider de-duplicates (OpenWA Idempotency-Key).
+- `POST /api/v1/broadcasts` with per-recipient `params` no longer fails
+  with 500 (the params reached the database as a 2-D array and created
+  recipients without a contact).
 - Delivery receipts are applied by one atomic, monotonic database operation
   (no lost or regressed ticks under concurrency); an inbound message is
   acknowledged only after its unread/summary update, repaired on
