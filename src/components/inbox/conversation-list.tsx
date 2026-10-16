@@ -46,6 +46,7 @@ import {
 } from "@/components/layout/wa-panel";
 import { formatListTime } from "./wa-format";
 import { usePreviewParts } from "./message-preview";
+import { filterOptionsFor, type InboxFilter } from "@/lib/inbox/filters";
 import { previewLead } from "@/lib/inbox/preview-lead";
 import { StatusIcon } from "./message-bubble";
 
@@ -63,6 +64,8 @@ interface ConversationListProps {
   resyncToken?: number;
   /** Optional notice rendered under the filter chips (e.g. WhatsApp not connected). */
   banner?: React.ReactNode;
+  /** QR-code mode: the phone's filters come first, "Grupos" always shown. */
+  qrMode?: boolean;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -71,7 +74,6 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: "bg-muted-foreground",
 };
 
-type InboxFilter = ConversationStatus | "all" | "unread" | "groups";
 
 export function ConversationList({
   activeConversationId,
@@ -80,18 +82,13 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
   banner,
+  qrMode = false,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   const tThread = useTranslations("Inbox.messageThread");
   const locale = useLocale();
   
-  const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
-    { label: t("filterAll"), value: "all" },
-    { label: t("filterUnread"), value: "unread" },
-    { label: t("filterOpen"), value: "open" },
-    { label: t("filterPending"), value: "pending" },
-    { label: t("filterClosed"), value: "closed" },
-  ], [t]);
+
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
@@ -256,6 +253,12 @@ export function ConversationList({
     [conversations],
   );
   const hasGroups = useMemo(() => conversations.some((c) => c.is_group), [conversations]);
+  // WhatsApp's order — Todas, Não lidas, Grupos — then the CRM's own.
+  // "Grupos" is always there in QR mode (the phone has it with no groups too).
+  const filterOptions = useMemo(
+    () => filterOptionsFor({ qrMode, hasGroups }, t),
+    [qrMode, hasGroups, t],
+  );
 
   return (
     <WaListPanel
@@ -304,7 +307,7 @@ export function ConversationList({
       filters={
         <div className="space-y-2">
           <WaChipRow>
-            {[...FILTER_OPTIONS, ...(hasGroups ? [{ label: t("filterGroups"), value: "groups" as InboxFilter }] : [])].map((opt) => (
+            {filterOptions.map((opt) => (
               <WaChip
                 key={opt.value}
                 active={filter === opt.value}

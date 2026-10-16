@@ -599,6 +599,7 @@ function InboxPageInner() {
           onConversationsLoaded={handleConversationsLoaded}
           resyncToken={resyncToken}
           banner={connectionBanner}
+          qrMode={whatsapp.provider === "openwa"}
         />
       }
     >
