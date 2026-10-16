@@ -76,6 +76,13 @@ gateway, next to the official Meta Cloud API.
   (`/api/automations/cron`, or `/api/whatsapp/broadcast/cron`) — also for
   public-API broadcasts. A send cut off mid-way is re-sent only where the
   provider de-duplicates (OpenWA Idempotency-Key).
+- Public API header variables: `POST /api/v1/messages` (`template.params`)
+  and `POST /api/v1/broadcasts` (per recipient `params`) take the
+  structured `{ "body": [...], "headerText": "..." }` besides the plain
+  array; a template whose header has `{{1}}` without a value is a
+  `400 template_header_param_required` instead of a literal `{{1}}` (QR)
+  or a Meta rejection. The MCP server's `send_message` / `send_broadcast`
+  accept the same shape.
 - `POST /api/v1/broadcasts` with per-recipient `params` no longer fails
   with 500 (the params reached the database as a 2-D array and created
   recipients without a contact).

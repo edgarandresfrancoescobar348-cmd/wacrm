@@ -17,6 +17,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
+import { extractVariableIndices } from '@/lib/whatsapp/template-validators';
 import type { MessageTemplate } from '@/types';
 
 /**
@@ -170,5 +172,54 @@ export function templateContentText(
   return renderTemplateBody(row.body_text, params);
 }
 
+
+/**
+ * True when the template's TEXT header has a {{1}} and the send carries
+ * no value for it. Meta rejects such a send and a QR-code connection
+ * would deliver the literal `{{1}}` — callers answer 400 instead. False
+ * when the account has no local row (nothing to check against).
+ */
+export function templateHeaderTextMissing(
+  row: MessageTemplate | null,
+  messageParams?: SendTimeParams | null
+): boolean {
+  if (!row || row.header_type !== 'text') return false;
+  if (extractVariableIndices(row.header_content ?? '').length === 0) return false;
+  const value = messageParams?.headerText;
+  return !(typeof value === 'string' && value.trim());
+}
+
+/**
+ * Per-recipient/per-message template params as the public API accepts
+ * them — the same two shapes `POST /api/v1/messages` always took:
+ *
+ *   ["A123"]                                   positional body values
+ *   { "body": ["A123"], "headerText": "Ana" }  structured (SendTimeParams)
+ *
+ * Returns null for anything else (the caller answers 400). Only body and
+ * the header text are read from the structured form.
+ */
+export function parseApiTemplateParams(
+  value: unknown
+): { body: string[]; headerText?: string } | null {
+  if (value === undefined || value === null) return { body: [] };
+  if (Array.isArray(value)) {
+    return value.every((v) => typeof v === 'string') ? { body: value as string[] } : null;
+  }
+  if (typeof value !== 'object') return null;
+  const { body, headerText } = value as { body?: unknown; headerText?: unknown };
+  if (body !== undefined && !(Array.isArray(body) && body.every((v) => typeof v === 'string'))) {
+    return null;
+  }
+  if (headerText !== undefined && typeof headerText !== 'string') return null;
+  return {
+    body: (body as string[] | undefined) ?? [],
+    ...(typeof headerText === 'string' && headerText.trim() ? { headerText } : {}),
+  };
+}
+
+/** The message every API caller gets for a missing header variable. */
+export const HEADER_TEXT_REQUIRED_MESSAGE =
+  'This template has a variable in its header ({{1}}) — pass its value as "headerText" in the structured params: { "body": [...], "headerText": "..." }.';
 
 export { templateUsableOn, templateModeFor } from './template-usable';

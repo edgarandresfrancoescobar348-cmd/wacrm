@@ -12,7 +12,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { WacrmClient } from '../client.js';
-import { errorResult, handle, jsonResult } from './shared.js';
+import { errorResult, handle, jsonResult, templateParamsSchema } from './shared.js';
 
 export function registerBroadcastTools(server: McpServer, client: WacrmClient): void {
   server.registerTool(
@@ -31,10 +31,9 @@ export function registerBroadcastTools(server: McpServer, client: WacrmClient): 
           .array(
             z.object({
               to: z.string().describe('Recipient phone number in E.164 format.'),
-              params: z
-                .array(z.string())
-                .optional()
-                .describe('Positional template body variables for this recipient.'),
+              params: templateParamsSchema.describe(
+                'Positional template body variables for this recipient — or { body, headerText } when the template header has a variable {{1}} (headerText is then required).',
+              ),
             }),
           )
           .min(1)

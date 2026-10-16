@@ -28,7 +28,13 @@ import {
   type WhatsAppTransport,
 } from '@/lib/whatsapp/transport';
 import { paceBroadcastSend, type PaceOptions } from '@/lib/whatsapp/transport/pacing';
-import { resolveTemplateRow, templateUsableOn } from '@/lib/whatsapp/template-body';
+import {
+  HEADER_TEXT_REQUIRED_MESSAGE,
+  parseApiTemplateParams,
+  resolveTemplateRow,
+  templateHeaderTextMissing,
+  templateUsableOn,
+} from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
 
@@ -47,8 +53,12 @@ export class BroadcastError extends Error {
 export interface BroadcastRecipientInput {
   /** E.164 phone. */
   to: string;
-  /** Positional body params for the template ({{1}}, {{2}}…). */
-  params?: string[];
+  /**
+   * Positional body params for the template ({{1}}, {{2}}…), or the
+   * structured form `{ body?: string[], headerText?: string }` when the
+   * template's header has a variable (see parseApiTemplateParams).
+   */
+  params?: unknown;
 }
 
 export interface CreateBroadcastParams {
@@ -64,6 +74,8 @@ interface PlannedRecipient {
   idempotencyKey?: string;
   phone: string;
   params: string[];
+  /** Value for a TEXT header {{1}}, when the template has one. */
+  headerText?: string;
 }
 
 export interface BroadcastPlan {
@@ -142,14 +154,34 @@ export async function createBroadcast(
     );
   }
 
+  // Params shape and a header {{1}} without a value are caller errors
+  // for the whole request — answered before any contact or row exists.
+  const parsedParams = recipients.map((r) => parseApiTemplateParams(r?.params));
+  const malformedAt = parsedParams.findIndex((p) => p === null);
+  if (malformedAt !== -1) {
+    throw new BroadcastError(
+      'bad_request',
+      `recipients[${malformedAt}].params must be an array of strings or { body?: string[], headerText?: string }`,
+      400
+    );
+  }
+  const missingHeaderAt = parsedParams.findIndex((p) => templateHeaderTextMissing(templateRow, p));
+  if (missingHeaderAt !== -1) {
+    throw new BroadcastError(
+      'template_header_param_required',
+      `recipients[${missingHeaderAt}]: ${HEADER_TEXT_REQUIRED_MESSAGE}`,
+      400
+    );
+  }
+
   // Resolve each recipient to a contact. Invalid phones are dropped
   // (counted as rejected) rather than aborting the whole broadcast.
   // `to` is raw integrator input, so the leading `+` is required — a
   // national-format number would otherwise be delivered to whichever
   // country its leading digits spell (issue #586).
-  const resolved: { contactId: string; phone: string; params: string[] }[] = [];
+  const resolved: { contactId: string; phone: string; params: string[]; headerText?: string }[] = [];
   let rejected = 0;
-  for (const r of recipients) {
+  for (const [index, r] of recipients.entries()) {
     const to = typeof r.to === 'string' ? r.to : '';
     const sanitized = parseInternationalPhone(to);
     if (!sanitized) {
@@ -162,9 +194,8 @@ export async function createBroadcast(
     resolved.push({
       contactId: id,
       phone: sanitized,
-      params: Array.isArray(r.params)
-        ? r.params.filter((p): p is string => typeof p === 'string')
-        : [],
+      params: parsedParams[index]!.body,
+      ...(parsedParams[index]!.headerText ? { headerText: parsedParams[index]!.headerText } : {}),
     });
   }
 
@@ -217,7 +248,11 @@ export async function createBroadcast(
       // resume of this broadcast has no way to reconstruct {{1}}. Sent as
       // ONE JSON array (element i = recipient i's params); the RPC takes
       // JSONB since 055 — as JSONB[] PostgREST made it a 2-D array.
-      p_template_params: deduped.map((r) => r.params),
+      // A header value is frozen with the body as the structured form;
+      // without one the stored shape stays the plain array it always was.
+      p_template_params: deduped.map((r) =>
+        r.headerText ? { body: r.params, headerText: r.headerText } : r.params
+      ),
     }
   );
   if (createErr || !createdRows || createdRows.length === 0) {
@@ -233,7 +268,12 @@ export async function createBroadcast(
   const planned: PlannedRecipient[] = createdRows.map(
     (row: { recipient_id: string; contact_id: string }) => {
       const r = byContact.get(row.contact_id)!;
-      return { recipientRowId: row.recipient_id, phone: r.phone, params: r.params };
+      return {
+        recipientRowId: row.recipient_id,
+        phone: r.phone,
+        params: r.params,
+        ...(r.headerText ? { headerText: r.headerText } : {}),
+      };
     }
   );
 
@@ -310,20 +350,30 @@ export async function deliverBroadcast(
       language: plan.templateLanguage,
       template: plan.templateRow,
       params: recipient.params,
+      ...(recipient.headerText ? { messageParams: { headerText: recipient.headerText } } : {}),
       sendBy: opts.sendBy,
       // De-duplicated by providers that support it (OpenWA): a recipient
       // interrupted mid-send can be re-sent by the next pass safely.
       idempotencyKey: recipient.idempotencyKey ?? `broadcast-recipient:${recipient.recipientRowId}`,
     };
 
+    // 0. A header {{1}} without a value (a row frozen before the
+    //    template gained one, resumed later): never send a literal
+    //    {{1}} (QR) or a request Meta rejects — fail the recipient.
+    if (templateHeaderTextMissing(plan.templateRow, { headerText: recipient.headerText })) {
+      lastError = HEADER_TEXT_REQUIRED_MESSAGE;
+    }
+
     // 1. Slow, send-independent work (a media header to inline) BEFORE a
     //    paced slot is reserved — the slot then only waits on the
     //    provider. Cached per transport, so it runs once per pass.
-    try {
-      await plan.transport.prepareTemplate?.(templateArgs);
-    } catch (error) {
-      if (error instanceof SendBudgetExceededError) break;
-      lastError = error instanceof Error ? error.message : 'Unknown error';
+    if (!lastError) {
+      try {
+        await plan.transport.prepareTemplate?.(templateArgs);
+      } catch (error) {
+        if (error instanceof SendBudgetExceededError) break;
+        lastError = error instanceof Error ? error.message : 'Unknown error';
+      }
     }
 
     // 2. Provider pacing (a no-op on Meta) bounded by the time budget,

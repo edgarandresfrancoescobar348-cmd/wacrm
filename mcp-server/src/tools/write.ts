@@ -10,7 +10,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { WacrmClient } from '../client.js';
-import { handle, jsonResult } from './shared.js';
+import { handle, jsonResult, templateParamsSchema } from './shared.js';
 
 const templateSchema = z
   .object({
@@ -20,10 +20,9 @@ const templateSchema = z
         'Template name — Meta-approved on the official API; on a QR-code (OpenWA) connection a local template, rendered and sent as text.',
       ),
     language: z.string().describe('Template language code, e.g. "en_US".'),
-    params: z
-      .array(z.string())
-      .optional()
-      .describe('Positional body variables, in order.'),
+    params: templateParamsSchema.describe(
+      'Positional body variables, in order — or { body, headerText } when the template header has a variable {{1}} (headerText is then required).',
+    ),
   })
   .describe('Template payload — required when type is "template".');
 

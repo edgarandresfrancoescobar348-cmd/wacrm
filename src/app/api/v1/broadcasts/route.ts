@@ -9,7 +9,9 @@
 //     "template_language": "en_US",         // optional (default en_US)
 //     "recipients": [                        // required, 1..1000
 //       { "to": "+14155550123", "params": ["Jane"] },
-//       { "to": "+14155550124" }
+//       { "to": "+14155550124" },
+//       // structured, when the template header has a {{1}} (required then):
+//       { "to": "+14155550125", "params": { "body": ["Ana"], "headerText": "#101" } }
 //     ]
 //   }
 //
@@ -73,7 +75,8 @@ export async function POST(request: Request) {
           : null,
       recipients: recipients.map((r) => ({
         to: typeof r?.to === 'string' ? r.to : '',
-        params: Array.isArray(r?.params) ? r.params : undefined,
+        // Array (body) or { body, headerText } — validated in createBroadcast.
+        params: r?.params,
       })),
     });
 

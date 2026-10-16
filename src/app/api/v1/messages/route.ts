@@ -20,7 +20,9 @@
 //     "template": {                          // required when type=template
 //       "name": "order_update",
 //       "language": "en_US",
-//       "params": ["A123"] | { "body": [...] }   // array = positional body; object = structured
+//       "params": ["A123"] | { "body": [...], "headerText": "…" }
+//                                            // array = positional body; object = structured
+//                                            // (headerText fills a header {{1}}; required then)
 //     },
 //     "reply_to_message_id": "<uuid>",       // optional, must be in the same conversation
 //     "name": "Jane Doe"                     // optional, names a newly-created contact
@@ -34,6 +36,13 @@
 import { requireApiKey } from '@/lib/auth/api-context';
 import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
+import {
+  HEADER_TEXT_REQUIRED_MESSAGE,
+  parseApiTemplateParams,
+  resolveTemplateRow,
+  templateHeaderTextMissing,
+} from '@/lib/whatsapp/template-body';
+import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
 import {
   sendMessageToConversation,
   validateSendMessageParams,
@@ -76,6 +85,16 @@ export async function POST(request: Request) {
       template?.params && !Array.isArray(template.params)
         ? template.params
         : undefined;
+    if (
+      templateMessageParams !== undefined &&
+      parseApiTemplateParams(templateMessageParams) === null
+    ) {
+      return fail(
+        'bad_request',
+        "'template.params' must be an array of strings or { body?: string[], headerText?: string }",
+        400
+      );
+    }
 
     // Validate the message shape BEFORE resolveConversationByPhone
     // finds-or-creates a contact + conversation, so a bad payload 400s
@@ -94,6 +113,25 @@ export async function POST(request: Request) {
       templateName: typeof template?.name === 'string' ? template.name : null,
       interactivePayload,
     });
+
+    // A header variable with no value is a caller error — checked here,
+    // before a contact is created (the send core checks it again).
+    if (type === 'template' && typeof template?.name === 'string') {
+      const resolvedTemplate = await resolveTemplateRow(
+        ctx.supabase,
+        ctx.accountId,
+        template.name,
+        typeof template.language === 'string' ? template.language : null
+      );
+      if (
+        templateHeaderTextMissing(
+          resolvedTemplate.row,
+          templateMessageParams as SendTimeParams | undefined
+        )
+      ) {
+        return fail('template_header_param_required', HEADER_TEXT_REQUIRED_MESSAGE, 400);
+      }
+    }
 
     // Find-or-create the conversation for this phone, then send. Both
     // steps share `SendMessageError`, so one catch maps the whole

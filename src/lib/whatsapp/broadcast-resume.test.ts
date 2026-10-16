@@ -446,3 +446,25 @@ describe('planBroadcastResume — interrupted recipients (G7)', () => {
     expect(plan.planned.map((p) => p.recipientRowId)).toEqual(['r2']);
   });
 });
+
+describe('planBroadcastResume — header params', () => {
+  it('reads the structured frozen params { body, headerText }', async () => {
+    const { plan } = await planBroadcastResume(
+      planDb({
+        broadcast: BROADCAST,
+        config: CONFIG,
+        recipients: [
+          recipient('r1', '+15551234567', { body: ['A123'], headerText: '#101' }),
+          recipient('r2', '+15559876543', ['B456']),
+        ],
+      }),
+      'acct-1',
+      'bc-1',
+      'pending',
+    );
+    expect(plan.planned.map((p) => [p.params, p.headerText])).toEqual([
+      [['A123'], '#101'],
+      [['B456'], undefined],
+    ]);
+  });
+});

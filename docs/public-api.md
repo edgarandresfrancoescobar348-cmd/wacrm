@@ -153,6 +153,22 @@ curl -X POST https://your-crm.example.com/api/v1/messages \
 }
 ```
 
+`template.params` takes one of two shapes:
+
+- `["A123", "Friday"]`: the positional body values `{{1}}`, `{{2}}`, …
+- `{ "body": ["A123", "Friday"], "headerText": "#101" }`: the structured
+  form, the same `body` / `headerText` the dashboard composer sends.
+  `headerText` fills the template's **header** variable `{{1}}`.
+
+When the template's text header has a variable, `headerText` is
+**required**: a call without it gets
+`400 template_header_param_required` before anything is created or sent.
+That holds on both connection types. On the official API the value goes
+out as the template's header component. On a QR-code connection it is
+rendered into the header line, so the customer never sees a literal
+`{{1}}`. Templates without a header variable keep working with the plain
+array.
+
 Response (201):
 
 ```json
@@ -168,7 +184,8 @@ Response (201):
 ```
 
 Domain error codes beyond the table above: `whatsapp_not_configured`
-(400), `meta_error` (502 — the request reached Meta and it rejected the
+(400), `template_header_param_required` (400 — see above),
+`meta_error` (502 — the request reached Meta and it rejected the
 send), `template_malformed` (500).
 
 ### `GET /api/v1/contacts`
@@ -248,6 +265,14 @@ curl -X POST https://your-crm.example.com/api/v1/broadcasts \
         ]
       }'
 ```
+
+Each recipient's `params` takes the same two shapes as
+`POST /api/v1/messages`: a positional body array, or
+`{ "body": [...], "headerText": "..." }`. If the template's header has a
+variable, **every** recipient needs `headerText`. Otherwise the whole
+request fails with `400 template_header_param_required`, and the
+message names the first offending `recipients[i]`. A `params` value of
+any other shape is `400 bad_request`. In both cases nothing is created.
 
 Recipients are capped at **1000 per request** — split larger sends.
 Invalid phone numbers — including any without a leading `+` and country

@@ -479,9 +479,11 @@ export interface BroadcastRecipient {
    * Positional body values for this recipient's template send
    * ({{1}}, {{2}}, …), frozen when the broadcast was planned so a
    * server-side resume reproduces the original pass exactly.
-   * Added in migration 038; null on rows created before it.
+   * Added in migration 038; null on rows created before it. Public-API
+   * broadcasts whose template header has a {{1}} freeze the structured
+   * form `{ body, headerText }` instead.
    */
-  template_params?: string[] | null;
+  template_params?: string[] | { body: string[]; headerText?: string } | null;
   created_at: string;
   contact?: Contact;
 }

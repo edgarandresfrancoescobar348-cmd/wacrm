@@ -10,6 +10,7 @@
 // ============================================================
 
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
 import { WacrmApiError } from '../client.js';
 
 export function jsonResult(payload: unknown): CallToolResult {
@@ -43,3 +44,20 @@ export function handle<A>(
     }
   };
 }
+
+/**
+ * Template params as the public API takes them: positional body values,
+ * or the structured form when the template's header has a variable.
+ */
+export const templateParamsSchema = z
+  .union([
+    z.array(z.string()),
+    z.object({
+      body: z.array(z.string()).optional().describe('Positional body variables, in order.'),
+      headerText: z
+        .string()
+        .optional()
+        .describe('Value for the header variable {{1}} — required when the template header has one.'),
+    }),
+  ])
+  .optional();

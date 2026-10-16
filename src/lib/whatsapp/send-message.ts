@@ -41,8 +41,10 @@ import type { MessageTemplate } from '@/types';
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
 import {
   resolveTemplateRow,
+  HEADER_TEXT_REQUIRED_MESSAGE,
   templateBodyParams,
   templateContentText,
+  templateHeaderTextMissing,
   templateUsableOn,
 } from '@/lib/whatsapp/template-body';
 
@@ -326,6 +328,11 @@ export async function sendMessageToConversation(
         'This template’s current version is not approved by Meta (local, draft or in review) — submit it in Settings → Templates and wait for approval.',
         400
       );
+    }
+    // A header {{1}} with no value: Meta rejects the send (it surfaced
+    // as a 502) and a QR-code connection would deliver a literal {{1}}.
+    if (templateHeaderTextMissing(templateRow, templateMessageParams as SendTimeParams | null | undefined)) {
+      throw new SendMessageError('template_header_param_required', HEADER_TEXT_REQUIRED_MESSAGE, 400);
     }
   }
 

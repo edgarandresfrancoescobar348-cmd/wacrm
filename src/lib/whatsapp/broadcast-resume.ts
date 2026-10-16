@@ -24,7 +24,7 @@ import {
   type BroadcastPlan,
 } from '@/lib/whatsapp/broadcast-core';
 import { chunk } from '@/lib/supabase/paged-query';
-import { resolveTemplateRow, templateUsableOn } from '@/lib/whatsapp/template-body';
+import { parseApiTemplateParams, resolveTemplateRow, templateUsableOn } from '@/lib/whatsapp/template-body';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 
 /** Which recipients a resume pass picks up. */
@@ -278,9 +278,9 @@ export async function planBroadcastResume(
           ? `broadcast-recipient:${row.id}:retry:${Date.now()}`
           : `broadcast-recipient:${row.id}`,
       phone: sanitizePhoneForMeta(contactPhone(row) ?? ''),
-      params: Array.isArray(row.template_params)
-        ? row.template_params.filter((p): p is string => typeof p === 'string')
-        : [],
+      // Frozen as a plain array, or as { body, headerText } when the
+      // template's header has a variable (v1 broadcasts).
+      ...frozenParams(row.template_params),
     })),
     rejected: 0,
   };
@@ -301,4 +301,14 @@ export async function markBroadcastSending(
     .from('broadcasts')
     .update({ status: 'sending', updated_at: new Date().toISOString() })
     .eq('id', broadcastId);
+}
+
+function frozenParams(value: unknown): { params: string[]; headerText?: string } {
+  if (Array.isArray(value)) {
+    return { params: value.filter((p): p is string => typeof p === 'string') };
+  }
+  const parsed = parseApiTemplateParams(value);
+  return parsed
+    ? { params: parsed.body, ...(parsed.headerText ? { headerText: parsed.headerText } : {}) }
+    : { params: [] };
 }

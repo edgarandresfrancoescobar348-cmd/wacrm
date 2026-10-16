@@ -506,3 +506,49 @@ describe('sendMessageToConversation — local template on Meta (F9)', () => {
     expect(sendTemplateMessage).toHaveBeenCalledTimes(1);
   });
 });
+
+// Header params (public API): a TEXT header with {{1}} needs a value.
+// Without one Meta rejected the send (a 502) and a QR-code connection
+// delivered the literal {{1}}.
+describe('sendMessageToConversation — header variable (header params v1)', () => {
+  const HEADER_ROW = { ...TEMPLATE_ROW, origin: 'meta', header_type: 'text', header_content: 'Pedido {{1}}' };
+
+  it('answers 400 before any provider call when the header value is missing', async () => {
+    sendTemplateMessage.mockClear();
+    const captured: CapturedWrites = {};
+    await expect(
+      sendMessageToConversation(sendPathDb([HEADER_ROW], captured), 'acct-1', {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+        templateParams: ['A', 'B'],
+      })
+    ).rejects.toMatchObject({ code: 'template_header_param_required', status: 400 });
+    expect(sendTemplateMessage).not.toHaveBeenCalled();
+    expect(captured.message).toBeUndefined();
+  });
+
+  it('passes headerText through to the provider', async () => {
+    sendTemplateMessage.mockClear();
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(sendPathDb([HEADER_ROW], captured), 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'template',
+      templateName: 'order_update',
+      templateMessageParams: { body: ['A', 'B'], headerText: '#101' },
+    });
+    const args = (sendTemplateMessage.mock.calls[0] as unknown as [{ messageParams: { headerText: string } }])[0];
+    expect(args.messageParams.headerText).toBe('#101');
+  });
+
+  it('a template without a header variable is unaffected', async () => {
+    sendTemplateMessage.mockClear();
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(
+      sendPathDb([{ ...HEADER_ROW, header_content: 'Pedido' }], captured),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'template', templateName: 'order_update', templateParams: ['A', 'B'] }
+    );
+    expect(sendTemplateMessage).toHaveBeenCalledTimes(1);
+  });
+});
