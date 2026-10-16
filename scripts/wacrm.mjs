@@ -45,6 +45,11 @@ function embeddedEnabled() {
   if (!fs.existsSync(path.join(OPENWA_DIR, 'package.json'))) {
     return { on: false, why: 'packages/openwa is not present' }
   }
+  // OpenWA runs on this same Node and needs >= 22.19 (packages/openwa/package.json).
+  const [major, minor] = process.versions.node.split('.').map(Number)
+  if (major < 22 || (major === 22 && minor < 19)) {
+    return { on: false, why: `Node ${process.versions.node} is too old for the gateway (needs >= 22.19)` }
+  }
   return { on: true, why: '' }
 }
 

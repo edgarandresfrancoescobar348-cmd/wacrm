@@ -22,6 +22,19 @@ services:
     # healthcheck below.
     environment:
       PORT: 3000
+      # The embedded WhatsApp gateway (QR-code mode). wacrm owns it: the
+      # URL is the compose service, the admin key is generated once by
+      # `openwa-key` into a volume both containers mount. Nothing to type.
+      OPENWA_URL: http://openwa:2785
+      OPENWA_API_KEY_FILE: /run/wacrm-gateway/gateway.key
+      OPENWA_WEBHOOK_BASE_URL: http://app:3000
+    volumes:
+      - gateway-key:/run/wacrm-gateway:ro
+    depends_on:
+      openwa-key:
+        condition: service_completed_successfully
+      openwa:
+        condition: service_started
     # Host side only — HOST_PORT=8080 publishes the app on :8080.
     ports:
       - '${HOST_PORT:-3000}:3000'
@@ -40,36 +53,66 @@ services:
       start_period: 15s
 
   # ----------------------------------------------------------------
-  # Optional: OpenWA gateway for the "QR Code" connection mode
-  # (Settings → WhatsApp). Off by default — start it with
-  #   docker compose --profile openwa up -d
-  # Its admin API key is generated on first boot:
-  #   docker compose exec openwa cat /app/data/.api-key
-  # In Settings → WhatsApp → QR Code use URL http://openwa:2785 and that
-  # key, and set in .env.local:
-  #   OPENWA_ALLOWED_HOSTS=openwa             (private host allow-list)
-  #   OPENWA_WEBHOOK_BASE_URL=http://app:3000 (where OpenWA posts events)
-  # See docs/openwa.md. Pin a release instead of `latest` in production.
+  # The WhatsApp gateway for the "QR Code" connection mode, built from
+  # the OpenWA source vendored in packages/openwa (git subtree). It is
+  # part of wacrm: no profile, nothing to configure. Its admin API is
+  # not published — only `app` talks to it, over the compose network.
+  # Engine: whatsapp-web.js (default, lower ban risk) or baileys via
+  # OPENWA_ENGINE_TYPE; changing it requires re-scanning the QR code.
   # ----------------------------------------------------------------
   openwa:
-    image: ghcr.io/rmyndharis/openwa:${OPENWA_VERSION:-latest}
-    profiles: ['openwa']
+    build:
+      context: ./packages/openwa
+    image: wacrm-openwa:local
     restart: unless-stopped
     stop_grace_period: 75s
+    depends_on:
+      openwa-key:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       PORT: 2785
-      # whatsapp-web.js (default, lower ban risk) or baileys. Changing it
-      # requires re-scanning the QR code.
       ENGINE_TYPE: ${OPENWA_ENGINE_TYPE:-whatsapp-web.js}
-      # Lets OpenWA deliver webhooks to the wacrm container on the
-      # private compose network.
+      # Webhooks go to the wacrm container on the private network.
       SSRF_ALLOWED_HOSTS: app
+      # wacrm is the UI; OpenWA's own dashboard is not served.
+      SERVE_DASHBOARD: 'false'
+    # The provisioned key seeds OpenWA's admin key on its first boot
+    # (API_MASTER_KEY; an existing data volume keeps the key it has —
+    # openwa-key adopts it).
+    command: ['sh', '-c', 'API_MASTER_KEY="$$(cat /run/wacrm-gateway/gateway.key)" exec node dist/main']
     volumes:
       - openwa-data:/app/data
-    # Loopback only: the dashboard + API are an admin surface.
-    ports:
-      - '127.0.0.1:${OPENWA_HOST_PORT:-2785}:2785'
+      - gateway-key:/run/wacrm-gateway:ro
+
+  # One-shot: generate the gateway admin key on the first `up` (or adopt
+  # the key an existing OpenWA data volume already holds), then exit.
+  openwa-key:
+    build:
+      context: ./packages/openwa
+    image: wacrm-openwa:local
+    restart: 'no'
+    user: root
+    entrypoint: ['node', '-e']
+    command:
+      - |
+        const fs = require('fs'), crypto = require('crypto');
+        const file = '/run/wacrm-gateway/gateway.key';
+        const have = fs.existsSync(file) && fs.readFileSync(file, 'utf8').trim();
+        if (!have) {
+          let key = '';
+          try { key = fs.readFileSync('/app/data/.api-key', 'utf8').trim(); } catch {}
+          const source = key ? 'adopted' : 'generated';
+          if (!key) key = 'owa_k1_' + crypto.randomBytes(32).toString('hex');
+          fs.writeFileSync(file, key + '\n', { mode: 0o644 });
+          console.log('wacrm gateway key ' + source + ' (' + key.slice(0, 10) + '…)');
+        } else {
+          console.log('wacrm gateway key present (' + have.slice(0, 10) + '…)');
+        }
+    volumes:
+      - openwa-data:/app/data:ro
+      - gateway-key:/run/wacrm-gateway
 
 volumes:
   openwa-data:
+  gateway-key:
