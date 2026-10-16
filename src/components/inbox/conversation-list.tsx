@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { byRecency } from "@/lib/conversations/order";
+import { MentionText } from "./mention-text";
 import { contactDisplayName } from "@/lib/whatsapp/phone-display";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -472,7 +473,9 @@ function ConversationItem({
       subtitle={
         <>
           {MediaIcon ? <MediaIcon className="size-4 shrink-0" /> : null}
-          <span className="truncate">{preview.label}</span>
+          <span className="truncate">
+            <MentionText text={preview.label} plain />
+          </span>
         </>
       }
       trailing={
