@@ -31,6 +31,8 @@ import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { previewFor, type ContentMeta } from '@/lib/whatsapp/message-content'
 import { matchNumberedMenuReply } from './numbered-menu'
 import { runFanoutForMessage, type InboundFanoutPayload } from './fanout'
+import { isWaiting } from '@/lib/whatsapp/openwa/import-refresh'
+import { replaceWaitingPlaceholder } from '@/lib/whatsapp/openwa/placeholders'
 
 export interface InboundContent {
   contentText: string | null
@@ -711,6 +713,28 @@ export async function ingestInboundMessage(
   let messageRowId: string
   let repairing = false
   if (!insertedRows || insertedRows.length === 0) {
+    // An imported "waiting for this message" placeholder: the real message
+    // replaces it in place (phase 5f) — it was imported, so nothing runs.
+    if (
+      await replaceWaitingPlaceholder(supabaseAdmin(), {
+        conversationId: conversation.id,
+        messageId: inbound.messageId,
+        row: {
+          sender_type: 'customer',
+          status: 'delivered',
+          content_type: contentType,
+          content_text: contentText ?? null,
+          content_meta: contentMeta,
+          media_url: mediaUrl ?? null,
+          media_type: mediaType ?? null,
+          revoked_at: null,
+          ...parityColumns(parsed.extras),
+        },
+      })
+    ) {
+      console.info('[webhook] a waiting placeholder got its message:', inbound.messageId)
+      return
+    }
     const { data: existing, error: existingErr } = await supabaseAdmin()
       .from('messages')
       .select('id, ingest_completed_at')
@@ -866,11 +890,13 @@ export async function recordOutboundEcho(
 
   const { data: existing } = await supabaseAdmin()
     .from('messages')
-    .select('id')
+    .select('id, content_meta')
     .eq('conversation_id', conversationId)
     .eq('message_id', echo.messageId)
     .maybeSingle()
-  if (existing) return 'duplicate'
+  // An imported "waiting" placeholder is replaced below (phase 5f).
+  const waiting = Boolean(existing) && isWaiting((existing as { content_meta: ContentMeta | null }).content_meta)
+  if (existing && !waiting) return 'duplicate'
 
   const echoContent = await echo.resolveContent({ accountId })
   const { contentText, mediaUrl, mediaType } = echoContent
@@ -882,6 +908,25 @@ export async function recordOutboundEcho(
     : echo.type === 'sticker'
       ? 'image'
       : 'text'
+
+  if (waiting) {
+    const replaced = await replaceWaitingPlaceholder(supabaseAdmin(), {
+      conversationId,
+      messageId: echo.messageId,
+      row: {
+        sender_type: 'agent',
+        status: echoContent.extras?.status ?? 'sent',
+        content_type: contentType,
+        content_text: contentText ?? null,
+        content_meta: echoContent.meta ?? null,
+        media_url: mediaUrl ?? null,
+        media_type: mediaType ?? null,
+        revoked_at: null,
+        ...parityColumns(echoContent.extras),
+      },
+    })
+    return replaced ? 'recorded' : 'duplicate'
+  }
 
   let replyTo: string | null = null
   if (echo.contextMessageId) {

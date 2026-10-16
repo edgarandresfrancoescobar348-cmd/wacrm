@@ -86,7 +86,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
         ADD CONSTRAINT messages_conv_msg UNIQUE (conversation_id, message_id);
       CREATE TABLE public.profiles(user_id uuid, account_id uuid);
       CREATE SCHEMA IF NOT EXISTS auth; CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULL::uuid $$;`)
-    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql', '067_whatsapp_parity.sql']) await pg.migrate(m)
+    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql', '067_whatsapp_parity.sql', '069_whatsapp_chat_order.sql']) await pg.migrate(m)
     db = new PgSupabase(pg)
     h.db = db.asClient()
     gw = await startFakeOpenWa()
@@ -141,18 +141,19 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     await startHistoryImport(db.asClient(), ACCT, SESSION)
     const job = await run()
     expect(job?.status).toBe('done')
-    // individual only: Ana + Bruno (@lid → phone); group and status skipped
-    expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(2)
+    // Ana + Bruno (@lid → phone) + the group (phase 5f: every listed chat); status skipped
+    expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(3)
     expect(await pg.sql(`SELECT string_agg(phone || ':' || coalesce(name,''), ',' ORDER BY phone) FROM public.contacts`)).toBe('5511911110001:Ana Cliente,5511922220002:Bruno (lid)')
-    // Ana: 9 in history − placeholder − post-start = 7
+    // Ana: 9 in history − post-start = 8; the placeholder is WhatsApp's "waiting" bubble (phase 5f)
     const ana = await pg.sql(`SELECT c.id FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id WHERE ct.phone = '5511911110001'`)
-    expect(await count(`SELECT count(*) FROM public.messages WHERE conversation_id = '${ana}'`)).toBe(7)
+    expect(await count(`SELECT count(*) FROM public.messages WHERE conversation_id = '${ana}'`)).toBe(8)
     expect(await pg.sql(`SELECT string_agg(message_id || '|' || sender_type || '|' || content_type || '|' || coalesce(content_meta->>'kind','-') || '|' || (revoked_at IS NOT NULL) || '|' || (media_url IS NOT NULL), ',' ORDER BY created_at) FROM public.messages WHERE conversation_id = '${ana}'`)).toBe(
       [
         'h-ana-1|customer|text|-|false|false',
         'h-ana-2|agent|text|-|false|false',
         'h-ana-3|customer|image|-|false|true',
         'h-ana-4|customer|audio|voice|false|true',
+        'h-ana-5|customer|text|waiting|false|false',
         'h-ana-6|customer|text|call|false|false',
         'h-ana-7|customer|text|-|true|false',
         'h-ana-8|customer|location|location|false|false',
@@ -167,8 +168,13 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     // no bots, no automations, no AI, no webhooks, no fan-out tasks
     expect([h.flows, h.autos, h.ai, h.hooks]).toEqual([0, 0, 0, 0])
     expect(await count(`SELECT count(*) FROM public.inbound_fanout_tasks`)).toBe(0)
-    // 3 listed (Ana, Bruno and — phase 5e — the group, which has no history here: skipped).
-    expect(await pg.sql(`SELECT chats_total || '|' || chats_done || '|' || messages_imported FROM public.whatsapp_history_imports`)).toBe('3|2|8')
+    // 3 listed (Ana, Bruno and the group) — all three are conversations (phase 5f).
+    expect(await pg.sql(`SELECT chats_total || '|' || chats_done || '|' || messages_imported FROM public.whatsapp_history_imports`)).toBe('3|3|9')
+    // The group has no history here: an empty preview at WhatsApp's chat time, the phone's unread count.
+    expect(
+      await pg.sql(`SELECT coalesce(last_message_text, 'null') || '|' || extract(epoch FROM last_message_at)::bigint || '|' || extract(epoch FROM wa_sort_at)::bigint || '|' || unread_count FROM public.conversations WHERE is_group`),
+    ).toBe(`|${T0 + 400}|${T0 + 400}|5`)
+    expect(await pg.sql(`SELECT extract(epoch FROM wa_sort_at)::bigint FROM public.conversations WHERE id = '${ana}'`)).toBe(String(T0 + 300))
   })
 
   it('is idempotent: a re-run imports nothing twice', async () => {
@@ -177,7 +183,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     await startHistoryImport(db.asClient(), ACCT, SESSION)
     const again = await run()
     expect(again?.status).toBe('done')
-    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
     expect(await pg.sql(`SELECT messages_imported FROM public.whatsapp_history_imports`)).toBe('0')
   })
 
@@ -212,7 +218,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     await startHistoryImport(db.asClient(), ACCT, SESSION)
     await run()
     expect(await count(`SELECT count(*) FROM public.messages WHERE message_id = 'h-ana-1'`)).toBe(1)
-    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
   })
 
   it('Baileys (history 501): imports the gateway-stored messages and flags the limit', async () => {
@@ -221,7 +227,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     const job = await run()
     expect(job?.status).toBe('done')
     expect(await pg.sql(`SELECT limited_history FROM public.whatsapp_history_imports`)).toBe('t')
-    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
   })
 
   it('a disconnected session pauses the job (waiting_session), resumable', async () => {
@@ -233,7 +239,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     await pg.sql(`UPDATE public.whatsapp_history_imports SET next_run_at = now()`)
     const resumed = await run()
     expect(resumed?.status).toBe('done')
-    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
   })
 
   // Phase 5b: right after pairing the first /chats can take 90 s+.
@@ -260,7 +266,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     const resumed = await run()
     expect(resumed?.status).toBe('done')
     expect(await pg.sql(`SELECT coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('null')
-    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
   })
 
   it('a run whose lease expired (its process died) is reclaimed by the next tick; a live lease is not', async () => {
@@ -272,7 +278,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     await pg.sql(`UPDATE public.whatsapp_history_imports SET lease_until = now() - interval '1 second'`)
     const job = await run()
     expect(job?.status).toBe('done')
-    expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(2)
+    expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(3)
   })
 
   it('with too little of the run deadline left, the list call is not started; the next tick does it', async () => {
@@ -300,8 +306,8 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(job?.status).toBe('done')
     expect(throttled).toBeGreaterThanOrEqual(3)
     expect(Date.now() - before).toBeGreaterThanOrEqual(1_900) // waited 1 s per 429
-    expect(await pg.sql(`SELECT chats_done || '|' || errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('2|0|null')
-    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+    expect(await pg.sql(`SELECT chats_done || '|' || errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('3|0|null')
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
   })
 
   it('a gateway that keeps answering 429 pauses the run until its Retry-After; the chat stays queued, not failed', async () => {
@@ -322,7 +328,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     __resetImportPacingForTests()
     await pg.sql(`UPDATE public.whatsapp_history_imports SET next_run_at = now()`)
     expect((await run())?.status).toBe('done')
-    expect(await pg.sql(`SELECT chats_done || '|' || errors FROM public.whatsapp_history_imports`)).toBe('2|0')
+    expect(await pg.sql(`SELECT chats_done || '|' || errors FROM public.whatsapp_history_imports`)).toBe('3|0')
   })
 
   it('chats an earlier run failed on 429/timeout go back to the queue and are imported', async () => {
@@ -336,8 +342,8 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     const job = await run()
     expect(job?.status).toBe('done')
     expect(await pg.sql(`SELECT errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('0|null')
-    expect(await pg.sql(`SELECT string_agg(DISTINCT status, ',' ORDER BY status) FROM public.whatsapp_history_import_chats`)).toBe('done,skipped')
-    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+    expect(await pg.sql(`SELECT string_agg(DISTINCT status, ',' ORDER BY status) FROM public.whatsapp_history_import_chats`)).toBe('done') // phase 5f: the empty group is a conversation too
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
   })
 
   it('a chat the gateway cannot serve right now (5xx) goes back to the queue, not to failed', async () => {
@@ -350,7 +356,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     historyHook = null
     await pg.sql(`UPDATE public.whatsapp_history_imports SET next_run_at = now()`)
     expect((await run())?.status).toBe('done')
-    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
   }, 20_000)
 
   it('paces gateway calls to a share of the gateway limit', () => {
@@ -358,9 +364,11 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(importCallIntervalMs({ OPENWA_RATE_LIMIT_PER_MIN: '600', OPENWA_RATE_LIMIT_PER_HOUR: '36000' })).toBe(250)
   })
 
-  // Phase 5c (real account): 91 of 498 conversations were created empty —
-  // their history held only content-less `unknown` placeholders.
-  it('a chat with nothing renderable creates no contact and no conversation (skipped)', async () => {
+  // Phase 5f (real account, replaces 5c's rule): 224 unread chats on the phone,
+  // 178 in wacrm — the missing ones held only WhatsApp's `unknown` placeholders.
+  // Every listed chat is a conversation, where the phone puts it, with the
+  // phone's unread count; the placeholders are the "waiting" bubble.
+  it('a chat whose history is only placeholders is listed like on the phone, with "waiting" bubbles', async () => {
     const ANA_ID = CHATS[0].id
     historyHook = (chatId) =>
       chatId === ANA_ID
@@ -368,13 +376,77 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
         : undefined
     await startHistoryImport(db.asClient(), ACCT, SESSION)
     expect((await run())?.status).toBe('done')
-    expect(await count(`SELECT count(*) FROM public.contacts WHERE phone = '5511911110001'`)).toBe(0)
-    expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(1) // Bruno only
-    expect(await count(`SELECT count(*) FROM public.conversations WHERE last_message_at IS NULL`)).toBe(0)
-    expect(await pg.sql(`SELECT status || '|' || error || '|' || (conversation_id IS NULL) FROM public.whatsapp_history_import_chats WHERE chat_id = '${ANA_ID}'`)).toBe(
-      'skipped|no messages to import|true',
+    expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(3)
+    const ana = await pg.sql(`SELECT c.id FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id WHERE ct.phone = '5511911110001'`)
+    expect(await pg.sql(`SELECT string_agg(message_id || ':' || (content_meta->>'kind'), ',' ORDER BY message_id) FROM public.messages WHERE conversation_id = '${ana}'`)).toBe('ph-1:waiting,ph-2:waiting')
+    // never "Nenhuma mensagem ainda": an empty preview, at the chat's time, the phone's unread
+    expect(await pg.sql(`SELECT coalesce(last_message_text, 'null') || '|' || extract(epoch FROM last_message_at)::bigint || '|' || unread_count FROM public.conversations WHERE id = '${ana}'`)).toBe(`|${T0 + 300}|2`)
+    expect(await pg.sql(`SELECT chats_done || '|' || chats_skipped || '|' || errors FROM public.whatsapp_history_imports`)).toBe('3|0|0')
+
+    // WhatsApp delivers the real message later: a re-import puts it in place, same id.
+    historyHook = (chatId) =>
+      chatId === ANA_ID
+        ? [200, [msg(ANA_ID, 'ph-1', { body: 'Chegou: bom dia!' }), msg(ANA_ID, 'ph-2', { type: 'unknown', body: '', timestamp: T0 + 5 })], 0, {}]
+        : undefined
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    expect((await run())?.status).toBe('done')
+    expect(await pg.sql(`SELECT string_agg(message_id || ':' || coalesce(content_meta->>'kind', content_text), ',' ORDER BY message_id) FROM public.messages WHERE conversation_id = '${ana}'`)).toBe('ph-1:Chegou: bom dia!,ph-2:waiting')
+    // the first real message takes the empty preview; the chat keeps its place
+    expect(await pg.sql(`SELECT last_message_text || '|' || extract(epoch FROM last_message_at)::bigint FROM public.conversations WHERE id = '${ana}'`)).toBe(`Chegou: bom dia!|${T0 + 300}`)
+
+    // …or live, by webhook: the same id replaces the placeholder, nothing runs, no unread.
+    const unreadBefore = await pg.sql(`SELECT unread_count FROM public.conversations WHERE id = '${ana}'`)
+    await ingestInboundMessage(
+      {
+        provider: 'openwa', messageId: 'ph-2', timestamp: String(T0 + 5), type: 'text',
+        identity: { phone: '5511911110001', name: 'Ana Cliente', waUserId: null, waParentUserId: null, waUsername: null },
+        text: 'E esta também',
+        resolveContent: async () => ({ contentText: 'E esta também', mediaUrl: null, mediaType: null, interactiveReplyId: null }),
+      },
+      ACCT, USER, { throwOnFailure: true },
     )
-    expect(await pg.sql(`SELECT chats_done || '|' || chats_skipped || '|' || errors FROM public.whatsapp_history_imports`)).toBe('1|2|0') // + the empty group
+    expect(await pg.sql(`SELECT coalesce(content_meta->>'kind', content_text) FROM public.messages WHERE message_id = 'ph-2'`)).toBe('E esta também')
+    expect(await count(`SELECT count(*) FROM public.messages WHERE conversation_id = '${ana}'`)).toBe(2)
+    expect(await pg.sql(`SELECT last_message_text FROM public.conversations WHERE id = '${ana}'`)).toBe('E esta também')
+    expect(await pg.sql(`SELECT unread_count FROM public.conversations WHERE id = '${ana}'`)).toBe(unreadBefore)
+    expect([h.flows, h.autos, h.ai, h.hooks]).toEqual([0, 0, 0, 0])
+  })
+
+  // Phase 5f (real account): 1681 sent messages stayed at one tick — the
+  // re-import ignored rows it had stored, and the gateway said ack 2/3.
+  it('a re-import moves old ticks up (never down) and fills the parity details, without touching text', async () => {
+    const ANA_ID = CHATS[0].id
+    let ack = 1
+    historyHook = (chatId) =>
+      chatId === ANA_ID
+        ? [
+            200,
+            [
+              msg(ANA_ID, 'r-1', { fromMe: true, body: 'enviada', ack, timestamp: T0 + 10 }),
+              msg(ANA_ID, 'r-2', { type: 'voice', media: { mimetype: 'audio/ogg', omitted: true, ...(ack > 1 ? { durationSeconds: 9 } : {}) }, isForwarded: ack > 1, forwardingScore: ack > 1 ? 4 : 0, timestamp: T0 + 20 }),
+            ],
+            0,
+            {},
+          ]
+        : undefined
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await run()
+    expect(await pg.sql(`SELECT status FROM public.messages WHERE message_id = 'r-1'`)).toBe('sent')
+    // Edited here meanwhile: the text must stay.
+    await pg.sql(`UPDATE public.messages SET content_text = 'enviada (editada)' WHERE message_id = 'r-1'`)
+    ack = 3
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await run()
+    expect(await pg.sql(`SELECT status || '|' || content_text FROM public.messages WHERE message_id = 'r-1'`)).toBe('read|enviada (editada)')
+    expect(await pg.sql(`SELECT is_forwarded || '|' || forwarding_score || '|' || (media_meta->>'durationSeconds') FROM public.messages WHERE message_id = 'r-2'`)).toBe('true|4|9')
+    // the preview follows the refreshed newest message
+    expect(await pg.sql(`SELECT c.last_message_text FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id WHERE ct.phone = '5511911110001'`)).toBe('[voice:0:09]')
+    expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'r-%'`)).toBe(2)
+    // never down
+    ack = 2
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await run()
+    expect(await pg.sql(`SELECT status FROM public.messages WHERE message_id = 'r-1'`)).toBe('read')
   })
 
   // Phase 5c (real account): 8 chats reimported after 429s, yet the job ended
@@ -386,7 +458,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     historyHook = (chatId) => (chatId === ANA_ID && calls++ < 2 ? [400, { message: 'Bad chat state' }, 0, {}] : undefined)
     await startHistoryImport(db.asClient(), ACCT, SESSION)
     expect((await run())?.status).toBe('done')
-    expect(await pg.sql(`SELECT chats_done || '|' || errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('2|0|null')
+    expect(await pg.sql(`SELECT chats_done || '|' || errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('3|0|null')
 
     // One that fails for good: errors = 1 (not 3 attempts), its reason kept.
     historyHook = (chatId) => (chatId === ANA_ID ? [400, { message: 'Bad chat state' }, 0, {}] : undefined)

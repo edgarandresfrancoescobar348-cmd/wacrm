@@ -505,7 +505,8 @@ function ConversationItem({
     : "";
 
   // Preview tokens become icon + label, like WA's "📷 Photo" line (A2).
-  const preview = previewOf(conversation.last_message_text, t("noMessagesYet"));
+  // No preview is an empty line, like the phone — never "Nenhuma mensagem ainda" (phase 5f).
+  const preview = previewOf(conversation.last_message_text, "");
   const MediaIcon = preview.icon;
   const lead = previewLead(conversation);
 

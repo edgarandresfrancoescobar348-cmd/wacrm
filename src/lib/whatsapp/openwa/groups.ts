@@ -12,6 +12,8 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { getOpenWaGroup, getOpenWaProfilePicture, type OpenWaCredentials } from './client'
 import { mapOpenWaMessage, openWaMediaProxyUrl, phoneFromChatId, type OpenWaMessageData } from './events'
 import { forwardFlags, groupSenderName, mediaMetaFor, statusFromAck } from './parity'
+import type { IncomingMessageRow } from './import-refresh'
+import { replaceWaitingPlaceholder } from './placeholders'
 
 export function isGroupChatId(chatId: string | null | undefined): boolean {
   return Boolean(chatId?.endsWith('@g.us'))
@@ -152,7 +154,15 @@ export async function ingestGroupMessage(
     .upsert(row, { onConflict: 'conversation_id,message_id', ignoreDuplicates: true })
     .select('id')
   if (error) throw new Error(`group message insert failed: ${error.message}`)
-  if (!inserted?.length) return 'duplicate'
+  if (!inserted?.length) {
+    // An imported "waiting" placeholder gets its message (phase 5f).
+    const replaced = await replaceWaitingPlaceholder(admin, {
+      conversationId: conversation.id,
+      messageId: String(row.message_id),
+      row: row as unknown as IncomingMessageRow,
+    })
+    return replaced ? 'ingested' : 'duplicate'
+  }
   const mediaMeta = row.media_meta as { durationSeconds?: number; pageCount?: number } | null
   const preview = previewFor(String(row.content_type), (row.content_meta as never) ?? null, (row.content_text as string | null) ?? null, {
     durationSeconds: mediaMeta?.durationSeconds,

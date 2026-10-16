@@ -77,6 +77,7 @@ import {
 import { requireOpenWaGateway } from './gateway'
 import { findOrCreateGroupConversation, groupMessageRow } from './groups'
 import { forwardFlags, mediaMetaFor, statusFromAck } from './parity'
+import { isWaiting, refreshPatch, type IncomingMessageRow, type StoredMessageState } from './import-refresh'
 import { nameFromWhatsApp } from '@/lib/whatsapp/contact-name'
 import type { ContentMeta } from '@/lib/whatsapp/message-content'
 import type { OpenWaConnectionRow } from './connection'
@@ -444,10 +445,12 @@ export const SKIP_NO_MESSAGES = 'no messages to import'
 
 /**
  * Import one chat. Returns the number of messages inserted, or the
- * reason it was skipped. A chat whose history has nothing renderable
- * (only WhatsApp's content-less placeholders, or only messages newer than
- * the import the webhooks own) creates no contact and no conversation —
- * an empty "Nenhuma mensagem ainda" row helps nobody.
+ * reason it was skipped. Every chat the phone lists becomes a conversation
+ * (phase 5f, replacing 5c's "no messages, no conversation"): placed by
+ * WhatsApp's chat timestamp, with the phone's unread count, even when its
+ * history holds only WhatsApp's "waiting for this message" placeholders —
+ * stored as that bubble and replaced when the real message arrives — or
+ * nothing at all. Messages already stored are refreshed (import-refresh.ts).
  */
 async function importChat(
   admin: SupabaseClient,
@@ -469,16 +472,13 @@ async function importChat(
         : null))
   if (!isGroup && !phone) return { skipped: SKIP_NO_PHONE }
 
-  // The history first: nothing to show, nothing to create.
   const startedAtSec = Math.floor(Date.parse(job.started_at) / 1000)
   const history = (await chatMessages(admin, job, creds, chat.chat_id, ctx)).filter(
     (m) =>
       m.id &&
-      !isContentlessPlaceholder(m) &&
       // Newer than the job: the live webhooks own it.
       (typeof m.timestamp !== 'number' || m.timestamp < startedAtSec),
   )
-  if (!history.length) return { skipped: SKIP_NO_MESSAGES }
 
   let conversationId: string
   let conversationCreated: boolean
@@ -542,6 +542,26 @@ async function importChat(
   const now = new Date().toISOString()
   const rows = history.map((m) => {
     const at = typeof m.timestamp === 'number' ? new Date(m.timestamp * 1000).toISOString() : now
+    // WhatsApp listed it but hasn't delivered its content here yet: the
+    // phone's "Aguardando mensagem" bubble until the real one arrives.
+    if (isContentlessPlaceholder(m)) {
+      return {
+        conversation_id: conversationId,
+        sender_type: m.fromMe ? 'agent' : 'customer',
+        content_type: 'text',
+        content_text: null,
+        content_meta: { kind: 'waiting' } as ContentMeta,
+        media_url: null,
+        media_type: null,
+        message_id: m.id!,
+        status: m.fromMe ? statusFromAck(m.ack) : 'delivered',
+        created_at: at,
+        revoked_at: null,
+        sender_name: null as string | null,
+        imported_at: now,
+        ingest_completed_at: now,
+      }
+    }
     if (isGroup) {
       return {
         ...(groupMessageRow(m, conversationId, chat.chat_id, at) as MessageRow),
@@ -573,12 +593,17 @@ async function importChat(
 
   let inserted = 0
   for (let i = 0; i < rows.length; i += INSERT_BATCH) {
+    const batch = rows.slice(i, i + INSERT_BATCH)
     const { data, error } = await admin
       .from('messages')
-      .upsert(rows.slice(i, i + INSERT_BATCH), { onConflict: 'conversation_id,message_id', ignoreDuplicates: true })
-      .select('id')
+      .upsert(batch, { onConflict: 'conversation_id,message_id', ignoreDuplicates: true })
+      .select('id, message_id')
     if (error) throw new HistoryStoreError('messages', error)
     inserted += data?.length ?? 0
+    // Already stored (a re-import): WhatsApp's newer view of them.
+    const fresh = new Set((data ?? []).map((r: { message_id: string }) => r.message_id))
+    const stale = batch.filter((r) => !fresh.has(r.message_id))
+    if (stale.length) await refreshStoredMessages(admin, conversationId, stale)
   }
 
   // Quotes: link replies to the quoted message when it is in the chat.
@@ -605,18 +630,43 @@ async function importChat(
 
   // The conversation shows its newest REAL message, like the phone, and
   // the chat's unread count (imported messages never count as unread).
-  const newest = rows.reduce<(typeof rows)[number] | null>(
+  const real = rows.filter((r) => !isWaiting(r.content_meta))
+  const newest = real.reduce<(typeof rows)[number] | null>(
     (a, b) => (!a || b.created_at > a.created_at ? b : a),
     null,
   )
-  if (newest) {
-    const { data: current } = await admin
+  const { data: current } = await admin
+    .from('conversations')
+    .select('last_message_at, last_message_text')
+    .eq('id', conversationId)
+    .maybeSingle()
+  const currentAt = (current as { last_message_at?: string | null } | null)?.last_message_at
+  // Empty: only placeholders (or nothing) so far — the first real message takes the preview.
+  const currentEmpty = !(current as { last_message_text?: string | null } | null)?.last_message_text
+  // Placed where WhatsApp places the chat (its chat timestamp, migration 069).
+  const chatAt = chat.chat_timestamp ? new Date(chat.chat_timestamp * 1000).toISOString() : null
+  if (chatAt) {
+    const { error } = await admin
       .from('conversations')
-      .select('last_message_at')
+      .update({ wa_sort_at: chatAt })
       .eq('id', conversationId)
-      .maybeSingle()
-    const currentAt = (current as { last_message_at?: string | null } | null)?.last_message_at
-    if (!currentAt || Date.parse(currentAt) < Date.parse(newest.created_at)) {
+      .eq('account_id', job.account_id)
+    if (error) throw new HistoryStoreError('conversation position', error)
+  }
+  if (!newest && !currentAt) {
+    // Nothing WhatsApp delivered here yet: an empty preview at the chat's
+    // time with the phone's unread count — never "Nenhuma mensagem ainda".
+    const { error } = await admin
+      .from('conversations')
+      .update({ last_message_text: '', last_message_at: chatAt ?? now, unread_count: chat.unread_count })
+      .eq('id', conversationId)
+      .eq('account_id', job.account_id)
+    if (error) throw new HistoryStoreError('conversation summary', error)
+  }
+  if (newest) {
+    // `<=`: a re-import refreshes the preview of the same newest message
+    // (its voice length, its pages).
+    if (!currentAt || Date.parse(currentAt) <= Date.parse(newest.created_at) || currentEmpty) {
       const { error } = await admin
         .from('conversations')
         .update({
@@ -626,7 +676,9 @@ async function importChat(
             revoked: Boolean(newest.revoked_at),
             albumCount: trailingAlbumCount([...rows].sort((x, y) => (x.created_at < y.created_at ? 1 : -1))),
           }),
-          last_message_at: newest.created_at,
+          // Never earlier than where the chat already sits (its chat time).
+          last_message_at:
+            currentAt && Date.parse(currentAt) > Date.parse(newest.created_at) ? currentAt : newest.created_at,
           ...(isGroup ? { last_message_sender: newest.sender_name ?? null } : {}),
           ...(conversationCreated || !currentAt ? { unread_count: chat.unread_count } : {}),
         })
@@ -649,6 +701,32 @@ async function importChat(
     .eq('chat_id', chat.chat_id)
   if (chatErr) throw new HistoryStoreError('chat checkpoint', chatErr)
   return inserted
+}
+
+/**
+ * Messages a re-import found already stored: their ticks go up, parity
+ * details are filled and a waiting placeholder becomes the real message
+ * (refreshPatch). Text edited or deleted here is never touched.
+ */
+async function refreshStoredMessages(
+  admin: SupabaseClient,
+  conversationId: string,
+  rows: (IncomingMessageRow & { message_id: string })[],
+): Promise<void> {
+  const { data, error } = await admin
+    .from('messages')
+    .select('id, message_id, sender_type, status, content_meta, is_forwarded, forwarding_score, media_meta')
+    .eq('conversation_id', conversationId)
+    .in('message_id', rows.map((r) => r.message_id))
+  if (error) throw new HistoryStoreError('messages (refresh lookup)', error)
+  const byId = new Map(((data ?? []) as (StoredMessageState & { message_id: string })[]).map((m) => [m.message_id, m]))
+  for (const row of rows) {
+    const existing = byId.get(row.message_id)
+    const patch = existing ? refreshPatch(existing, row) : null
+    if (!patch) continue
+    const { error: upErr } = await admin.from('messages').update(patch).eq('id', existing!.id)
+    if (upErr) throw new HistoryStoreError('messages (refresh)', upErr)
+  }
 }
 
 type MessageRow = {
