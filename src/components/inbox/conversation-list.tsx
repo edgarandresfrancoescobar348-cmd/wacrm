@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { byRecency } from "@/lib/conversations/order";
 import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
@@ -208,7 +209,8 @@ export function ConversationList({
       });
     }
 
-    return result;
+    // Most recent first, like WhatsApp — realtime patches rows in place.
+    return byRecency(result);
   }, [conversations, filter, search, selectedTagIds, selectedCompany]);
 
   const toggleTag = useCallback((id: string) => {
