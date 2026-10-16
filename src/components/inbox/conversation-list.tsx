@@ -248,10 +248,6 @@ export function ConversationList({
     [conversations],
   );
   const archivedCount = useMemo(() => conversations.filter((c) => c.archived).length, [conversations]);
-  const archivedUnread = useMemo(
-    () => conversations.filter((c) => c.archived && c.unread_count > 0).length,
-    [conversations],
-  );
   const hasGroups = useMemo(() => conversations.some((c) => c.is_group), [conversations]);
   // WhatsApp's order — Todas, Não lidas, Grupos — then the CRM's own.
   // "Grupos" is always there in QR mode (the phone has it with no groups too).
@@ -441,10 +437,9 @@ export function ConversationList({
           <span className="flex size-[49px] shrink-0 items-center justify-center">
             <Archive className="size-5 text-muted-foreground" />
           </span>
+          {/* No count, like WhatsApp with "keep chats archived": unread
+              archived chats stay out of sight (and out of "Não lidas"). */}
           <span className="flex-1 text-[17px] text-foreground">{t("archived")}</span>
-          {archivedUnread > 0 ? (
-            <span className="text-xs font-medium text-primary-text">{archivedUnread}</span>
-          ) : null}
         </button>
       ) : null}
       {loading ? (
