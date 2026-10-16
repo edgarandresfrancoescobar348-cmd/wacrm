@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({ calls: 0 }))
 vi.mock('@/lib/flows/admin-client', () => ({ supabaseAdmin: () => ({}) }))
+vi.mock('@/lib/whatsapp/inbound/fanout', () => ({ drainInboundFanout: vi.fn(async () => 2) }))
 vi.mock('@/lib/whatsapp/broadcast-continue', () => ({
   continuePausedBroadcasts: vi.fn(async () => (h.calls++, { continued: ['b'], busy: [] })),
 }))
@@ -29,6 +30,7 @@ describe('/api/whatsapp/broadcast/cron', () => {
     process.env.AUTOMATION_CRON_SECRET = 's3cret-value'
     const res = await GET(req('s3cret-value'))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ continued: ['b'], busy: [] })
+    // …and the inbound fan-out safety net (H1)
+    expect(await res.json()).toEqual({ continued: ['b'], busy: [], inbound_fanout: 2 })
   })
 })

@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { continuePausedBroadcasts } from '@/lib/whatsapp/broadcast-continue'
+import { drainInboundFanout } from '@/lib/whatsapp/inbound/fanout'
 
 export const maxDuration = 300
 
@@ -27,11 +28,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
-    const result = await continuePausedBroadcasts(supabaseAdmin(), {
+    const admin = supabaseAdmin()
+    const result = await continuePausedBroadcasts(admin, {
       maxDurationSeconds: maxDuration,
       startedAt,
     })
-    return NextResponse.json(result)
+    // Same safety net as /api/automations/cron: inbound fan-out tasks
+    // nobody ran (migration 057).
+    const fanout = await drainInboundFanout(admin, { deadline: startedAt + (maxDuration - 30) * 1000 }).catch((err) => {
+      console.error('[broadcast cron] inbound fan-out drain failed:', err)
+      return 0
+    })
+    return NextResponse.json({ ...result, inbound_fanout: fanout })
   } catch (err) {
     console.error('[broadcast cron] failed:', err)
     return NextResponse.json({ error: 'continuation failed' }, { status: 500 })

@@ -13,9 +13,10 @@
 // The durable part (message insert, ticks, session state) runs inside
 // the request: if it fails the delivery is answered 503, the ledger
 // marks it failed, and OpenWA's redelivery processes it again (every
-// write is idempotent). Only the bot fan-out — flows, automations, AI,
-// public webhooks — runs in `after()`, once the delivery is safely
-// recorded.
+// write is idempotent). The bot fan-out — flows, automations, AI,
+// public webhooks — is a durable outbox row written with the message's
+// completion (migration 057) and runs in `after()`; a redelivery and the
+// cron run it if this request doesn't.
 // ============================================================
 
 import { NextResponse, after } from 'next/server'
@@ -146,6 +147,20 @@ export async function POST(request: Request) {
   // redelivers. Only the bot fan-out waits for `after()`.
   const connection = row as OpenWaConnectionRow
   const deferred: (() => Promise<void>)[] = []
+  // The fan-out tasks are durable outbox rows (migration 057), written
+  // with the message's completion: they run after the response whatever
+  // the delivery's own outcome — a 503 below no longer drops them (H1).
+  // Each claims its row, so a redelivery or the cron never runs one twice.
+  const runFanOut = () =>
+    after(async () => {
+      for (const task of deferred) {
+        try {
+          await task()
+        } catch (err) {
+          console.error('[openwa webhook] fan-out failed (the cron retries it):', err)
+        }
+      }
+    })
   try {
     await handleOpenWaEvent(envelope, {
       admin,
@@ -160,6 +175,7 @@ export async function POST(request: Request) {
     await finishDelivery(admin, { key: idempotencyKey, accountId: row.account_id, attempt, error: err }).catch(
       (finishErr) => console.error('[openwa webhook] could not record the failure:', finishErr),
     )
+    runFanOut()
     return NextResponse.json({ error: 'Processing failed, retry' }, { status: 503 })
   }
   try {
@@ -168,17 +184,12 @@ export async function POST(request: Request) {
     // Processed but not recorded as done: answer non-2xx; the redelivery
     // re-claims the stale claim and finds every write already applied.
     console.error('[openwa webhook] ledger finish failed:', err)
+    runFanOut()
     return NextResponse.json({ error: 'Ledger failed, retry' }, { status: 503 })
   }
 
+  runFanOut()
   after(async () => {
-    for (const task of deferred) {
-      try {
-        await task()
-      } catch (err) {
-        console.error('[openwa webhook] fan-out failed:', err)
-      }
-    }
     if (Math.random() < 0.01) {
       await admin
         .from('openwa_webhook_deliveries')

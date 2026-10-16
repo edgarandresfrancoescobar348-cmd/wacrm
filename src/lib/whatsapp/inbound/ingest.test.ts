@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 type Row = Record<string, unknown>
 
 const h = vi.hoisted(() => ({
+  dispatchWebhookEvent: vi.fn(async () => undefined),
   tables: {} as Record<string, Row[]>,
   failInsertOn: null as string | null,
   rpcCalls: [] as { name: string; args: Record<string, unknown> }[],
@@ -21,7 +22,7 @@ vi.mock('@/lib/automations/engine', () => ({
 }))
 vi.mock('@/lib/flows/engine', () => ({ dispatchInboundToFlows: h.dispatchInboundToFlows }))
 vi.mock('@/lib/ai/auto-reply', () => ({ dispatchInboundToAiReply: vi.fn() }))
-vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: vi.fn() }))
+vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: h.dispatchWebhookEvent }))
 vi.mock('@/lib/conversations/reopen', () => ({ reopenClosedConversation: vi.fn() }))
 vi.mock('@/lib/contacts/dedupe', () => ({
   isUniqueViolation: () => false,
@@ -100,13 +101,28 @@ vi.mock('@/lib/flows/admin-client', () => ({
     rpc: async (name: string, args: Record<string, unknown>) => {
       h.rpcCalls.push({ name, args })
       if (h.rpcError) return { data: null, error: h.rpcError }
-      // Migration 053's completion: mark + bump only if not complete yet.
-      if (name === 'bump_conversation_on_inbound' && args.p_message_id) {
+      // Migration 057's completion (over 053): mark + bump only if not
+      // complete yet, and enqueue the fan-out task in the same step.
+      if (name === 'complete_inbound_message' && args.p_message_id) {
         const msg = (h.tables.messages ?? []).find((m) => m.id === args.p_message_id)
         if (!msg || msg.ingest_completed_at) return { data: false, error: null }
         msg.ingest_completed_at = new Date().toISOString()
         h.bumps += 1
+        const tasks = (h.tables.inbound_fanout_tasks ??= [])
+        if (!tasks.some((t) => t.message_id === args.p_message_id)) {
+          tasks.push({ id: `task-${tasks.length + 1}`, message_id: args.p_message_id, payload: args.p_fanout,
+            status: 'pending', attempts: 0, progress: {} })
+        }
         return { data: true, error: null }
+      }
+      if (name === 'claim_inbound_fanout') {
+        const task = (h.tables.inbound_fanout_tasks ?? []).find(
+          (t) => t.message_id === args.p_message_id && (t.status === 'pending' || t.status === 'failed'),
+        )
+        if (!task) return { data: [], error: null }
+        task.status = 'running'
+        task.attempts = Number(task.attempts) + 1
+        return { data: [{ ...task }], error: null }
       }
       return { data: null, error: null }
     },
@@ -325,10 +341,37 @@ describe('G5 — essential post-insert writes, repaired on redelivery', () => {
     // the repaired delivery also gets its bot fan-out
     expect(deferred).toHaveLength(1)
 
-    // a third delivery of the now complete message is a no-op
+    await deferred[0]()
+
+    // a third delivery of the now complete message enqueues nothing and
+    // re-runs nothing: its fan-out task is already done (H1)
     await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => deferred.push(t) })
+    for (const run of deferred.slice(1)) await run()
     expect(h.bumps).toBe(1)
-    expect(deferred).toHaveLength(1)
+    expect(h.tables.inbound_fanout_tasks).toHaveLength(1)
+    expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
+  })
+
+  // H1 (third review): the fan-out is a durable outbox row written WITH
+  // the completion. A delivery whose request never ran it (failed ledger
+  // finish, a worker that died) still gets it from the redelivery.
+  it('a completed message whose fan-out never ran gets it from the redelivery, once', async () => {
+    const msg = inbound()
+    const lost: (() => Promise<void>)[] = []
+    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => lost.push(t) })
+    // the first request's after() never ran its task (dropped)
+    expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
+
+    const redelivery: (() => Promise<void>)[] = []
+    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => redelivery.push(t) })
+    for (const run of redelivery) await run()
+    expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(expect.anything(), ACCOUNT, 'message.received', expect.anything())
+
+    // a late run of the first request's task does not repeat it
+    for (const run of lost) await run()
+    expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
+    expect(h.bumps).toBe(1)
   })
 
   it('a reaction write failure propagates instead of being acknowledged', async () => {

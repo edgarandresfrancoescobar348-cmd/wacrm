@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { expireAwaitingReplies, resumePendingExecution } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
 import { continuePausedBroadcasts } from '@/lib/whatsapp/broadcast-continue'
+import { drainInboundFanout } from '@/lib/whatsapp/inbound/fanout'
 
 // Room for the broadcast continuation run in after() below (paced
 // broadcasts deliver in time-boxed passes).
@@ -43,6 +44,13 @@ export async function GET(request: Request) {
       await continuePausedBroadcasts(supabaseAdmin(), { maxDurationSeconds: maxDuration, startedAt })
     } catch (err) {
       console.error('[automations cron] broadcast continuation failed:', err)
+    }
+    // Safety net for the inbound fan-out outbox (migration 057): tasks
+    // whose request never ran them, or whose runner died.
+    try {
+      await drainInboundFanout(supabaseAdmin(), { deadline: startedAt + (maxDuration - 30) * 1000 })
+    } catch (err) {
+      console.error('[automations cron] inbound fan-out drain failed:', err)
     }
   })
 

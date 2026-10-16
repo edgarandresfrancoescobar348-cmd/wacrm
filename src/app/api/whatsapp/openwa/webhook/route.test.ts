@@ -352,6 +352,22 @@ describe('OpenWA webhook — ledger finish failure (G5)', () => {
     expect(res.status).toBe(503)
     expect(h.ledger.get('acct-1|msg_key_1')).toMatchObject({ status: 'processing' })
   })
+
+  // H1 (third review): the message was completed with its fan-out
+  // enqueued; a failed ledger finish must not drop that fan-out — the
+  // redelivery finds the message complete and returns.
+  it('still runs the enqueued fan-out when marking the delivery done fails', async () => {
+    h.failFinish = true
+    const ran: string[] = []
+    h.handleOpenWaEvent.mockImplementationOnce(async (_env: unknown, ctx: { defer?: (t: () => Promise<void>) => void }) => {
+      ctx.defer?.(async () => void ran.push('bot reply'))
+      return 'ingested'
+    })
+    const body = delivery()
+    const res = await post(body, { 'x-openwa-signature': sign(body) })
+    expect(res.status).toBe(503)
+    expect(ran).toEqual(['bot reply'])
+  })
 })
 
 // F3 follow-up (second review): the claim is a lease with an owner token.

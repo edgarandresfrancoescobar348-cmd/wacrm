@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
     conversation: { id: 'conv-1', unread_count: 0, account_id: 'acc-1' },
     upsertCalls: [] as { row: Record<string, unknown>; options: unknown }[],
     rpcCalls: [] as { name: string; args: Record<string, unknown> }[],
+    fanoutTasks: [] as { id: string; message_id: unknown; payload: unknown; attempts: number; progress: object; claimed: boolean }[],
     afterCallbacks: [] as (() => Promise<void> | void)[],
     automationStarted: 0,
     automationCompleted: 0,
@@ -218,12 +219,35 @@ vi.mock('@supabase/supabase-js', () => ({
               }
             },
           }
+        // The fan-out outbox (migration 057): the runner records each step.
+        case 'inbound_fanout_tasks': {
+          const chain: Record<string, unknown> = {
+            update: () => chain,
+            eq: () => chain,
+            select: () => Promise.resolve({ data: [{ id: 'task-1' }], error: null }),
+          }
+          return chain
+        }
         default:
           throw new Error(`unexpected table: ${table}`)
       }
     },
     rpc: (name: string, args: Record<string, unknown>) => {
       h.state.rpcCalls.push({ name, args })
+      // Migration 057: completion enqueues the fan-out task; the claim
+      // hands it out once.
+      if (name === 'complete_inbound_message') {
+        h.state.fanoutTasks.push({ id: `task-${h.state.fanoutTasks.length + 1}`, message_id: args.p_message_id,
+          payload: args.p_fanout, attempts: 0, progress: {}, claimed: false })
+        return Promise.resolve({ data: true, error: null })
+      }
+      if (name === 'claim_inbound_fanout') {
+        const task = h.state.fanoutTasks.find((t) => t.message_id === args.p_message_id && !t.claimed)
+        if (!task) return Promise.resolve({ data: [], error: null })
+        task.claimed = true
+        task.attempts = 1
+        return Promise.resolve({ data: [task], error: null })
+      }
       return Promise.resolve({ data: null, error: null })
     },
     // Service-role Storage, used by the inbound-media mirror (#466).
@@ -375,6 +399,7 @@ beforeEach(() => {
   h.state.conversation = { id: 'conv-1', unread_count: 0, account_id: 'acc-1' }
   h.state.upsertCalls = []
   h.state.rpcCalls = []
+  h.state.fanoutTasks = []
   h.state.afterCallbacks = []
   h.state.automationStarted = 0
   h.state.automationCompleted = 0
@@ -428,7 +453,7 @@ describe('inbound webhook: idempotent insert (#367)', () => {
       ignoreDuplicates: true,
     })
     // Downstream side effects ran exactly once.
-    expect(h.state.rpcCalls).toHaveLength(1)
+    expect(h.state.rpcCalls.filter((c) => c.name === 'complete_inbound_message')).toHaveLength(1)
     expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
     expect(h.dispatchWebhookEvent).toHaveBeenCalledTimes(1)
   })
@@ -453,9 +478,8 @@ describe('inbound webhook: atomic unread bump (#369)', () => {
   it('increments unread through the DB-side RPC, not a read-modify-write', async () => {
     await runWebhook()
 
-    expect(h.state.rpcCalls).toHaveLength(1)
     expect(h.state.rpcCalls[0]).toMatchObject({
-      name: 'bump_conversation_on_inbound',
+      name: 'complete_inbound_message',
       args: { p_conversation_id: 'conv-1' },
     })
   })
