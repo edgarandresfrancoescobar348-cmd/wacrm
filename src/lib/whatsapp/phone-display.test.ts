@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { contactDisplayName, contactHandleDisplay, formatPhoneDisplay } from './phone-display'
+import { contactDisplayName, contactHandleDisplay, formatPhoneDisplay, contactProfileName } from './phone-display'
 
 // Phase 5c: contacts without a saved name showed the raw "5511933739259".
 describe('formatPhoneDisplay (like WhatsApp Web)', () => {
@@ -32,9 +32,20 @@ describe('contactDisplayName', () => {
     expect(contactDisplayName({ name: 'Loja 24h', phone: '5511933739259' })).toBe('Loja 24h')
   })
 
-  it('a name that is only the push name reads "~Name", like WhatsApp', () => {
-    expect(contactDisplayName({ name: 'Pedro', name_source: 'push', phone: '5511933739259' })).toBe('~Pedro')
+  it('only a profile name: the title is the number, "~Name" is a detail, like WhatsApp (phase 5f)', () => {
+    expect(contactDisplayName({ name: 'Sara Ferreira', name_source: 'push', phone: '5562998423737' })).toBe('+55 62 99842-3737')
+    expect(contactProfileName({ name: 'Sara Ferreira', name_source: 'push', phone: '5562998423737' })).toBe('~Sara Ferreira')
+    // no number to show: the profile name stands in, marked
+    expect(contactDisplayName({ name: 'Sara', name_source: 'push', phone: null })).toBe('~Sara')
+    // a number-only contact whose profile name is known
+    expect(contactProfileName({ name: '5562998423737', name_source: 'phone', push_name: 'Sara', phone: '5562998423737' })).toBe('~Sara')
+  })
+
+  it('a saved, verified or typed name is the title, with no profile detail', () => {
     expect(contactDisplayName({ name: 'Pedro Henrique', name_source: 'saved', phone: '5511933739259' })).toBe('Pedro Henrique')
+    expect(contactDisplayName({ name: 'PicPay', name_source: 'verified', phone: '5511933739259' })).toBe('PicPay')
     expect(contactDisplayName({ name: 'Ana', name_source: 'manual' })).toBe('Ana')
+    expect(contactProfileName({ name: 'Pedro Henrique', name_source: 'saved', push_name: 'Pedro', phone: '5511933739259' })).toBeNull()
+    expect(contactProfileName({ name: null, phone: '5511933739259' })).toBeNull()
   })
 })

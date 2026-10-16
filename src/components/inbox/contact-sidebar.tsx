@@ -24,7 +24,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import { formatDateTimeMedium, formatMoney } from "@/lib/locale-format";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
-import { contactDisplayName, contactHandleDisplay } from '@/lib/whatsapp/phone-display';
+import { contactDisplayName, contactHandleDisplay, contactProfileName } from '@/lib/whatsapp/phone-display';
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -165,6 +165,9 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
         <h3 className="mt-4 text-2xl leading-8 text-foreground">{displayName}</h3>
         {handle && handle !== displayName ? (
           <p className="mt-0.5 text-base text-muted-foreground">{handle}</p>
+        ) : contactProfileName(contact) ? (
+          // A number that isn't saved: WhatsApp's "~Sara Ferreira" under it.
+          <p className="mt-0.5 text-base text-muted-foreground" data-testid="profile-name">{contactProfileName(contact)}</p>
         ) : null}
         {contact.company && (
           <p className="mt-0.5 text-sm text-muted-foreground">{contact.company}</p>

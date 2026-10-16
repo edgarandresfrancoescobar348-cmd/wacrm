@@ -27,9 +27,12 @@ export function formatPhoneDisplay(phone: string | null | undefined): string {
 const PHONE_LIKE = /^\+?[\d\s().-]{6,}$/
 
 /**
- * The contact's saved name, else its number formatted, else its other
- * handle. A contact created without a name stores its number as `name`
- * (identityDisplayName); that is shown formatted too, never raw.
+ * The contact's title, like WhatsApp: the saved (or verified, or typed)
+ * name, else its number formatted, else its other handle. A name that is
+ * only the sender's own profile name is not a title — WhatsApp lists
+ * "+55 62 99842-3737" and shows "~Sara Ferreira" as a detail
+ * (contactProfileName). A contact created without a name stores its
+ * number as `name` (identityDisplayName); that is shown formatted too.
  */
 export function contactDisplayName(contact: {
   name?: string | null
@@ -39,11 +42,31 @@ export function contactDisplayName(contact: {
   wa_user_id?: string | null
 }): string {
   const name = contact.name?.trim()
-  // Only the sender's own profile name: WhatsApp shows "~Name" (phase 5e).
-  if (name && !PHONE_LIKE.test(name)) return contact.name_source === 'push' ? `~${name}` : name
+  const isProfileName = contact.name_source === 'push'
+  if (name && !PHONE_LIKE.test(name) && !isProfileName) return name
   if (contact.phone?.trim()) return formatPhoneDisplay(contact.phone)
+  // No number to show: the profile name, marked as WhatsApp marks it.
+  if (name && isProfileName) return `~${name}`
   if (name) return formatPhoneDisplay(name.replace(/[^\d+]/g, ''))
   return contactHandle(contact)
+}
+
+/**
+ * The sender's own profile name as WhatsApp shows it next to a number
+ * that isn't saved — "~Sara Ferreira" — for the header and contact panel.
+ * Null when the title already is a name (saved, verified, typed).
+ */
+export function contactProfileName(contact: {
+  name?: string | null
+  name_source?: string | null
+  push_name?: string | null
+  phone?: string | null
+}): string | null {
+  const name = contact.name?.trim()
+  const titled = Boolean(name && !PHONE_LIKE.test(name) && contact.name_source !== 'push')
+  if (titled || !contact.phone?.trim()) return null
+  const profile = contact.push_name?.trim() || (contact.name_source === 'push' ? name : null)
+  return profile && !PHONE_LIKE.test(profile) ? `~${profile}` : null
 }
 
 /** contactHandle for display: the number formatted, else @username / id. */

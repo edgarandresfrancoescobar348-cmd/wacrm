@@ -64,7 +64,7 @@ import { TemplatePicker } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
-import { contactDisplayName as displayNameOf, contactHandleDisplay } from "@/lib/whatsapp/phone-display";
+import { contactDisplayName as displayNameOf, contactHandleDisplay, contactProfileName } from "@/lib/whatsapp/phone-display";
 import { toast } from "sonner";
 
 interface ReplyDraft {
@@ -1002,8 +1002,13 @@ export function MessageThread({
         title={displayName}
         subtitle={
           <>
-            {/* The number only when the title is a name, not the number again. */}
-            {contact && contactHandleDisplay(contact) !== displayName ? contactHandleDisplay(contact) : null}
+            {/* The number only when the title is a name, not the number again;
+                under a bare number, the sender's "~profile name", like WhatsApp. */}
+            {contact && contactHandleDisplay(contact) !== baseName
+              ? contactHandleDisplay(contact)
+              : contact
+                ? contactProfileName(contact)
+                : null}
             {/* 24h session window — red once it has expired. Not
                 rendered on a QR-code connection (no window there). */}
             {serviceWindow && (
