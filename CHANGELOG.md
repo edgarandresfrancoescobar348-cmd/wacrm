@@ -23,7 +23,7 @@ now ships inside wacrm, next to the official Meta Cloud API.
 > `058_openwa_status_mirror.sql`, `059_send_evidence.sql`,
 > `060_fanout_outcomes.sql`, `061_connection_lock.sql`,
 > `062_message_content_meta.sql`, `063_whatsapp_history_import.sql` and
-> `064_openwa_embedded_gateway.sql`, `065_history_import_empty_conversations.sql`, `066_history_media.sql` and `067_whatsapp_parity.sql`, in order. All additive except 064 (drops the per-account gateway URL/key) and 065 (deletes empty conversations the history import created); existing rows
+> `064_openwa_embedded_gateway.sql`, `065_history_import_empty_conversations.sql`, `066_history_media.sql`, `067_whatsapp_parity.sql` and `068_whatsapp_list_parity.sql`, in order. All additive except 064 (drops the per-account gateway URL/key) and 065 (deletes empty conversations the history import created); existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -53,6 +53,14 @@ now ships inside wacrm, next to the official Meta Cloud API.
   previews, voice-note length and played state, "Mensagem apagada",
   "Arquivadas", pinned chats on top, the phone's order and unread counts —
   kept in sync every minute — and reading a chat here reads it on the phone.
+- **The chat list reads like the phone's** (apply
+  `068_whatsapp_list_parity.sql`): your own chat is "Seu Nome (Você)"; when
+  the last message is yours the preview starts with its ticks (✓ / ✓✓ /
+  blue ✓✓, following receipts); only a group member's message is prefixed
+  with their name; filters in WhatsApp's order (Todas, Não lidas, Grupos —
+  always shown in QR mode — then the CRM's); voice notes show the sender's
+  photo with the mic on it; document cards at WhatsApp's width with the
+  name on one line.
 - **Fixed:** a late, redelivered "disconnected" session event could
   overwrite a newer "ready"; older session events are now ignored and the
   banner re-checks the gateway when the row says disconnected.

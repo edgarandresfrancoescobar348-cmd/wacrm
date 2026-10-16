@@ -279,12 +279,21 @@ The QR-code inbox follows the linked phone (migration 067):
   Status, broadcast lists and channels stay out.
 - **Message details:** "Encaminhada" / "Encaminhada com frequência"; a
   document's first-page preview and "1 página · 2 MB · pdf"; photo and video
-  previews before the download; a voice note's length before it loads, green
-  mic while unplayed and blue once played (`media_meta.played`); a deleted
+  previews before the download; a voice note's length before it loads, the
+  sender's photo with the mic on it, green while unplayed and blue once
+  played (`media_meta.played`); a deleted
   message reads "Mensagem apagada"; the "Mensagem não lida/não ouvida: N"
   line where the unread messages begin. Previews: "Mensagem de voz (0:09)",
   "x.pdf · 1 página", "4 fotos", "Mensagem apagada".
-- **The chat list:** archived chats sit under "Arquivadas" (and out of the
+- **The chat list** (migration 068 for the first two): your own chat reads
+  "Seu Nome (Você)" (`conversations.is_self`, from the linked number); when
+  the newest message is yours the preview starts with its ticks
+  (`last_message_status`, kept by a trigger, receipts included); a group
+  member's message is prefixed "Name: …" — never yours, never a one-to-one
+  chat (a business named "Grupo …" is still a one-to-one chat). Filters in
+  WhatsApp's order: Todas, Não lidas, Grupos (always in QR mode), then
+  Abertas / Pendentes / Fechadas and the CRM's tags.
+  Archived chats sit under "Arquivadas" (and out of the
   unread total), pinned chats on top, then WhatsApp's order; each chat's
   unread count is the phone's. The gateway sends no webhook for archiving,
   pinning or reading on the phone, so the scheduler re-reads the chat list
