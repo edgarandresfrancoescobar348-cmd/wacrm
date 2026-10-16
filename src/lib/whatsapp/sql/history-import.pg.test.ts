@@ -491,6 +491,38 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'true_${ANA_ID}_%' AND reply_to_message_id IS NOT NULL`)).toBe(N / 10)
   }, 120_000)
 
+  // Phase 5f (real account, round 2): 701 groups came with timestamp 0
+  // (nobody wrote in them); the import gave them its own time, and 579 sat
+  // on top of the inbox above every chat with activity.
+  it('a chat with no time on the phone (timestamp 0) gets no time here — it goes below every chat with activity', async () => {
+    const EMPTY = { id: '120363111111111111@g.us', name: 'DIRETORIA REVOLUTION', isGroup: true, kind: 'group', unreadCount: 0, timestamp: 0 }
+    CHATS.push(EMPTY)
+    try {
+      const at = (id: string) => pg.sql(`SELECT coalesce(last_message_at::text, 'null') || '|' || coalesce(wa_sort_at::text, 'null') || '|' || coalesce(last_message_text, 'null') FROM public.conversations WHERE wa_chat_id = '${id}'`)
+      await startHistoryImport(db.asClient(), ACCT, SESSION)
+      await run()
+      expect(await at(EMPTY.id)).toBe('null|null|')
+      // Every chat with activity has a time; the inbox orders by it (order.ts).
+      expect(await count(`SELECT count(*) FROM public.conversations WHERE account_id = '${ACCT}' AND last_message_at IS NULL`)).toBe(1)
+
+      // Imported before the fix: the import's time. A re-import takes it back…
+      await pg.sql(`UPDATE public.conversations SET last_message_at = now() WHERE wa_chat_id = '${EMPTY.id}'`)
+      await startHistoryImport(db.asClient(), ACCT, SESSION)
+      await run()
+      expect(await at(EMPTY.id)).toBe('null|null|')
+
+      // …and so does migration 070, without one; a chat with messages keeps its time.
+      await pg.sql(`UPDATE public.conversations SET last_message_at = now() WHERE wa_chat_id = '${EMPTY.id}'`)
+      const ana = await pg.sql(`SELECT last_message_at::text FROM public.conversations WHERE wa_chat_id = '${ANA}'`)
+      expect(ana).not.toBe('')
+      await pg.migrate('070_whatsapp_untimed_chats.sql')
+      expect(await at(EMPTY.id)).toBe('null|null|')
+      expect(await pg.sql(`SELECT last_message_at::text FROM public.conversations WHERE wa_chat_id = '${ANA}'`)).toBe(ana)
+    } finally {
+      CHATS.pop()
+    }
+  })
+
   // Phase 5c (real account): 8 chats reimported after 429s, yet the job ended
   // done with errors=24 (one per attempt) and a stale ThrottlerException.
   it('errors counts the chats still failed at the end, not attempts; none → no last_error', async () => {

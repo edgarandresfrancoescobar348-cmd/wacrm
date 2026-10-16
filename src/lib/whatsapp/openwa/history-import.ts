@@ -655,12 +655,16 @@ async function importChat(
       .eq('account_id', job.account_id)
     if (error) throw new HistoryStoreError('conversation position', error)
   }
-  if (!newest && !currentAt) {
+  if (!newest && (!currentAt || (currentEmpty && !chatAt))) {
     // Nothing WhatsApp delivered here yet: an empty preview at the chat's
     // time with the phone's unread count — never "Nenhuma mensagem ainda".
+    // A chat with no time on the phone (timestamp 0: a group nobody wrote
+    // in) gets none here either — never the import's time, which put it on
+    // top — so it sits below every chat with activity, like on the phone.
+    // A re-import takes that time back from rows an earlier import gave it.
     const { error } = await admin
       .from('conversations')
-      .update({ last_message_text: '', last_message_at: chatAt ?? now, unread_count: chat.unread_count })
+      .update({ last_message_text: '', last_message_at: chatAt, unread_count: chat.unread_count })
       .eq('id', conversationId)
       .eq('account_id', job.account_id)
     if (error) throw new HistoryStoreError('conversation summary', error)
