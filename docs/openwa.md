@@ -148,9 +148,17 @@ git subtree pull --prefix packages/openwa https://github.com/rmyndharis/OpenWA.g
 npm run openwa:install && npm run openwa:build
 ```
 
-wacrm carries one local patch on top of upstream (`LISTEN_HOST`, binding the
-API to loopback in dev/start — `packages/openwa/src/main.ts`); keep it when
-resolving conflicts. Re-run the QR flow (connect, receive, send) after an
+wacrm carries local patches on top of upstream; keep them when resolving
+conflicts (each is marked `wacrm patch` in the source):
+
+- `LISTEN_HOST` binds the API to loopback in dev/start (`src/main.ts`).
+- `allowScripts` in `packages/openwa/package.json` (npm 11 install scripts).
+- History media and on-demand download: metadata-only history reads carry the
+  media marker (mimetype, filename, size, duration, page count, JPEG preview);
+  `downloadMessageMedia` (whatsapp-web.js) lets `GET …/:messageId/media`
+  download a never-archived message's media from WhatsApp (410 expired, 413
+  over the cap, 504 timeout).
+- Messages carry `ack` (ticks), `isForwarded` / `forwardingScore`. Re-run the QR flow (connect, receive, send) after an
 update: the client in `src/lib/whatsapp/openwa/client.ts` targets the v0.25 API.
 
 ## Security model
@@ -228,6 +236,16 @@ gateway stored are imported, and the page says the history is limited.
   made). Conversations without messages never sit above those with them.
 - `errors` is the number of chats that are still failed at the end (not
   attempts); with none, the last error is cleared.
+- **Media opens.** Every imported photo, video, audio/voice note, document
+  and sticker keeps a reference to the gateway's media route, even when the
+  history said nothing about the file. On first open the gateway downloads it
+  from WhatsApp (wacrm patch, below), wacrm serves it with the same inert-type
+  rules as live media and keeps a copy in storage when "Guardar cópia das
+  mídias recebidas" is on, so the next open doesn't go to WhatsApp. When
+  WhatsApp no longer has a file the bubble says "mídia expirada no WhatsApp".
+  Migration 066 gave the rows imported before this their reference.
+- @mentions of a privacy id (`@154112083632297`) read as the contact's name or
+  number, like WhatsApp Web (resolved through the gateway, cached).
 - Never a silent stall: every run that stops leaves its reason and next
   attempt on the job (`last_error`, `next_run_at`) and logs a
   `[history import]` line; a run whose process died is picked up again when

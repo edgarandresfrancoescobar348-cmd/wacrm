@@ -119,6 +119,9 @@ services:
       # (opt-in upstream); without it every restart leaves the number
       # disconnected until someone starts it by hand.
       AUTO_START_SESSIONS: ${OPENWA_AUTO_START_SESSIONS:-true}
+      # The sender's full contact on every message (saved name, verified
+      # business name), not only the push name.
+      WEBHOOK_CONTACT_DETAILS: 'true'
     # The provisioned key seeds OpenWA's admin key on its first boot
     # (API_MASTER_KEY; an existing data volume keeps the key it has —
     # openwa-key adopts it).

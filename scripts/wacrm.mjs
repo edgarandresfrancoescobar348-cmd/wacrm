@@ -331,6 +331,9 @@ export function openWaEnv({ mode, port, key }) {
     // disconnected until someone starts it by hand. Opt-in upstream.
     // A session that never finished pairing (qr_ready) is not restarted.
     AUTO_START_SESSIONS: process.env.OPENWA_AUTO_START_SESSIONS?.trim() === 'false' ? 'false' : 'true',
+    // The sender's full contact on every message (saved name, verified business name, isMyContact),
+    // not only the push name — wacrm shows names the way the phone does.
+    WEBHOOK_CONTACT_DETAILS: 'true',
   }
 }
 

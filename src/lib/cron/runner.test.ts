@@ -147,6 +147,7 @@ describe('gateway environment (scripts/wacrm.mjs)', () => {
       LISTEN_HOST: '127.0.0.1',
       SERVE_DASHBOARD: 'false',
       RATE_LIMIT_MEDIUM_LIMIT: '600',
+      WEBHOOK_CONTACT_DETAILS: 'true',
       NODE_ENV: mode === 'dev' ? 'development' : 'production',
     })
   })
