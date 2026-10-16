@@ -6,7 +6,7 @@ time, chosen in **Settings → WhatsApp**:
 | | **API oficial** (Meta Cloud API) | **QR Code** (OpenWA) |
 |---|---|---|
 | Number | A number registered on Meta's WhatsApp Business Platform | A regular WhatsApp / WhatsApp Business number, linked like WhatsApp Web |
-| Setup | Meta app, WABA, access token, webhook | Your own [OpenWA](https://github.com/rmyndharis/OpenWA) gateway: URL + API key, scan a QR code |
+| Setup | Meta app, WABA, access token, webhook | Nothing: press **Conectar** and scan a QR code. The gateway ([OpenWA](https://github.com/rmyndharis/OpenWA)) ships inside wacrm |
 | Templates | Submitted to Meta, sent once approved | Local: ready as soon as saved, rendered and sent as text (media header → media with caption) |
 | 24 h window | Applies (free-form text only within 24 h of the customer's last message) | Does not exist — reply any time |
 | Buttons / lists | Native interactive messages | A numbered text menu; the reply (number or option title, case/accent-insensitive) triggers the same option |
@@ -29,52 +29,101 @@ it sends bulk messages to people who never wrote first.
 - When WhatsApp restricts the number, Settings shows a red notice
   (OpenWA's `session.restriction` event) — stop bulk sends until it lifts.
 
-## Running OpenWA next to wacrm
+## The embedded gateway
 
-OpenWA is a separate, self-hosted service (MIT). The bundled compose file has an
-optional profile:
+The QR-code mode talks to WhatsApp through [OpenWA](https://github.com/rmyndharis/OpenWA)
+(MIT), **vendored in this repo** under `packages/openwa` (v0.25.0, `git subtree`)
+and started together with wacrm. There is no URL or API key to enter anywhere:
+wacrm owns the gateway, provisions its admin key on first run and hands it to
+both sides.
 
-```bash
-docker compose --profile openwa up -d
-docker compose exec openwa cat /app/data/.api-key   # the admin API key (first boot)
-```
+In **Settings → WhatsApp → QR Code**: choose the mode → **Conectar** → scan the
+QR code (it refreshes until scanned), or use **Usar código de pareamento** with
+the phone number. wacrm creates the account's own session on the gateway,
+registers a signed webhook on it and starts it. Every account gets its own
+session on the one gateway.
 
-Then in **Settings → WhatsApp → QR Code**:
+If the gateway is not running, not reachable, or refuses the server key, the
+QR card says so (with **Verificar de novo**) instead of offering **Conectar**.
 
-1. URL `http://openwa:2785` (inside compose) or wherever your gateway lives, and
-   the API key (an `operator` or `admin` key). **Testar conexão** shows the
-   gateway version, its engine and the key's role.
-2. **Conectar** — wacrm creates its own session on the gateway, registers a
-   signed webhook on it and starts it. Scan the QR code (it refreshes until
-   scanned) or use **Usar código de pareamento** with the phone number.
+### How it runs
 
-The engine (`whatsapp-web.js` — default, lower ban risk — or `baileys`) is a
-gateway-wide setting (`ENGINE_TYPE` / `OPENWA_ENGINE_TYPE` in compose). Changing
-it means restarting OpenWA and scanning again; message ids differ per engine,
-so quoting or reacting to messages from before the switch stops resolving.
+| | Gateway | Key | Webhooks |
+|---|---|---|---|
+| `npm run dev` | `scripts/wacrm.mjs` installs `packages/openwa` (its own lockfile, `npm ci`, first run only), builds it and runs it on `127.0.0.1:2785` next to `next dev`. Data: `.openwa-data/` (gitignored) | Generated once into `.openwa-data/gateway.key` (`0600`) | `http://127.0.0.1:<next port>` |
+| `npm run build` / `npm run start` | `build` also builds the gateway; `start` runs it next to `next start` (`NODE_ENV=production`) | same | same |
+| `docker compose up` | The `openwa` service, built from `./packages/openwa`. Its port is **not published**; only `app` reaches it at `http://openwa:2785` | The one-shot `openwa-key` service writes it into the `gateway-key` volume, mounted read-only by `app` (`OPENWA_API_KEY_FILE`) and `openwa` | `http://app:3000` |
+
+In dev/start, Ctrl-C (or either process exiting) stops both. `npm run dev -- -p 4000`
+passes arguments to Next; the webhook URL follows the port.
+
+**QR mode needs a long-running host.** The gateway keeps a WhatsApp Web session
+(a headless Chrome on whatsapp-web.js) open around the clock, so it runs on a
+VPS, a container host or your machine — not on serverless platforms. On
+Vercel (detected automatically) or with `WACRM_OPENWA=off`, wacrm starts
+without it: the official API mode works and the QR card says the gateway is
+not available on this server.
+
+The engine (`whatsapp-web.js` — default, lower ban risk — or `baileys`) is
+deployment-wide: `OPENWA_ENGINE_TYPE`. Changing it means restarting wacrm and
+scanning again; message ids differ per engine, so quoting or reacting to
+messages from before the switch stops resolving.
+
+### Gateway key
+
+OpenWA seeds its admin key from `API_MASTER_KEY` on its **first** boot (empty
+key table) and keeps it in its own database afterwards. The start script and
+the compose `openwa-key` step generate that key once and pass the same value to
+OpenWA (as `API_MASTER_KEY`) and to wacrm (`OPENWA_API_KEY` /
+`OPENWA_API_KEY_FILE`). A data dir an older OpenWA already seeded keeps its key:
+the start step adopts `data/.api-key` from it when no key file exists yet.
+
+If the gateway ever rejects the key ("refuses the server key" on the QR card,
+or `rejected the provisioned key` in the dev log), the gateway's data was
+seeded with a different key: put that key in `.openwa-data/gateway.key`
+(compose: the `gateway-key` volume), or start over with an empty data dir —
+which unlinks every QR session.
 
 ### Environment
 
-| Variable | Where | Purpose |
-|---|---|---|
-| `OPENWA_ALLOWED_HOSTS` | wacrm | Exact hosts/IPs the gateway URL may resolve to although they are private (`127.0.0.1`, `openwa`, `host.docker.internal`). Without it, private/loopback/link-local gateway URLs are refused (SSRF guard). Operator-only, never user input. |
-| `OPENWA_WEBHOOK_BASE_URL` | wacrm | Public base URL OpenWA posts events to (default: `NEXT_PUBLIC_SITE_URL`, then the browser's origin). E.g. `http://app:3000` in compose, `http://host.docker.internal:3000` when OpenWA runs in Docker and wacrm on the host. |
-| `OPENWA_URL`, `OPENWA_API_KEY` | wacrm | Optional defaults that prefill the form. The key never reaches the browser and is **bound to `OPENWA_URL`**: an empty key field uses it only when the gateway URL is exactly `OPENWA_URL` (any other URL needs its key typed in). Likewise an account's stored key is only reused for the URL it was saved with. |
-| `SSRF_ALLOWED_HOSTS` | OpenWA | Must include wacrm's host when it is on a private network, or OpenWA refuses to deliver webhooks to it. |
+| Variable | Purpose |
+|---|---|
+| `WACRM_OPENWA=off` | Run without the gateway (QR mode unavailable). Automatic on Vercel. |
+| `OPENWA_PORT` | Gateway port in dev/start (default `2785`, loopback only). |
+| `WACRM_OPENWA_DATA_DIR` | Gateway data dir in dev/start (default `.openwa-data`). |
+| `OPENWA_ENGINE_TYPE` | `whatsapp-web.js` (default) or `baileys`. |
+| `OPENWA_URL`, `OPENWA_API_KEY` / `OPENWA_API_KEY_FILE`, `OPENWA_WEBHOOK_BASE_URL` | Set by the start script / compose. Only set them yourself to run the gateway elsewhere on your own infrastructure (e.g. a separate container); they are server config, never user input. |
+
+Running Node directly (`next start` without the script) means no gateway unless
+you provide those variables. The gateway needs Node ≥ 22.19.
+
+### Updating the vendored OpenWA
+
+```bash
+git subtree pull --prefix packages/openwa https://github.com/rmyndharis/OpenWA.git v0.26.0 --squash
+npm run openwa:install && npm run openwa:build
+```
+
+wacrm carries one local patch on top of upstream (`LISTEN_HOST`, binding the
+API to loopback in dev/start — `packages/openwa/src/main.ts`); keep it when
+resolving conflicts. Re-run the QR flow (connect, receive, send) after an
+update: the client in `src/lib/whatsapp/openwa/client.ts` targets the v0.25 API.
 
 ## Security model
 
-- The gateway URL and API key are stored per account (`whatsapp_openwa_config`),
-  the key and the webhook secret encrypted with `ENCRYPTION_KEY`. That table has
-  RLS on and **no** client policies: only server routes read it, and they only
-  ever return a sanitized state.
-- Only owners/admins can save, test, connect, disconnect, request a QR or a
-  pairing code, or switch modes. Every route is account-scoped; the admin
+- The gateway is wacrm's own: its URL and admin key are server config
+  (`lib/whatsapp/openwa/gateway.ts`), never typed by a user and never sent
+  to the browser. The per-account row (`whatsapp_openwa_config`) holds the
+  session id, state, pacing and the webhook secret (encrypted with
+  `ENCRYPTION_KEY`). That table has RLS on and **no** client policies: only
+  server routes read it, and they only ever return a sanitized state.
+- The gateway is not reachable from outside: loopback in dev/start, an
+  unpublished compose port in Docker.
+- Only owners/admins can connect, disconnect, request a QR or a
+  pairing code, change the pacing, or switch modes. Every route is account-scoped; the admin
   routes are rate-limited per user (20/min for actions, 40/min for QR/status
   polling). The member read routes (state, media proxy) and the signed webhook
   have no limiter of their own.
-- A key the server holds (the stored one, or `OPENWA_API_KEY`) is only ever
-  sent to the gateway URL it is bound to.
 - Media proxied from the gateway is served inline only for inert types
   (images, audio, video); anything else downloads as
   `application/octet-stream`, always with `nosniff` and a sandboxing CSP.

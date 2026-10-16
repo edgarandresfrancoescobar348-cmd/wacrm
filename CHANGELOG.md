@@ -11,8 +11,8 @@ and polish.
 
 ## [Unreleased]
 
-Second WhatsApp connection mode: **QR Code** through a self-hosted OpenWA
-gateway, next to the official Meta Cloud API.
+Second WhatsApp connection mode: **QR Code** through the OpenWA gateway that
+now ships inside wacrm, next to the official Meta Cloud API.
 
 > **Migration required:** apply `supabase/migrations/047_whatsapp_openwa.sql`,
 > `048_openwa_delivery_state.sql`, `049_openwa_replay_guards.sql` and
@@ -22,7 +22,8 @@ gateway, next to the official Meta Cloud API.
 > `056_broadcast_send_attempts.sql`, `057_inbound_fanout_outbox.sql`,
 > `058_openwa_status_mirror.sql`, `059_send_evidence.sql`,
 > `060_fanout_outcomes.sql`, `061_connection_lock.sql`,
-> `062_message_content_meta.sql` and `063_whatsapp_history_import.sql`, in order. All additive; existing rows
+> `062_message_content_meta.sql`, `063_whatsapp_history_import.sql` and
+> `064_openwa_embedded_gateway.sql`, in order. All additive; existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -38,12 +39,20 @@ gateway, next to the official Meta Cloud API.
 > uncertain legacy failures quarantined); 060 fan-out step outcomes and
 > the stored inputs the cron completes from; 061 the per-account
 > connection lock; 062 `messages.content_meta` (structured message kinds);
-> 063 the QR-code history import job and `messages.imported_at`.
+> 063 the QR-code history import job and `messages.imported_at`; 064 drops the
+> per-account gateway URL/key (the gateway is embedded) — an account that used
+> an external gateway presses **Conectar** again and scans a new QR code.
 
 ### Added
 
+- **The WhatsApp gateway is part of wacrm.** OpenWA v0.25.0 is vendored in
+  `packages/openwa` (`git subtree`; update with `git subtree pull`) and
+  `npm run dev`, `npm run build`/`start` and `docker compose up` build and
+  run it with the app. Its admin key is generated on first run and handed
+  to both sides; nobody types a URL or key. QR mode needs a long-running
+  host — serverless hosts (Vercel) get the official API mode only.
 - **Settings → WhatsApp: two modes.** "API oficial" (unchanged) or "QR Code":
-  gateway URL + API key with "Testar conexão", "Conectar" (session + signed
+  "Conectar" (session + signed
   webhook + live QR that refreshes until scanned), pairing code, connected
   state with "Desconectar" / "Reiniciar sessão", restriction and reconnect
   states, broadcast pacing and a ban-risk notice. One mode is active per
@@ -68,18 +77,20 @@ gateway, next to the official Meta Cloud API.
   order, product, "not available on this device", stickers and voice
   notes; list previews show an icon and label ("Foto", "Documento
   nome.pdf"), never `[text]`.
-- Optional `openwa` compose profile; `OPENWA_ALLOWED_HOSTS`,
-  `OPENWA_WEBHOOK_BASE_URL`, `OPENWA_URL`, `OPENWA_API_KEY` env vars.
+- `openwa` and `openwa-key` compose services (no profile; the gateway port is
+  not published); `WACRM_OPENWA`, `OPENWA_PORT`, `WACRM_OPENWA_DATA_DIR`,
+  `OPENWA_ENGINE_TYPE` env vars. The QR card says plainly when the gateway
+  is down.
 
 ### Security
 
 - `POST /api/whatsapp/openwa/webhook` fails closed: unknown session, missing
   secret or a bad `X-OpenWA-Signature` (HMAC-SHA256, constant-time) is 401;
   deliveries are de-duplicated on their idempotency key.
-- The gateway URL is SSRF-guarded (operator allow-list for private hosts),
-  redirects are never followed, the API key and webhook secret are encrypted
-  and never sent to the browser; a held key is only sent to the gateway URL
-  it is bound to. Admin routes are admin-only and rate-limited per user.
+- The gateway is server config (not user input) and unreachable from
+  outside (loopback / unpublished compose port); redirects are never
+  followed, the gateway key and the webhook secret are never sent to the
+  browser. Admin routes are admin-only and rate-limited per user.
 - Webhook deliveries are recorded as done only after their durable part
   succeeded (failures answer 503 and are redelivered); the delivery identity
   comes from the signed body, old deliveries are refused and session events

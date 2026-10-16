@@ -27,8 +27,8 @@ clone or fork it to run your own CRM.
   agents working one number, per-conversation assignment, status, and
   notes.
 - **Two ways to connect** — Meta's official Cloud API, or a regular
-  WhatsApp number linked by **QR code** through a self-hosted
-  [OpenWA](https://github.com/rmyndharis/OpenWA) gateway. Inbox,
+  WhatsApp number linked by **QR code** through the
+  [OpenWA](https://github.com/rmyndharis/OpenWA) gateway that ships inside wacrm. Inbox,
   broadcasts, templates, automations, flows, AI replies and the public
   API work in both; see [docs/openwa.md](./docs/openwa.md).
 - **Contacts + tags + custom fields**, CSV import, deduplication.
@@ -155,24 +155,21 @@ and switching keeps all contacts and conversations.
 
 - **API oficial** — Meta's WhatsApp Cloud API (approved templates, 24 h
   customer-service window, verified business numbers).
-- **QR Code** — a regular number linked like WhatsApp Web through your own
-  OpenWA gateway. Templates are local and sent as text, buttons/lists become
-  numbered menus, there is no 24 h window, and broadcasts are paced.
+- **QR Code** — a regular number linked like WhatsApp Web through the gateway
+  built into wacrm (OpenWA, vendored in `packages/openwa`). Templates are local
+  and sent as text, buttons/lists become numbered menus, there is no 24 h
+  window, and broadcasts are paced.
 
 > ⚠️ **Ban risk:** QR-code mode is unofficial. Use a dedicated number, never
 > blast people who didn't write first, and keep the broadcast pacing — WhatsApp
 > can restrict or ban the number at any time.
 
-Run OpenWA next to wacrm with the optional compose profile:
-
-```bash
-docker compose --profile openwa up -d
-docker compose exec openwa cat /app/data/.api-key
-```
-
-then set `OPENWA_ALLOWED_HOSTS=openwa` and `OPENWA_WEBHOOK_BASE_URL=http://app:3000`
-in `.env.local`. Full guide, security model and limits:
-[docs/openwa.md](./docs/openwa.md).
+The gateway starts with wacrm — `npm run dev`, `npm run start` and
+`docker compose up` all run it, with its admin key generated on first run.
+Nothing to configure: Settings → WhatsApp → QR Code → **Conectar** → scan.
+It needs a long-running host (VPS, container, your machine); on serverless
+hosts such as Vercel only the official API mode is available. Full guide,
+security model and limits: [docs/openwa.md](./docs/openwa.md).
 
 ## Documentation
 
