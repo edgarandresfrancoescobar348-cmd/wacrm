@@ -10,6 +10,7 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
+  Ban,
   BarChart3,
   EyeOff,
   MapPin,
@@ -188,6 +189,18 @@ export function KindContent({
     default:
       return null;
   }
+}
+
+/** "This message was deleted" — a deletion we never saw the content of. */
+export function RevokedLine({ inlineMeta }: { inlineMeta: React.ReactNode }) {
+  const t = useTranslations("Inbox.kinds");
+  return (
+    <p className={cn(TEXT, "flex items-center gap-1.5 italic opacity-75")}>
+      <Ban className="size-4 shrink-0" />
+      <span>{t("revokedEmpty")}</span>
+      {inlineMeta}
+    </p>
+  );
 }
 
 function SharedContactCard({

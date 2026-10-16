@@ -407,7 +407,8 @@
       "product": "상품",
       "masked": "이 기기에서 볼 수 없는 메시지",
       "template": "템플릿",
-      "message": "메시지"
+      "message": "메시지",
+      "revokedEmpty": "삭제된 메시지입니다"
     }
   },
   "Contacts": {

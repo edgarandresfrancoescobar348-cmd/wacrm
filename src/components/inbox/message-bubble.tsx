@@ -23,7 +23,7 @@ import {
   MediaVideoBubble,
 } from "./message-media";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
-import { KindContent } from "./message-kind";
+import { KindContent, RevokedLine } from "./message-kind";
 import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
@@ -131,6 +131,13 @@ function MessageContent({
   // Passed to the media bubbles as a no-arg callback; `undefined` when the
   // parent wired up no viewer, which is what makes them non-clickable.
   const openMedia = onOpenMedia ? () => onOpenMedia(message.id) : undefined;
+
+  // Deleted before we ever saw its content (imported history, A1/A2):
+  // WhatsApp's "this message was deleted" line. A message deleted after
+  // we stored it keeps its text, labelled in the meta row.
+  if (message.revoked_at && !message.content_text && !message.media_url) {
+    return <RevokedLine inlineMeta={meta} />;
+  }
 
   // Structured kinds (location, shared contact, poll, call, order,
   // product, masked) render the same in both connection modes (A2).
@@ -370,7 +377,7 @@ export function MessageBubble({
       )}
       {/* QR-code connections report customer edits / deletions
           (migration 047). The original text is kept; WA labels it. */}
-      {message.revoked_at ? (
+      {message.revoked_at && (message.content_text || message.media_url) ? (
         <span className="italic" title={t("revokedTitle")}>
           {t("revoked")}
         </span>

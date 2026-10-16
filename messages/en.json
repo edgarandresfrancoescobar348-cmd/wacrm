@@ -407,7 +407,8 @@
       "product": "Product",
       "masked": "Message not available on this device",
       "template": "Template",
-      "message": "Message"
+      "message": "Message",
+      "revokedEmpty": "This message was deleted"
     }
   },
   "Contacts": {

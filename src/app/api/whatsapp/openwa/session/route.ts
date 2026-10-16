@@ -7,7 +7,7 @@
 //   logout  — unlink the device ("Desconectar").
 //   refresh — pull the live state from the gateway.
 
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 
 import { requireRole } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
@@ -19,6 +19,7 @@ import {
   refreshOpenWa,
   restartOpenWa,
 } from '@/lib/whatsapp/openwa/session'
+import { queueHistoryImportOnConnect, runHistoryImport } from '@/lib/whatsapp/openwa/history-import'
 
 // Starting a whatsapp-web.js session launches a browser (≈10 s).
 export const maxDuration = 120
@@ -27,6 +28,7 @@ const ACTIONS = ['connect', 'restart', 'logout', 'refresh'] as const
 type Action = (typeof ACTIONS)[number]
 
 export async function POST(request: Request) {
+  const startedAt = Date.now()
   try {
     const { accountId, userId } = await requireRole('admin')
     const body = (await request.json().catch(() => ({}))) as { action?: unknown }
@@ -52,6 +54,20 @@ export async function POST(request: Request) {
           : action === 'logout'
             ? await logoutOpenWa(admin, accountId)
             : await refreshOpenWa(admin, accountId)
+    // Connected: import the phone's history once per session (A1) — also
+    // when the session.authenticated webhook is late or blocked.
+    if ((action === 'connect' || action === 'refresh') && openwa.status === 'ready' && openwa.session_id) {
+      const sessionId = openwa.session_id
+      after(async () => {
+        try {
+          if (await queueHistoryImportOnConnect(admin, accountId, sessionId)) {
+            await runHistoryImport(admin, { accountId, deadline: startedAt + (maxDuration - 15) * 1000 })
+          }
+        } catch (err) {
+          console.error('[history import] start on connect failed:', err instanceof Error ? err.message : err)
+        }
+      })
+    }
     return NextResponse.json({ success: true, openwa })
   } catch (err) {
     return openWaErrorResponse(err)

@@ -407,7 +407,8 @@
       "product": "Producto",
       "masked": "Mensaje no disponible en este dispositivo",
       "template": "Plantilla",
-      "message": "Mensaje"
+      "message": "Mensaje",
+      "revokedEmpty": "Se eliminó este mensaje"
     }
   },
   "Contacts": {
