@@ -412,6 +412,27 @@ export function envelopeInstant(env: OpenWaEnvelope): string {
   return new Date(Number.isFinite(ms) ? ms : Date.now()).toISOString()
 }
 
+/** The ISO instant OpenWA salts recurring-event keys with (`…_<occurredAt>[_…]`). */
+const KEY_OCCURRED_AT = /_(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)(?=_|$)/
+
+/**
+ * When the event HAPPENED — the newest-wins watermark for session state
+ * and edits. The envelope's `timestamp` is stamped when a delivery is
+ * built (OpenWA webhook-delivery preflight), so an event redelivered from
+ * the gateway's outbox after a restart carries the redelivery time: a
+ * `disconnected` from the shutdown (20:25:08) arrived stamped 20:26:23 and
+ * overwrote the `ready` of 20:26:19 (phase 5e, real account). OpenWA salts
+ * the idempotency key of recurring events (session.*, edits, reactions)
+ * with the instant it captured once when the event occurred, and the key
+ * is in the signed body: that instant wins whenever it is earlier.
+ */
+export function eventInstant(env: OpenWaEnvelope): string {
+  const envelope = envelopeInstant(env)
+  const occurred = env.idempotencyKey ? KEY_OCCURRED_AT.exec(env.idempotencyKey)?.[1] : undefined
+  const ms = occurred ? Date.parse(occurred) : NaN
+  return Number.isFinite(ms) && ms < Date.parse(envelope) ? new Date(ms).toISOString() : envelope
+}
+
 function envelopeSeconds(env: OpenWaEnvelope, fallback?: number): string {
   if (typeof fallback === 'number' && Number.isFinite(fallback)) return String(Math.floor(fallback))
   const ms = env.timestamp ? Date.parse(env.timestamp) : NaN
@@ -612,7 +633,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
         accountId,
         target,
         // Gateway event time — edits apply newest-wins (see ingest).
-        { kind: 'edited', at: envelopeInstant(env), text: body },
+        { kind: 'edited', at: eventInstant(env), text: body },
         { throwOnFailure: true },
       )
       return 'mutation'
@@ -692,7 +713,7 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   // the newest one applied (a late redelivery, a replayed capture) must
   // not overwrite newer state — e.g. an old "disconnected" over a live
   // session.
-  const eventAt = envelopeInstant(env)
+  const eventAt = eventInstant(env)
   // One RPC: the per-account connection lock first (061, K6), then the
   // session row, newest-wins on the event time; the active-connection
   // flag follows in the same transaction (058).

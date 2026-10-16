@@ -5,6 +5,10 @@
 //         overview show it); never includes the webhook secret.
 //         `?gateway=1` also probes the embedded gateway (is it up, does
 //         it accept the server key) so the page can say when it's down.
+//         `?verify=1`: when the row says the session is not ready, ask
+//         the gateway (at most every 20 s per account) and correct it —
+//         a stale event must never leave the inbox saying "disconnected"
+//         while the number is connected (phase 5e).
 //   PUT — broadcast pacing. Admin only, like every other WhatsApp
 //         configuration write.
 //
@@ -18,17 +22,28 @@ import { requireRole } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadOpenWaRow, toPublicOpenWaState } from '@/lib/whatsapp/openwa/connection'
-import { checkOpenWaGateway } from '@/lib/whatsapp/openwa/gateway'
+import { checkOpenWaGateway, openWaGateway } from '@/lib/whatsapp/openwa/gateway'
+import { refreshOpenWa } from '@/lib/whatsapp/openwa/session'
 import { openWaErrorResponse } from '@/lib/whatsapp/openwa/http'
 import { loadAccountProvider } from '@/lib/whatsapp/transport'
 
 const MIN_DELAY_MS = 3000
 const MAX_DELAY_MS = 120_000
 
+const VERIFY_EVERY_MS = 20_000
+const lastVerified = new Map<string, number>()
+
+/** Test hook. */
+export function __resetVerifyThrottleForTests() {
+  lastVerified.clear()
+}
+
 export async function GET(request: Request) {
   try {
     const { supabase, accountId } = await requireRole('viewer')
-    const probe = new URL(request.url).searchParams.get('gateway') === '1'
+    const params = new URL(request.url).searchParams
+    const probe = params.get('gateway') === '1'
+    if (params.get('verify') === '1') await verifyNotReady(accountId)
     const [row, provider, gateway] = await Promise.all([
       loadOpenWaRow(supabaseAdmin(), accountId),
       loadAccountProvider(supabase, accountId),
@@ -37,6 +52,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ provider, openwa: toPublicOpenWaState(row), gateway })
   } catch (err) {
     return openWaErrorResponse(err)
+  }
+}
+
+/** The row says not ready: read the live state (refreshOpenWa writes it). Never throws. */
+async function verifyNotReady(accountId: string): Promise<void> {
+  const now = Date.now()
+  if (now - (lastVerified.get(accountId) ?? 0) < VERIFY_EVERY_MS) return
+  lastVerified.set(accountId, now)
+  try {
+    const admin = supabaseAdmin()
+    const row = await loadOpenWaRow(admin, accountId)
+    if (!row?.session_id || row.status === 'ready' || !openWaGateway()) return
+    const live = await refreshOpenWa(admin, accountId)
+    if (live.status !== row.status) {
+      console.info(`[openwa] ${accountId.slice(0, 8)}: session row said ${row.status}, gateway says ${live.status} — corrected`)
+    }
+  } catch (err) {
+    console.warn('[openwa] session verify failed:', err instanceof Error ? err.message : err)
   }
 }
 

@@ -32,7 +32,16 @@ export function useWhatsAppStatus(accountId: string | null | undefined): Connect
         .eq('account_id', accountId)
         .maybeSingle();
       if (cancelled || error) return; // keep the last known state on a failed read
-      setRow((data as WhatsAppStatusRow | null) ?? null);
+      const current = (data as WhatsAppStatusRow | null) ?? null;
+      setRow(current);
+      // QR mode says disconnected: have the server check the gateway (a
+      // late, stale event can leave the row behind a session that is
+      // back) and re-read if it corrected it.
+      if (current?.provider === 'openwa' && current.status !== 'connected') {
+        const res = await fetch('/api/whatsapp/openwa?verify=1', { cache: 'no-store' }).catch(() => null);
+        const body = res?.ok ? ((await res.json()) as { openwa?: { status?: string } }) : null;
+        if (!cancelled && body?.openwa?.status === 'ready') setRow({ ...current, status: 'connected' });
+      }
     };
     void read();
     const timer = setInterval(read, CONNECTION_POLL_MS);
