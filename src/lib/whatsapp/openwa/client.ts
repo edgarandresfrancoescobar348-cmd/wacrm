@@ -72,12 +72,31 @@ export interface OpenWaCredentials {
 export class OpenWaError extends Error {
   readonly status: number
   readonly code: string | null
-  constructor(message: string, status: number, code: string | null = null) {
+  /** How long the gateway asked us to wait (429 `Retry-After*`), if it said. */
+  readonly retryAfterMs: number | null
+  constructor(message: string, status: number, code: string | null = null, retryAfterMs: number | null = null) {
     super(message)
     this.name = 'OpenWaError'
     this.status = status
     this.code = code
+    this.retryAfterMs = retryAfterMs
   }
+}
+
+/**
+ * The longest wait a response asks for. OpenWA's throttler (Nest) sends
+ * one `Retry-After-<tier>` header per exhausted tier (short/medium/long),
+ * in seconds; a plain `Retry-After` may also be seconds or an HTTP date.
+ */
+export function retryAfterMs(headers: Headers, now = Date.now()): number | null {
+  let longest: number | null = null
+  headers.forEach((value, name) => {
+    if (!/^retry-after(-|$)/i.test(name)) return
+    const seconds = Number(value)
+    const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now
+    if (Number.isFinite(ms) && ms >= 0) longest = Math.max(longest ?? 0, ms)
+  })
+  return longest
 }
 
 /**
@@ -154,6 +173,11 @@ export async function openWaRequest<T = unknown>(
     })
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
+    // Still status 0 (no answer) for every caller; the code tells a
+    // gateway that is slow to answer from one that refused the connection.
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new OpenWaError(`OpenWA did not answer within ${Math.round(timeoutMs / 1000)} s`, 0, 'timeout')
+    }
     throw new OpenWaError(`OpenWA unreachable: ${reason}`, 0, 'unreachable')
   }
 
@@ -175,7 +199,7 @@ export async function openWaRequest<T = unknown>(
     } catch {
       // non-JSON error body — keep the status line
     }
-    throw new OpenWaError(message, response.status, code)
+    throw new OpenWaError(message, response.status, code, retryAfterMs(response.headers))
   }
 
   if (opts.raw) return response as unknown as T
@@ -394,16 +418,22 @@ export interface OpenWaChatSummary {
 }
 
 /** GET /sessions/:id/chats — most recent first, paginated. */
+/**
+ * The chat list. Right after pairing, whatsapp-web.js loads it from the
+ * phone first: the first call can take 90 s or more (then pages are
+ * fast), so the caller picks the timeout.
+ */
 export function listOpenWaChats(
   creds: OpenWaCredentials,
   sessionId: string,
   page: { limit: number; offset: number },
+  opts: { timeoutMs?: number } = {},
 ) {
   return openWaRequest<OpenWaChatSummary[]>(
     creds,
     'GET',
     `/sessions/${enc(sessionId)}/chats?limit=${page.limit}&offset=${page.offset}`,
-    { timeoutMs: 60_000 },
+    { timeoutMs: opts.timeoutMs ?? 60_000 },
   )
 }
 

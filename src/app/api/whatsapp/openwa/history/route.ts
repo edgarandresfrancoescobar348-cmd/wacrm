@@ -22,7 +22,7 @@ export async function GET() {
     const admin = supabaseAdmin()
     const { data: job } = await admin
       .from('whatsapp_history_imports')
-      .select('status, started_at, finished_at, limited_history, chats_total, chats_done, chats_skipped, messages_imported, errors, last_error, updated_at')
+      .select('status, started_at, finished_at, next_run_at, lease_until, limited_history, chats_total, chats_done, chats_skipped, messages_imported, errors, last_error, updated_at')
       .eq('account_id', accountId)
       .maybeSingle()
     return NextResponse.json({ import: job ?? null })

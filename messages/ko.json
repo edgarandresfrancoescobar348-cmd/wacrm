@@ -2016,6 +2016,11 @@
           "lastError": "마지막 오류: {error}",
           "notStarted": "아직 가져오지 않았습니다.",
           "connectFirst": "먼저 QR 코드를 연결하세요. 기록은 연결된 휴대폰에서 가져옵니다.",
+          "pausedNext": "게이트웨이 속도 제한을 지키기 위해 일시 중지 — {time}에 계속",
+          "listingSlow": "WhatsApp가 대화를 불러오는 중… ({seconds}초). 연결 직후에는 몇 분 걸릴 수 있습니다.",
+          "waitingNext": "WhatsApp가 대화를 불러오는 중… 다음 시도 {time}",
+          "queuedNext": "대기 중 — {time}에 시작",
+          "stalled": "{time}부터 멈춤: wacrm 스케줄러가 가져오기를 실행하지 않고 있습니다. npm run dev, npm run start 또는 docker compose에서는 자동으로 계속됩니다. 서버리스 호스팅에서는 Cron을 확인하세요.",
           "status": {
             "queued": "대기 중",
             "listing": "대화 목록 확인 중…",

@@ -32,7 +32,7 @@ import {
 import type { OpenWaConnectionRow } from './connection'
 import { parseVcards, type ContentMeta } from '@/lib/whatsapp/message-content'
 import { reconcileAttemptFromEcho } from '@/lib/whatsapp/broadcast-attempts'
-import { queueHistoryImportOnConnect, runHistoryImport } from './history-import'
+import { queueHistoryImportOnConnect } from './history-import'
 
 export interface OpenWaEnvelope {
   event: string
@@ -706,14 +706,15 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
     console.info(`[openwa] ignored ${env.event} older than the current session state`)
     return
   }
-  // First connection of this session: import the history the linked
-  // phone holds (A1) — in the background, continued by the cron.
+  // First connection of this session: queue the import of the history
+  // the linked phone holds (A1). Only queued — the first chat listing
+  // after pairing can take minutes; the scheduler tick runs it.
   if (patch.status === 'ready' && ctx.defer) {
     const accountId = ctx.row.account_id
     const sessionId = env.sessionId
     ctx.defer(async () => {
       if (await queueHistoryImportOnConnect(ctx.admin, accountId, sessionId)) {
-        await runHistoryImport(ctx.admin, { accountId, deadline: Date.now() + 45_000 })
+        console.info(`[history import] ${accountId.slice(0, 8)}: queued on connect (the scheduler runs it)`)
       }
     })
   }

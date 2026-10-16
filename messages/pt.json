@@ -2016,6 +2016,11 @@
           "lastError": "Último erro: {error}",
           "notStarted": "Ainda não importado.",
           "connectFirst": "Conecte o QR Code primeiro — o histórico vem do celular vinculado.",
+          "pausedNext": "Em pausa para respeitar o limite do gateway — continua às {time}",
+          "listingSlow": "Aguardando o WhatsApp carregar as conversas… ({seconds} s). Logo depois de conectar isso pode levar alguns minutos.",
+          "waitingNext": "Aguardando o WhatsApp carregar as conversas… próxima tentativa às {time}",
+          "queuedNext": "Na fila — começa às {time}",
+          "stalled": "Parada desde {time}: o agendador do wacrm não está rodando a importação. Ela continua sozinha com npm run dev, npm run start ou docker compose; em hospedagem serverless, confira o Cron.",
           "status": {
             "queued": "Na fila",
             "listing": "Listando conversas…",

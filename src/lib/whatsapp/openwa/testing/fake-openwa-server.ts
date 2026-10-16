@@ -16,16 +16,19 @@ export interface FakeOpenWa {
   baseUrl: string
   apiKey: string
   requests: RecordedRequest[]
-  /** Override a response: return [status, body] or undefined for the default. */
-  override: (fn: ((req: RecordedRequest) => [number, unknown] | undefined) | null) => void
+  /** Override a response: return [status, body] (optionally [status, body, delayMs]) or undefined for the default. */
+  override: (fn: ((req: RecordedRequest) => FakeResponse | undefined) | null) => void
   close: () => Promise<void>
 }
+
+/** [status, body, delayMs?, headers?] */
+type FakeResponse = [number, unknown] | [number, unknown, number] | [number, unknown, number, Record<string, string>]
 
 let counter = 0
 
 export async function startFakeOpenWa(apiKey = 'test-openwa-key'): Promise<FakeOpenWa> {
   const requests: RecordedRequest[] = []
-  let overrideFn: ((req: RecordedRequest) => [number, unknown] | undefined) | null = null
+  let overrideFn: ((req: RecordedRequest) => FakeResponse | undefined) | null = null
 
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = []
@@ -39,8 +42,8 @@ export async function startFakeOpenWa(apiKey = 'test-openwa-key'): Promise<FakeO
         body: raw ? JSON.parse(raw) : undefined,
       }
       requests.push(record)
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
+      const send = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+        res.writeHead(status, { 'content-type': 'application/json', ...headers })
         // `{ __raw: '…' }` sends the bytes as they are (a truncated or
         // non-JSON answer).
         if (body && typeof body === 'object' && '__raw' in body) return res.end(String((body as { __raw: unknown }).__raw))
@@ -50,7 +53,12 @@ export async function startFakeOpenWa(apiKey = 'test-openwa-key'): Promise<FakeO
         return send(401, { message: 'Invalid API key', error: 'Unauthorized', statusCode: 401 })
       }
       const custom = overrideFn?.(record)
-      if (custom) return send(custom[0], custom[1])
+      if (custom) {
+        // A slow gateway (e.g. the chat list right after pairing).
+        const headers = custom[3] ?? {}
+        if (custom[2]) return void setTimeout(() => send(custom[0], custom[1], headers), custom[2])
+        return send(custom[0], custom[1], headers)
+      }
 
       const p = record.path
       if (p === '/api/auth/validate') {

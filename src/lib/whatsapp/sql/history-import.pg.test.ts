@@ -26,7 +26,7 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 }))
 vi.mock('@/lib/conversations/reopen', () => ({ reopenClosedConversation: vi.fn(async () => false) }))
 
-const { runHistoryImport, startHistoryImport } = await import('@/lib/whatsapp/openwa/history-import')
+const { __resetImportPacingForTests, importCallIntervalMs, runHistoryImport, startHistoryImport } = await import('@/lib/whatsapp/openwa/history-import')
 const { ingestInboundMessage } = await import('@/lib/whatsapp/inbound/ingest')
 
 const ACCT = '00000000-0000-0000-0000-0000000000a1'
@@ -64,9 +64,12 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   let db: PgSupabase
   let gw: FakeOpenWa
   let historyStatus = 200
+  let chatsDelayMs = 0
+  /** Per-chat override of the history answer (429 / 503 scenarios). */
+  let historyHook: ((chatId: string) => [number, unknown, number, Record<string, string>] | undefined) | null = null
 
   const count = (sql: string) => pg.sql(sql).then(Number)
-  const run = () => runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 30_000, pauseMs: 0 })
+  const run = () => runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 30_000, pauseMs: 0, callIntervalMs: 0 })
 
   beforeAll(async () => {
     pg = await startPg()
@@ -94,10 +97,12 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
       const p = req.path
       if (/\/chats\?/.test(p)) {
         const off = Number(new URL(p, 'http://x').searchParams.get('offset') ?? 0)
-        return [200, CHATS.slice(off, off + 100)]
+        return [200, CHATS.slice(off, off + 100), chatsDelayMs]
       }
       const hist = p.match(/\/messages\/([^/]+)\/history/)
       if (hist) {
+        const hooked = historyHook?.(decodeURIComponent(hist[1]))
+        if (hooked) return hooked
         if (historyStatus !== 200) return [historyStatus, { message: historyStatus === 501 ? 'not supported' : 'Session is not connected. The WhatsApp client is not ready.' }]
         return [200, HISTORY[decodeURIComponent(hist[1])] ?? []]
       }
@@ -120,6 +125,9 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   beforeEach(async () => {
     h.flows = h.ai = h.autos = h.hooks = 0
     historyStatus = 200
+    chatsDelayMs = 0
+    historyHook = null
+    __resetImportPacingForTests()
     await pg.sql(`
       DELETE FROM public.inbound_fanout_tasks; DELETE FROM public.messages; DELETE FROM public.conversations; DELETE FROM public.contacts;
       DELETE FROM public.whatsapp_history_import_chats; DELETE FROM public.whatsapp_history_imports; DELETE FROM public.whatsapp_openwa_config;
@@ -225,5 +233,127 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     const resumed = await run()
     expect(resumed?.status).toBe('done')
     expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+  })
+
+  // Phase 5b: right after pairing the first /chats can take 90 s+.
+  it('a chat list that times out leaves the job waiting with its reason and next attempt, then completes', async () => {
+    chatsDelayMs = 600
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    const before = Date.now()
+    const job = await runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 30_000, pauseMs: 0, callIntervalMs: 0, listTimeoutMs: 200 })
+    expect(job?.status).toBe('waiting_session')
+    const [status, lastError, nextIn, leased] = (
+      await pg.sql(`SELECT status || '|' || last_error || '|' || extract(epoch FROM next_run_at - now())::int || '|' || (lease_until IS NOT NULL) FROM public.whatsapp_history_imports`)
+    ).split('|')
+    expect(status).toBe('waiting_session')
+    expect(lastError).toMatch(/still loading the chat list/)
+    expect(Number(nextIn)).toBeGreaterThan(20) // WARMING_RETRY_MS = 30 s, not parked
+    expect(Number(nextIn)).toBeLessThanOrEqual(31)
+    expect(leased).toBe('false')
+    expect(Date.now() - before).toBeLessThan(2_000) // did not wait for the slow answer
+    // Not due yet: the next tick leaves it alone…
+    expect(await run()).toBeNull()
+    // …and once due, with the gateway warm, it completes.
+    chatsDelayMs = 0
+    await pg.sql(`UPDATE public.whatsapp_history_imports SET next_run_at = now()`)
+    const resumed = await run()
+    expect(resumed?.status).toBe('done')
+    expect(await pg.sql(`SELECT coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('null')
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+  })
+
+  it('a run whose lease expired (its process died) is reclaimed by the next tick; a live lease is not', async () => {
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    // A run that claimed it and died mid-listing, lease still held.
+    await pg.sql(`UPDATE public.whatsapp_history_imports SET status = 'listing', lease_until = now() + interval '5 minutes', next_run_at = now() - interval '10 minutes'`)
+    expect(await run()).toBeNull()
+    // The lease runs out: the next tick picks it up and finishes it.
+    await pg.sql(`UPDATE public.whatsapp_history_imports SET lease_until = now() - interval '1 second'`)
+    const job = await run()
+    expect(job?.status).toBe('done')
+    expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(2)
+  })
+
+  it('with too little of the run deadline left, the list call is not started; the next tick does it', async () => {
+    chatsDelayMs = 5_000
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    const listCalls = () => gw.requests.filter((r) => /\/chats\?/.test(r.path)).length
+    const callsBefore = listCalls()
+    const before = Date.now()
+    const job = await runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 7_000, pauseMs: 0, callIntervalMs: 0 })
+    expect(job?.status).toBe('listing')
+    expect(Date.now() - before).toBeLessThan(2_000)
+    expect(listCalls()).toBe(callsBefore)
+    expect(await pg.sql(`SELECT (lease_until IS NULL) || '|' || (next_run_at <= now()) FROM public.whatsapp_history_imports`)).toBe('true|true')
+  })
+
+  // Phase 5b (real account): 8 chats failed with "ThrottlerException: Too Many Requests".
+  const THROTTLED: [number, unknown] = [429, { statusCode: 429, message: 'ThrottlerException: Too Many Requests' }]
+
+  it('a 429 waits what Retry-After says and retries — every chat imported, no error', async () => {
+    let throttled = 0
+    historyHook = () => (throttled++ < 2 ? [...THROTTLED, 0, { 'Retry-After-short': '1' }] : undefined)
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    const before = Date.now()
+    const job = await run()
+    expect(job?.status).toBe('done')
+    expect(throttled).toBeGreaterThanOrEqual(3)
+    expect(Date.now() - before).toBeGreaterThanOrEqual(1_900) // waited 1 s per 429
+    expect(await pg.sql(`SELECT chats_done || '|' || errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('2|0|null')
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+  })
+
+  it('a gateway that keeps answering 429 pauses the run until its Retry-After; the chat stays queued, not failed', async () => {
+    historyHook = () => [...THROTTLED, 0, { 'Retry-After-long': '3600' }]
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    const job = await run()
+    expect(job?.status).toBe('importing')
+    const [errors, nextIn, leased, lastError] = (
+      await pg.sql(`SELECT errors || '|' || extract(epoch FROM next_run_at - now())::int || '|' || (lease_until IS NOT NULL) || '|' || last_error FROM public.whatsapp_history_imports`)
+    ).split('|')
+    expect(errors).toBe('0')
+    expect(Number(nextIn)).toBeGreaterThan(3500) // the gateway's hour, not a guess
+    expect(leased).toBe('false')
+    expect(lastError).toMatch(/rate-limiting/)
+    expect(await pg.sql(`SELECT string_agg(status || ':' || attempts, ',') FROM public.whatsapp_history_import_chats`)).toBe('pending:0,pending:0')
+    // The limit lifts: the next tick imports everything.
+    historyHook = null
+    __resetImportPacingForTests()
+    await pg.sql(`UPDATE public.whatsapp_history_imports SET next_run_at = now()`)
+    expect((await run())?.status).toBe('done')
+    expect(await pg.sql(`SELECT chats_done || '|' || errors FROM public.whatsapp_history_imports`)).toBe('2|0')
+  })
+
+  it('chats an earlier run failed on 429/timeout go back to the queue and are imported', async () => {
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    expect((await run())?.status).toBe('done')
+    // As the real account had them: failed with the throttler's error, counted as errors.
+    await pg.sql(`
+      DELETE FROM public.messages; 
+      UPDATE public.whatsapp_history_import_chats SET status = 'failed', attempts = 3, error = 'ThrottlerException: Too Many Requests';
+      UPDATE public.whatsapp_history_imports SET status = 'importing', errors = 2, last_error = 'ThrottlerException: Too Many Requests', next_run_at = now();`)
+    const job = await run()
+    expect(job?.status).toBe('done')
+    expect(await pg.sql(`SELECT errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('0|null')
+    expect(await pg.sql(`SELECT string_agg(DISTINCT status, ',') FROM public.whatsapp_history_import_chats`)).toBe('done')
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+  })
+
+  it('a chat the gateway cannot serve right now (5xx) goes back to the queue, not to failed', async () => {
+    historyHook = (chatId) => (chatId === CHATS[0].id ? [503, { message: 'Service Unavailable' }, 0, {}] : undefined)
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    const job = await run()
+    expect(job?.status).toBe('importing') // not done: one chat is waiting
+    expect(await pg.sql(`SELECT errors || '|' || (next_run_at > now()) FROM public.whatsapp_history_imports`)).toBe('0|true')
+    expect(await pg.sql(`SELECT status || ':' || attempts FROM public.whatsapp_history_import_chats WHERE chat_id = '${CHATS[0].id}'`)).toBe('pending:0')
+    historyHook = null
+    await pg.sql(`UPDATE public.whatsapp_history_imports SET next_run_at = now()`)
+    expect((await run())?.status).toBe('done')
+    expect(await count(`SELECT count(*) FROM public.messages`)).toBe(8)
+  }, 20_000)
+
+  it('paces gateway calls to a share of the gateway limit', () => {
+    expect(importCallIntervalMs({})).toBe(9_000) // stock 1000/h → 6.7/h-min × 0.4
+    expect(importCallIntervalMs({ OPENWA_RATE_LIMIT_PER_MIN: '600', OPENWA_RATE_LIMIT_PER_HOUR: '36000' })).toBe(250)
   })
 })

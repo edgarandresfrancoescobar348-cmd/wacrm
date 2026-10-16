@@ -27,6 +27,25 @@
 // message mid-import never duplicates it. Messages newer than the job
 // start are left to the live webhooks. Pauses between chats and backs
 // off on 409/429/503 to respect the engine's rate limits.
+//
+// Who runs it: the scheduler tick (/api/automations/cron — driven by
+// scripts/wacrm.mjs in dev/start, the compose `scheduler`, Vercel Cron
+// on serverless) and "Importar de novo". Connecting only queues it: the
+// first chat listing after pairing can take 90 s+ while whatsapp-web.js
+// loads the chats from the phone, which no webhook request should wait
+// for. A listing that times out is "WhatsApp still loading", retried
+// shortly; every run that stops leaves the job with its reason and
+// next attempt (`last_error`, `next_run_at`) and a `[history import]`
+// log line — never a silent stall.
+//
+// Gateway rate limit: OpenWA throttles per client IP (Nest
+// ThrottlerModule; stock 10/s, 100/min, 1000/h — wacrm's runner and
+// compose raise them for the embedded, internal-only gateway and pass
+// the per-minute/per-hour limits on as OPENWA_RATE_LIMIT_PER_MIN/HOUR).
+// The import paces every gateway call to a share of that budget, leaving
+// the rest to live traffic, and on a 429 waits what `Retry-After*` says
+// (every import call waits with it). A chat that hits a 429, a timeout
+// or a gateway hiccup goes back to the queue — never a definitive error.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -57,7 +76,17 @@ import {
 import { requireOpenWaGateway } from './gateway'
 import type { OpenWaConnectionRow } from './connection'
 
-export const HISTORY_LEASE_SECONDS = 600
+/** Longer than any run (cron deadline 280 s + one in-flight call), short
+ *  enough that a run whose process died is picked up again soon. */
+export const HISTORY_LEASE_SECONDS = 360
+/** The chat list's per-call timeout (bounded by the run's deadline). */
+export const LIST_TIMEOUT_MS = 180_000
+/** Below this much time left, don't start a list call — the next run does. */
+const MIN_LIST_WINDOW_MS = 20_000
+/** Retry delays: WhatsApp still loading the chats / session not ready / other errors. */
+export const WARMING_RETRY_MS = 30_000
+const SESSION_RETRY_MS = 2 * 60_000
+const ERROR_RETRY_MS = 60_000
 const CHATS_PAGE = 100
 const HISTORY_LIMIT = 2000
 const STORED_PAGE = 100
@@ -66,6 +95,38 @@ const INSERT_BATCH = 200
 const CHAT_PAUSE_MS = 300
 const RETRY_DELAYS_MS = [2_000, 5_000]
 const MAX_CHAT_ATTEMPTS = 3
+/** 429 retries in place before the run pauses until the gateway's Retry-After. */
+const MAX_THROTTLE_RETRIES = 3
+/** Wait after a 429 that names no Retry-After (×1, ×2, ×3). */
+const THROTTLE_FALLBACK_MS = 5_000
+/** Share of the gateway's rate limit the import may use (the rest is live traffic). */
+const IMPORT_RATE_SHARE = 0.4
+
+/** OpenWA's stock limits per client: 100/min and 1000/h (its .env.example). */
+const GATEWAY_DEFAULT_PER_MIN = 100
+const GATEWAY_DEFAULT_PER_HOUR = 1000
+
+/**
+ * Minimum gap between two import calls to the gateway: IMPORT_RATE_SHARE
+ * of its per-minute and per-hour limits, whichever is tighter.
+ */
+export function importCallIntervalMs(env: Record<string, string | undefined> = process.env): number {
+  const perMin = Number(env.OPENWA_RATE_LIMIT_PER_MIN) || GATEWAY_DEFAULT_PER_MIN
+  const perHour = Number(env.OPENWA_RATE_LIMIT_PER_HOUR) || GATEWAY_DEFAULT_PER_HOUR
+  const callsPerMin = Math.max(1, Math.min(perMin, perHour / 60) * IMPORT_RATE_SHARE)
+  return Math.ceil(60_000 / callsPerMin)
+}
+
+/** A gateway answer that is worth trying again later (not the chat's fault). */
+function isTransient(err: unknown): boolean {
+  return (
+    err instanceof OpenWaError &&
+    (err.status === 0 || err.status === 429 || err.status === 502 || err.status === 503 || err.status === 504 ||
+      (err.status === 409 && !/not connected|not ready/i.test(err.message)))
+  )
+}
+/** How earlier runs recorded a transient failure on a chat (requeued on the next run). */
+const TRANSIENT_CHAT_ERROR = /Too Many Requests|ThrottlerException|rate limit|did not answer within|timed? ?out|unreachable|ECONNRESET|socket hang up/i
 
 export interface HistoryImportJob {
   account_id: string
@@ -95,6 +156,55 @@ type HistoryMessage = Parameters<typeof mapOpenWaMessage>[0] & {
 }
 
 const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+function log(accountId: string, message: string) {
+  console.info(`[history import] ${accountId.slice(0, 8)}: ${message}`)
+}
+
+const clock = (ms: number) => new Date(ms).toISOString().slice(11, 19) + ' UTC'
+
+/** The chat list didn't answer in time: WhatsApp is still loading it. */
+class GatewayWarming extends Error {
+  constructor(readonly waitedMs: number) {
+    super(`WhatsApp is still loading the chat list (no answer in ${Math.round(waitedMs / 1000)} s)`)
+  }
+}
+
+/** Not enough of the run's deadline left to start the next list call. */
+class OutOfTime extends Error {}
+
+/** The gateway keeps answering 429: pause the run until it allows calls again. */
+class Throttled extends Error {
+  constructor(readonly retryAt: number) {
+    super('the WhatsApp gateway is rate-limiting the import (429 Too Many Requests)')
+  }
+}
+
+/** One run's clock and limits, threaded through every gateway call. */
+interface RunCtx {
+  deadline: number
+  now: () => number
+  callIntervalMs: number
+}
+
+/**
+ * When the next import call may go out. Module-wide on purpose: every
+ * import running in this process shares the gateway's per-client budget,
+ * and a 429 holds all of them back.
+ */
+let nextCallAt = 0
+
+/** Test hook: forget the pacing state. */
+export function __resetImportPacingForTests() {
+  nextCallAt = 0
+}
+
+async function pace(ctx: RunCtx) {
+  const t = ctx.now()
+  const at = Math.max(t, nextCallAt)
+  nextCallAt = at + ctx.callIntervalMs
+  if (at > t) await sleepMs(at - t)
+}
 
 export class HistoryStoreError extends Error {
   constructor(step: string, cause?: { message?: string } | null) {
@@ -185,14 +295,32 @@ export async function queueHistoryImportOnConnect(
   return true
 }
 
-async function withRetry<T>(work: () => Promise<T>): Promise<T> {
+/** A paced gateway call: waits its turn, backs off on 429, retries brief hiccups. */
+async function withRetry<T>(work: () => Promise<T>, ctx: RunCtx): Promise<T> {
+  let throttled = 0
   for (let i = 0; ; i++) {
+    await pace(ctx)
     try {
       return await work()
     } catch (err) {
-      const transient =
-        err instanceof OpenWaError && (err.status === 429 || err.status === 503 || err.status === 0 || (err.status === 409 && !/not connected|not ready/i.test(err.message)))
-      if (!transient || i >= RETRY_DELAYS_MS.length) throw err
+      if (err instanceof OpenWaError && err.status === 429) {
+        throttled++
+        const wait = Math.min(
+          Math.max(err.retryAfterMs ?? THROTTLE_FALLBACK_MS * throttled, 1_000),
+          60 * 60_000,
+        )
+        // Every import call in this process waits with it.
+        nextCallAt = Math.max(nextCallAt, ctx.now() + wait)
+        if (throttled > MAX_THROTTLE_RETRIES || ctx.now() + wait > ctx.deadline - 5_000) {
+          throw new Throttled(ctx.now() + wait)
+        }
+        continue
+      }
+      // A timeout is not retried in place: the call already waited its
+      // whole window (the chat list handles it as "still loading", a
+      // chat goes back to the queue).
+      const retryable = isTransient(err) && (err as OpenWaError).code !== 'timeout'
+      if (!retryable || i >= RETRY_DELAYS_MS.length) throw err
       await sleepMs(RETRY_DELAYS_MS[i])
     }
   }
@@ -211,11 +339,28 @@ async function updateJob(admin: SupabaseClient, accountId: string, patch: Record
 }
 
 /** Phase 1: the chat list → checkpoint rows. */
-async function listChats(admin: SupabaseClient, job: HistoryImportJob, creds: OpenWaCredentials): Promise<number> {
+async function listChats(
+  admin: SupabaseClient,
+  job: HistoryImportJob,
+  creds: OpenWaCredentials,
+  opts: RunCtx & { listTimeoutMs: number },
+): Promise<number> {
   let offset = 0
   let total = 0
   for (;;) {
-    const page = await withRetry(() => listOpenWaChats(creds, job.session_id, { limit: CHATS_PAGE, offset }))
+    // The first page after pairing can take minutes; never past the deadline.
+    const window = Math.min(opts.listTimeoutMs, opts.deadline - opts.now() - 5_000)
+    if (window < Math.min(MIN_LIST_WINDOW_MS, opts.listTimeoutMs)) throw new OutOfTime()
+    let page: OpenWaChatSummary[]
+    try {
+      page = await withRetry(
+        () => listOpenWaChats(creds, job.session_id, { limit: CHATS_PAGE, offset }, { timeoutMs: window }),
+        opts,
+      )
+    } catch (err) {
+      if (err instanceof OpenWaError && err.code === 'timeout') throw new GatewayWarming(window)
+      throw err
+    }
     const individual = (page ?? []).filter(isIndividualChat)
     if (individual.length) {
       const { error } = await admin.from('whatsapp_history_import_chats').upsert(
@@ -244,11 +389,13 @@ async function chatMessages(
   job: HistoryImportJob,
   creds: OpenWaCredentials,
   chatId: string,
+  ctx: RunCtx,
 ): Promise<HistoryMessage[]> {
   if (!job.limited_history) {
     try {
-      const rows = await withRetry(() =>
-        getOpenWaChatHistory(creds, job.session_id, chatId, { limit: HISTORY_LIMIT, deep: true }),
+      const rows = await withRetry(
+        () => getOpenWaChatHistory(creds, job.session_id, chatId, { limit: HISTORY_LIMIT, deep: true }),
+        ctx,
       )
       return (rows ?? []) as HistoryMessage[]
     } catch (err) {
@@ -260,8 +407,9 @@ async function chatMessages(
   }
   const out: HistoryMessage[] = []
   for (let offset = 0; offset < HISTORY_LIMIT; offset += STORED_PAGE) {
-    const { messages } = await withRetry(() =>
-      listOpenWaMessages(creds, job.session_id, { chatId, limit: STORED_PAGE, offset }),
+    const { messages } = await withRetry(
+      () => listOpenWaMessages(creds, job.session_id, { chatId, limit: STORED_PAGE, offset }),
+      ctx,
     )
     out.push(...(messages ?? []).map((m) => storedToHistory(m)))
     if (!messages || messages.length < STORED_PAGE) break
@@ -276,11 +424,12 @@ async function importChat(
   row: OpenWaConnectionRow,
   creds: OpenWaCredentials,
   chat: ChatRow,
+  ctx: RunCtx,
 ): Promise<number | null> {
   const phone =
     phoneFromChatId(chat.chat_id) ??
     (chat.chat_id.endsWith('@lid')
-      ? await withRetry(() => getOpenWaContactPhone(creds, job.session_id, chat.chat_id)).then((r) =>
+      ? await withRetry(() => getOpenWaContactPhone(creds, job.session_id, chat.chat_id), ctx).then((r) =>
           r.phone ? normalizePhone(r.phone) || null : null,
         )
       : null)
@@ -297,12 +446,16 @@ async function importChat(
   if (!contactOutcome) throw new HistoryStoreError('contact')
   if (contactOutcome.wasCreated) {
     try {
+      await pace(ctx)
       const pic = await getOpenWaProfilePicture(creds, job.session_id, chat.chat_id)
       if (pic.url) {
         await admin.from('contacts').update({ avatar_url: pic.url }).eq('id', contactOutcome.contact.id).eq('account_id', job.account_id)
       }
-    } catch {
-      // Cosmetic.
+    } catch (err) {
+      // Cosmetic — but a 429 still holds the next calls back.
+      if (err instanceof OpenWaError && err.status === 429) {
+        nextCallAt = Math.max(nextCallAt, ctx.now() + (err.retryAfterMs ?? THROTTLE_FALLBACK_MS))
+      }
     }
   }
   const conv = await findOrCreateConversation(job.account_id, row.user_id, contactOutcome.contact.id)
@@ -310,7 +463,7 @@ async function importChat(
   const conversationId = conv.conversation.id as string
 
   const startedAtSec = Math.floor(Date.parse(job.started_at) / 1000)
-  const history = (await chatMessages(admin, job, creds, chat.chat_id)).filter(
+  const history = (await chatMessages(admin, job, creds, chat.chat_id, ctx)).filter(
     (m) =>
       m.id &&
       !isContentlessPlaceholder(m) &&
@@ -413,6 +566,35 @@ async function importChat(
   return inserted
 }
 
+/** Put chats that failed for a transient reason back in the queue. */
+async function requeueTransientFailures(admin: SupabaseClient, job: HistoryImportJob): Promise<number> {
+  const { data, error } = await admin
+    .from('whatsapp_history_import_chats')
+    .select('chat_id, error')
+    .eq('account_id', job.account_id)
+    .eq('status', 'failed')
+  if (error) throw new HistoryStoreError('failed chats', error)
+  const ids = ((data ?? []) as { chat_id: string; error: string | null }[])
+    .filter((c) => c.error && TRANSIENT_CHAT_ERROR.test(c.error))
+    .map((c) => c.chat_id)
+  if (!ids.length) return 0
+  for (let i = 0; i < ids.length; i += 100) {
+    const { error: upErr } = await admin
+      .from('whatsapp_history_import_chats')
+      .update({ status: 'pending', attempts: 0, error: null, updated_at: new Date().toISOString() })
+      .eq('account_id', job.account_id)
+      .in('chat_id', ids.slice(i, i + 100))
+    if (upErr) throw new HistoryStoreError('requeue', upErr)
+  }
+  // They were counted as errors when they failed; they aren't.
+  job.errors = Math.max(0, job.errors - ids.length)
+  await updateJob(admin, job.account_id, {
+    errors: job.errors,
+    ...(job.errors === 0 ? { last_error: null } : {}),
+  })
+  return ids.length
+}
+
 /**
  * Run due import jobs until `deadline` (epoch ms). Called by the
  * settings route right after a start, after a QR connect, and by the
@@ -420,9 +602,19 @@ async function importChat(
  */
 export async function runHistoryImport(
   admin: SupabaseClient,
-  opts: { accountId?: string; deadline: number; now?: () => number; pauseMs?: number },
+  opts: {
+    accountId?: string
+    deadline: number
+    now?: () => number
+    pauseMs?: number
+    listTimeoutMs?: number
+    /** Gap between gateway calls (default: importCallIntervalMs()). */
+    callIntervalMs?: number
+  },
 ): Promise<HistoryImportJob | null> {
   const now = opts.now ?? Date.now
+  const runStarted = now()
+  const ctx: RunCtx = { deadline: opts.deadline, now, callIntervalMs: opts.callIntervalMs ?? importCallIntervalMs() }
   const { data, error } = await admin.rpc('claim_history_import', {
     p_account_id: opts.accountId ?? null,
     p_lease_seconds: HISTORY_LEASE_SECONDS,
@@ -440,16 +632,33 @@ export async function runHistoryImport(
   const row = rowData as OpenWaConnectionRow | null
   if (!row?.session_id || row.session_id !== job.session_id) {
     await updateJob(admin, job.account_id, { status: 'failed', last_error: 'The QR-code session changed; start the import again', lease_until: null })
+    log(job.account_id, 'stopped: the QR-code session changed')
     return { ...job, status: 'failed' }
   }
-  const creds = requireOpenWaGateway()
+  log(
+    job.account_id,
+    `run (${job.status}, ${job.chats_done + job.chats_skipped}/${job.chats_total} chats, ${job.messages_imported} messages, ` +
+      `1 gateway call / ${ctx.callIntervalMs} ms)`,
+  )
+  // Chats sent back to the queue during THIS run (transient failure):
+  // the next run retries them, this one moves on.
+  const deferred = new Set<string>()
 
   try {
+    const creds = requireOpenWaGateway()
+    // Chats an earlier run gave up on for a transient reason (429, timeout)
+    // go back to the queue: not the chat's fault, never a definitive error.
+    const requeued = await requeueTransientFailures(admin, job)
+    if (requeued) log(job.account_id, `${requeued} chats that failed on a 429/timeout are back in the queue`)
     if (job.status === 'queued' || job.status === 'listing' || job.status === 'waiting_session') {
       await updateJob(admin, job.account_id, { status: 'listing' })
-      const total = await listChats(admin, job, creds)
+      job.status = 'listing'
+      const listStarted = now()
+      const total = await listChats(admin, job, creds, { ...ctx, listTimeoutMs: opts.listTimeoutMs ?? LIST_TIMEOUT_MS })
       job.status = 'importing'
-      await updateJob(admin, job.account_id, { status: 'importing', chats_total: total })
+      job.chats_total = total
+      await updateJob(admin, job.account_id, { status: 'importing', chats_total: total, last_error: null })
+      log(job.account_id, `listed ${total} individual chats in ${((now() - listStarted) / 1000).toFixed(1)} s`)
     }
 
     while (now() < opts.deadline) {
@@ -459,15 +668,26 @@ export async function runHistoryImport(
         .eq('account_id', job.account_id)
         .eq('status', 'pending')
         .order('chat_timestamp', { ascending: false })
-        .limit(1)
+        .limit(deferred.size + 1)
       if (nextErr) throw new HistoryStoreError('next chat', nextErr)
-      const chat = (next ?? [])[0] as ChatRow | undefined
+      const chat = ((next ?? []) as ChatRow[]).find((c) => !deferred.has(c.chat_id))
+      if (!chat && deferred.size) {
+        // Only chats that just failed transiently are left: retry shortly.
+        const retryAt = now() + WARMING_RETRY_MS
+        await updateJob(admin, job.account_id, { lease_until: null, next_run_at: new Date(retryAt).toISOString() })
+        log(job.account_id, `${deferred.size} chats back in the queue (gateway busy or slow); next attempt at ${clock(retryAt)}`)
+        return job
+      }
       if (!chat) {
         await updateJob(admin, job.account_id, { status: 'done', finished_at: new Date().toISOString(), lease_until: null })
+        log(
+          job.account_id,
+          `done: ${job.chats_done} chats, ${job.messages_imported} messages, ${job.chats_skipped} skipped, ${job.errors} errors`,
+        )
         return { ...job, status: 'done' }
       }
       try {
-        const n = await importChat(admin, job, row, creds, chat)
+        const n = await importChat(admin, job, row, creds, chat, ctx)
         if (n === null) {
           job.chats_skipped++
           await admin.from('whatsapp_history_import_chats')
@@ -480,6 +700,17 @@ export async function runHistoryImport(
       } catch (err) {
         if (sessionNotReady(err)) throw err
         if (err instanceof HistoryStoreError) throw err
+        // Rate limit: the whole run pauses; this chat stays queued as it was.
+        if (err instanceof Throttled) throw err
+        if (isTransient(err)) {
+          // Timeout / gateway hiccup: back to the queue, not an error.
+          deferred.add(chat.chat_id)
+          const message = err instanceof Error ? err.message : String(err)
+          await admin.from('whatsapp_history_import_chats')
+            .update({ status: 'pending', error: `retrying: ${message}`.slice(0, 300), updated_at: new Date().toISOString() })
+            .eq('account_id', job.account_id).eq('chat_id', chat.chat_id)
+          continue
+        }
         job.errors++
         const message = err instanceof Error ? err.message : String(err)
         await admin.from('whatsapp_history_import_chats')
@@ -499,25 +730,46 @@ export async function runHistoryImport(
       })
       await sleepMs(opts.pauseMs ?? CHAT_PAUSE_MS)
     }
-    // Out of time: the cron continues from the checkpoint.
+    // Out of time: the next tick continues from the checkpoint.
     await updateJob(admin, job.account_id, { lease_until: null, next_run_at: new Date().toISOString() })
+    log(
+      job.account_id,
+      `paused after ${((now() - runStarted) / 1000).toFixed(0)} s: ${job.chats_done + job.chats_skipped}/${job.chats_total} chats, ${job.messages_imported} messages; the next tick continues`,
+    )
     return job
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (sessionNotReady(err)) {
+    if (err instanceof Throttled) {
       await updateJob(admin, job.account_id, {
-        status: 'waiting_session',
-        last_error: message.slice(0, 300),
+        last_error: err.message,
         lease_until: null,
-        next_run_at: new Date(now() + 2 * 60_000).toISOString(),
-      })
-      return { ...job, status: 'waiting_session' }
+        next_run_at: new Date(err.retryAt).toISOString(),
+      }).catch((updateErr) =>
+        console.error('[history import] could not record the stop:', updateErr instanceof Error ? updateErr.message : updateErr),
+      )
+      log(
+        job.account_id,
+        `gateway rate limit (429): paused at ${job.chats_done + job.chats_skipped}/${job.chats_total} chats; resuming at ${clock(err.retryAt)}`,
+      )
+      return job
     }
+    if (err instanceof OutOfTime) {
+      await updateJob(admin, job.account_id, { lease_until: null, next_run_at: new Date().toISOString() })
+      log(job.account_id, 'paused before the chat list (run deadline); the next tick continues')
+      return job
+    }
+    const waiting = err instanceof GatewayWarming || sessionNotReady(err)
+    const retryAt = now() + (err instanceof GatewayWarming ? WARMING_RETRY_MS : waiting ? SESSION_RETRY_MS : ERROR_RETRY_MS)
     await updateJob(admin, job.account_id, {
+      ...(waiting ? { status: 'waiting_session' } : {}),
       last_error: message.slice(0, 300),
       lease_until: null,
-      next_run_at: new Date(now() + 5 * 60_000).toISOString(),
-    }).catch(() => undefined)
-    throw err
+      next_run_at: new Date(retryAt).toISOString(),
+    }).catch((updateErr) =>
+      // The lease still expires (HISTORY_LEASE_SECONDS) and the next tick reclaims it.
+      console.error('[history import] could not record the stop:', updateErr instanceof Error ? updateErr.message : updateErr),
+    )
+    log(job.account_id, `${waiting ? 'waiting' : 'error'}: ${message.slice(0, 200)} — next attempt at ${clock(retryAt)}`)
+    return { ...job, status: waiting ? 'waiting_session' : job.status }
   }
 }
