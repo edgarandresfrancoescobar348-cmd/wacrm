@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored minified opus-recorder encoder worker (served statically).
     "public/opus/**",
+    // Vendored OpenWA gateway (git subtree); it has its own lint setup.
+    "packages/**",
   ]),
 ]);
 

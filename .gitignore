@@ -20,6 +20,9 @@
 # production
 /build
 
+# embedded WhatsApp gateway data (sessions, gateway.key) — scripts/wacrm.mjs
+/.openwa-data/
+
 # misc
 .DS_Store
 *.pem

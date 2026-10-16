@@ -15,3 +15,5 @@ docker-compose*.yml
 .vscode
 .idea
 coverage
+packages
+.openwa-data
