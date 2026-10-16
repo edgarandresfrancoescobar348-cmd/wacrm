@@ -12,6 +12,7 @@ import {
   Ban,
   BarChart3,
   Camera,
+  Clock,
   EyeOff,
   FileText,
   Headphones,
@@ -96,6 +97,8 @@ export function previewParts(
       return { icon: Package, label: d || t("product") };
     case "masked":
       return { icon: EyeOff, label: t("masked") };
+    case "waiting":
+      return { icon: Clock, label: t("waiting") };
     case "template":
       return { icon: LayoutTemplate, label: d || t("template") };
     case "message":

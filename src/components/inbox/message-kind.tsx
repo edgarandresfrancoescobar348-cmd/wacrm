@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import {
   Ban,
   BarChart3,
+  Clock,
   EyeOff,
   MapPin,
   Package,
@@ -175,6 +176,16 @@ export function KindContent({
           </div>
           {metaBlock}
         </div>
+      );
+
+    case "waiting":
+      // WhatsApp's own words for a message not delivered to this device yet.
+      return (
+        <p className={cn(TEXT, "flex items-center gap-1.5 italic opacity-75")} data-testid="waiting-message">
+          <Clock className="size-4 shrink-0" />
+          <span>{t("waiting")}</span>
+          {inlineMeta}
+        </p>
       );
 
     case "masked":

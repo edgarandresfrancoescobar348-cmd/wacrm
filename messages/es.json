@@ -425,7 +425,8 @@
       "voiceWithDuration": "Mensaje de voz ({duration})",
       "pages": "{count, plural, one {# página} other {# páginas}}",
       "revoked": "Mensaje eliminado",
-      "album": "{count} fotos"
+      "album": "{count} fotos",
+      "waiting": "Esperando el mensaje. Esto puede tomar tiempo."
     }
   },
   "Contacts": {

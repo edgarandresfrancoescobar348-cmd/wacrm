@@ -27,6 +27,13 @@ export type ContentMeta =
   | { kind: 'product'; productId?: string | null; title?: string | null; description?: string | null }
   /** WhatsApp withheld the payload from linked devices (e.g. some OTPs). */
   | { kind: 'masked' }
+  /**
+   * WhatsApp listed the message but has not delivered its content to this
+   * device yet (a content-less placeholder, phase 5f): the phone's "Aguardando
+   * mensagem. Isso pode levar algum tempo." Replaced when the real message
+   * arrives under the same id.
+   */
+  | { kind: 'waiting' }
   | { kind: 'sticker' }
   | { kind: 'voice' }
   | { kind: 'document'; filename?: string | null; sizeBytes?: number | null }
@@ -115,6 +122,8 @@ export function previewFor(
         return `[product${detail(meta.title)}]`
       case 'masked':
         return '[masked]'
+      case 'waiting':
+        return '[waiting]'
       case 'sticker':
         return '[sticker]'
       case 'voice':
