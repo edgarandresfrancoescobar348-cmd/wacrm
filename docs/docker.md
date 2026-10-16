@@ -68,13 +68,15 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
   Attachment Storage; attachments received while it's off become
   unviewable once Meta drops them. Files over 16 MB (the bucket's
   limit) are never copied.
-- Nothing inside the container is scheduled. If you use automation
-  Wait steps or flows, point an external scheduler at
-  `GET /api/automations/cron` and `GET /api/flows/cron` on this
-  deployment, sending the shared secret in the `x-cron-secret` header
-  (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
-  503 until that variable is set. The automations cron also continues
-  broadcasts that paused at their time budget (QR-code pacing, large
-  audiences, unconfirmed sends being reconciled) and runs inbound bot
-  fan-out that a delivery couldn't run; `GET /api/whatsapp/broadcast/cron`
-  does the same two, on its own schedule if you prefer.
+- The `scheduler` service (same image as `app`, `node scripts/wacrm.mjs
+  cron`) calls the cron endpoints every 60 s — `GET /api/automations/cron`
+  and `GET /api/whatsapp/broadcast/cron` every tick, `GET /api/flows/cron`
+  every 5 minutes — with the shared secret in `x-cron-secret`: your
+  `AUTOMATION_CRON_SECRET` from `.env.local`, or, when you set none, one
+  `openwa-key` generates into the `gateway-key` volume (`cron.secret`,
+  read by `app` and `scheduler` through `AUTOMATION_CRON_SECRET_FILE`).
+  No crontab needed. The automations cron drains automation Wait steps,
+  continues broadcasts that paused at their time budget (QR-code pacing,
+  large audiences, unconfirmed sends being reconciled), runs inbound bot
+  fan-out a delivery couldn't run, and continues the QR-code history
+  import.

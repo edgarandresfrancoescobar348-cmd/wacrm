@@ -54,6 +54,17 @@ now ships inside wacrm, next to the official Meta Cloud API.
   `allowScripts` (npm 11) approves only the install scripts the app and the
   gateway need (Chrome download, SQLite binding) and denies telemetry; the
   start script stops with a clear message when Chrome or SQLite is missing.
+- **One start includes the scheduler.** `npm run dev`/`start` call the cron
+  endpoints every 60 s with the cron secret (generated when unset); compose
+  has a `scheduler` service. Nothing had continued the QR history import,
+  broadcasts or the fan-out safety net outside serverless cron.
+- **History import on real accounts:** connecting only queues it; a slow
+  first chat listing (whatsapp-web.js loading the phone's chats, 90 s+)
+  waits up to 180 s and otherwise retries with "waiting for WhatsApp" on the
+  card; every stop records its reason and next attempt and logs
+  `[history import]`; calls are paced under the gateway's rate limit, a 429
+  honours `Retry-After`, and chats that hit a 429/timeout are requeued, not
+  failed. The inbox lists conversations most recent first as they land.
 - **Settings → WhatsApp: two modes.** "API oficial" (unchanged) or "QR Code":
   "Conectar" (session + signed
   webhook + live QR that refreshes until scanned), pairing code, connected

@@ -65,7 +65,29 @@ checks that Chrome and the SQLite binding exist and stops with the fix
 when they don't. Changing `allowScripts` reinstalls the gateway's
 dependencies on the next start.
 
-In dev/start, Ctrl-C (or either process exiting) stops both. `npm run dev -- -p 4000`
+In dev/start, Ctrl-C (or either process exiting) stops both.
+
+### The scheduler
+
+"One start" includes the cron: `npm run dev` / `npm run start` tick every
+60 s (`WACRM_CRON_INTERVAL_S`) — `/api/automations/cron` and
+`/api/whatsapp/broadcast/cron` each tick, `/api/flows/cron` every 5th — with
+the cron secret: `AUTOMATION_CRON_SECRET` from the environment or `.env*`
+files, else one generated once into `.openwa-data/cron.secret` (`0600`) and
+handed to Next. One log line per tick (`[cron] tick 3: automations 200 ·
+broadcast 200 (44 ms)`); it stops with the app. Compose runs the same loop
+as the `scheduler` service (docs/docker.md). Serverless hosts keep their own
+cron configuration. `WACRM_CRON=off` turns it off.
+
+### Gateway rate limit
+
+OpenWA throttles each client IP (Nest throttler; stock 10/s, 100/min,
+1000/h). wacrm is the embedded gateway's only client and its API is
+internal, so the runner and compose raise those to 20/s, 600/min and
+36 000/h and hand the per-minute/per-hour values to Next
+(`OPENWA_RATE_LIMIT_PER_MIN` / `_PER_HOUR`). The history import uses 40 % of
+the tighter one (240 calls/min here; ~6.7/min against a stock gateway),
+leaving the rest to live traffic. `npm run dev -- -p 4000`
 passes arguments to Next; the webhook URL follows the port.
 
 **QR mode needs a long-running host.** The gateway keeps a WhatsApp Web session
@@ -173,9 +195,26 @@ are skipped), then per chat `GET …/messages/:chatId/history?deep=true`. On
 engines without live history (Baileys answers 501) only the messages the
 gateway stored are imported, and the page says the history is limited.
 
-- Runs in the background, resumable (per-chat checkpoints, migration 063),
-  continued by the same scheduler as automations; 409/503 are retried with
-  backoff, and a disconnected session waits.
+- Connecting only **queues** it; the scheduler tick runs it (within a
+  minute). Right after pairing, whatsapp-web.js loads the chat list from the
+  phone first — the first `/chats` can take 90 s or more. The list call
+  waits up to 180 s (never past the run's deadline); if it still has no
+  answer the job waits ("Aguardando o WhatsApp carregar as conversas…
+  próxima tentativa às HH:MM") and retries 30 s later.
+- Runs in bounded steps (one cron run, ≤ 280 s, then the next tick),
+  resumable (per-chat checkpoints, migration 063), most recent chats first;
+  the inbox shows each conversation as it lands, most recent first.
+- Respects the gateway's rate limit (above): every call is paced, a 429
+  waits what `Retry-After*` says (and holds back every import call), and a
+  gateway that keeps refusing pauses the run until then. A chat that hits a
+  429, a timeout or a 5xx goes back to the queue — never a definitive error;
+  chats an older version marked failed for those reasons are requeued on
+  the next run. A disconnected session waits.
+- Never a silent stall: every run that stops leaves its reason and next
+  attempt on the job (`last_error`, `next_run_at`) and logs a
+  `[history import]` line; a run whose process died is picked up again when
+  its lease (6 min) expires; the card says when the scheduler hasn't run it
+  for a while.
 - Idempotent: messages are keyed by the provider message id, so a re-run or
   a webhook delivering the same message never duplicates it. Messages newer
   than the import's start are left to the webhooks.
