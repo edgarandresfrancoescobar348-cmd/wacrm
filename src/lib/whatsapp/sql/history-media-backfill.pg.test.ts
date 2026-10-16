@@ -25,9 +25,11 @@ describe.skipIf(!pgAvailable())('066: imported history media backfill', () => {
         ADD COLUMN reply_to_message_id uuid, ADD COLUMN interactive_reply_id text, ADD COLUMN revoked_at timestamptz;
       CREATE TABLE public.profiles(user_id uuid, account_id uuid);
       CREATE SCHEMA IF NOT EXISTS auth; CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULL::uuid $$;`)
-    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql']) await pg.migrate(m)
+    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql', '067_whatsapp_parity.sql']) await pg.migrate(m)
     await pg.sql(`
-      INSERT INTO public.conversations(id, account_id) VALUES ('${id(1)}', '${ACCT}'), ('${id(2)}', '${ACCT}'), ('${id(3)}', '${ACCT}');
+      INSERT INTO public.contacts(id, account_id, phone) VALUES ('${id(11)}', '${ACCT}', '1'), ('${id(12)}', '${ACCT}', '2'), ('${id(13)}', '${ACCT}', '3');
+      INSERT INTO public.conversations(id, account_id, contact_id) VALUES
+        ('${id(1)}', '${ACCT}', '${id(11)}'), ('${id(2)}', '${ACCT}', '${id(12)}'), ('${id(3)}', '${ACCT}', '${id(13)}');
       INSERT INTO public.whatsapp_history_import_chats(account_id, chat_id, status, conversation_id) VALUES
         ('${ACCT}', '${CHAT}', 'done', '${id(1)}'), ('${ACCT}', '${LID_CHAT}', 'done', '${id(2)}');
       INSERT INTO public.messages(conversation_id, message_id, content_type, content_meta, media_url, imported_at, revoked_at) VALUES

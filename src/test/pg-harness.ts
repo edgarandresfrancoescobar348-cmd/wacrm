@@ -133,4 +133,5 @@ export const WA_MIGRATIONS = [
   '060_fanout_outcomes.sql',
   '061_connection_lock.sql',
   '064_openwa_embedded_gateway.sql',
+  '067_whatsapp_parity.sql',
 ]

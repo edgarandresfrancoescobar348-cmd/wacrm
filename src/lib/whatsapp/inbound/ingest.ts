@@ -14,6 +14,8 @@
 // still exercises it end to end.
 // ============================================================
 
+import type { MediaMeta } from '@/types'
+import { contactNamePatch } from '@/lib/whatsapp/contact-name'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import {
   hasUsableIdentity,
@@ -46,6 +48,17 @@ export interface InboundContent {
   contentType?: string
   /** Kind-specific structure (message-content.ts, migration 062). */
   meta?: ContentMeta | null
+  /**
+   * What the phone shows beyond the content (QR mode, migration 067):
+   * "Encaminhada", the media details WhatsApp knows without a download,
+   * and — for the account's own messages — the ticks.
+   */
+  extras?: {
+    is_forwarded?: boolean
+    forwarding_score?: number | null
+    media_meta?: MediaMeta | null
+    status?: string
+  }
 }
 
 export interface InboundReaction {
@@ -74,6 +87,8 @@ export interface InboundMessage {
   reaction?: InboundReaction | null
   /** Raw text body, if any — fallback for the automation context. */
   text?: string | null
+  /** QR mode: the WhatsApp chat id, stored on the conversation (migration 067). */
+  waChatId?: string | null
   /**
    * Provider-specific content resolution (media verification and
    * mirroring, interactive reply ids). Not called for reactions.
@@ -109,6 +124,33 @@ export interface IngestOptions {
    * succeeded, e.g. in `after()` once the delivery has been acknowledged.
    */
   deferFanOut?: (task: () => Promise<void>) => void
+}
+
+/** The message columns of InboundContent.extras (migration 067); none for Meta. */
+function parityColumns(extras: InboundContent['extras']): Record<string, unknown> {
+  if (!extras) return {}
+  const out: Record<string, unknown> = {}
+  if (extras.is_forwarded) {
+    out.is_forwarded = true
+    out.forwarding_score = extras.forwarding_score ?? null
+  }
+  if (extras.media_meta) out.media_meta = extras.media_meta
+  return out
+}
+
+/**
+ * Store the WhatsApp chat id on a QR-code conversation the first time it
+ * is known — the chat-state sync and group-free replies key on it. A
+ * conflict (another row of the account already holds it) is left alone.
+ */
+async function rememberChatId(conversation: { id: string; wa_chat_id?: string | null }, waChatId?: string | null) {
+  if (!waChatId || conversation.wa_chat_id) return
+  const { error } = await supabaseAdmin()
+    .from('conversations')
+    .update({ wa_chat_id: waChatId })
+    .eq('id', conversation.id)
+    .is('wa_chat_id', null)
+  if (error && !isUniqueViolation(error)) console.warn('[webhook] could not store the chat id:', error.message)
 }
 
 /** A transient failure the provider should retry (see throwOnFailure). */
@@ -484,6 +526,7 @@ export async function ingestInboundMessage(
     return
   }
   const conversation = convResult.conversation
+  await rememberChatId(conversation, inbound.waChatId)
 
   // Emit conversation.created as soon as the thread is opened — BEFORE
   // the reaction short-circuit below — so a conversation first opened by
@@ -602,7 +645,10 @@ export async function ingestInboundMessage(
   // The list preview like WhatsApp's ("📷 Photo", "👤 Name"…) — the same
   // tokens for both connection modes (message-content.ts).
   const contentMeta: ContentMeta | null = parsed.meta ?? null
-  const lastMessageText = previewFor(contentType, contentMeta, contentText)
+  const lastMessageText = previewFor(contentType, contentMeta, contentText, {
+    durationSeconds: parsed.extras?.media_meta?.durationSeconds,
+    pageCount: parsed.extras?.media_meta?.pageCount,
+  })
   const storedFanout: InboundFanoutPayload = {
     accountId,
     configOwnerUserId,
@@ -642,6 +688,7 @@ export async function ingestInboundMessage(
         // the column; null for every other content_type so existing inserts
         // behave identically.
         interactive_reply_id: interactiveReplyId,
+        ...parityColumns(parsed.extras),
       },
       { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
     )
@@ -815,6 +862,7 @@ export async function recordOutboundEcho(
   )
   if (!convResult) return fail('conversation')
   const conversationId = convResult.conversation.id
+  await rememberChatId(convResult.conversation, echo.waChatId)
 
   const { data: existing } = await supabaseAdmin()
     .from('messages')
@@ -851,10 +899,12 @@ export async function recordOutboundEcho(
         media_url: mediaUrl,
         media_type: mediaType,
         message_id: echo.messageId,
-        status: 'sent',
+        // A message typed on the phone: its ticks as WhatsApp reports them.
+        status: echoContent.extras?.status ?? 'sent',
         created_at: new Date(parseInt(echo.timestamp) * 1000).toISOString(),
         reply_to_message_id: replyTo,
         content_meta: echoContent.meta ?? null,
+        ...parityColumns(echoContent.extras),
       },
       { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
     )
@@ -868,7 +918,10 @@ export async function recordOutboundEcho(
   await supabaseAdmin()
     .from('conversations')
     .update({
-      last_message_text: previewFor(contentType, echoContent.meta ?? null, contentText),
+      last_message_text: previewFor(contentType, echoContent.meta ?? null, contentText, {
+        durationSeconds: echoContent.extras?.media_meta?.durationSeconds,
+        pageCount: echoContent.extras?.media_meta?.pageCount,
+      }),
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -902,6 +955,25 @@ export async function applyMessageMutation(
   if (error) {
     console.error(`[webhook] message ${mutation.kind} update failed:`, error.message)
     if (options.throwOnFailure) throw new IngestFailure(`message ${mutation.kind}`, error)
+    return
+  }
+  // The list shows "Mensagem apagada" when the deleted one was the last
+  // message, like WhatsApp (phase 5e). Only that conversation's preview,
+  // only while that message is still its newest.
+  if (mutation.kind === 'revoked') {
+    const { data: rows } = await supabaseAdmin()
+      .from('messages')
+      .select('conversation_id, created_at, conversations!inner(account_id)')
+      .eq('message_id', providerMessageId)
+      .eq('conversations.account_id', accountId)
+    for (const row of (rows ?? []) as { conversation_id: string; created_at: string }[]) {
+      await supabaseAdmin()
+        .from('conversations')
+        .update({ last_message_text: previewFor('text', null, null, { revoked: true }) })
+        .eq('id', row.conversation_id)
+        .eq('account_id', accountId)
+        .eq('last_message_at', row.created_at)
+    }
   }
 }
 
@@ -957,13 +1029,17 @@ function contactIdentityPatch(
 ): Record<string, unknown> | null {
   const patch: Record<string, unknown> = {}
 
-  // Only ever from a label Meta actually supplied. `identityDisplayName`
-  // falls back to the phone number / BSUID, which is the right choice
-  // for a brand-new row but would clobber an agent's hand-edited name
-  // on every inbound message from a contact with no WhatsApp profile
-  // name.
+  // Only ever from a label the provider actually supplied (never the
+  // phone fallback of `identityDisplayName`), and by the phone's rule
+  // (contact-name.ts): a saved name beats a verified one beats a push
+  // name, and a name a CRM user typed is never overwritten.
   const name = identity.name || identity.waUsername
-  if (name && name !== existing.name) patch.name = name
+  const namePatch = contactNamePatch(
+    existing,
+    name ? { name, source: identity.name ? (identity.nameSource ?? 'push') : 'push' } : null,
+    identity.pushName,
+  )
+  if (namePatch) Object.assign(patch, namePatch)
 
   if (identity.waUserId && identity.waUserId !== existing.wa_user_id) {
     patch.wa_user_id = identity.waUserId
@@ -1054,6 +1130,8 @@ export async function findOrCreateContact(
       user_id: configOwnerUserId,
       phone: identity.phone,
       name: identityDisplayName(identity),
+      name_source: identity.name ? (identity.nameSource ?? 'push') : identity.waUsername ? 'push' : 'phone',
+      push_name: identity.pushName?.trim() || null,
       wa_user_id: identity.waUserId,
       wa_parent_user_id: identity.waParentUserId,
       wa_username: identity.waUsername,

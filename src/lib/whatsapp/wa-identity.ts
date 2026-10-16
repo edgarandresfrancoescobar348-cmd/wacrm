@@ -63,6 +63,10 @@ export interface WaIdentity {
   waUsername: string | null
   /** Profile display name, or `''`. */
   name: string
+  /** Where `name` came from (QR mode: saved / verified / push). Default push. */
+  nameSource?: import('./contact-name').NameSource
+  /** The sender's own profile name, kept apart from `name` (QR mode). */
+  pushName?: string | null
 }
 
 /**

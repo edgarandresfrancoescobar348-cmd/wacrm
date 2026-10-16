@@ -116,6 +116,10 @@ export interface Contact {
    *  are user-changeable, so they must never key a contact. */
   wa_username?: string | null;
   name?: string;
+  /** Where `name` came from (migration 067): saved > verified > push; manual is never overwritten. */
+  name_source?: 'saved' | 'verified' | 'push' | 'phone' | 'import' | 'manual' | null;
+  /** The sender's own WhatsApp profile name. */
+  push_name?: string | null;
   email?: string;
   company?: string;
   avatar_url?: string;
@@ -171,7 +175,8 @@ export type ConversationStatus = 'open' | 'pending' | 'closed';
 export interface Conversation {
   id: string;
   user_id: string;
-  contact_id: string;
+  /** Null for a WhatsApp group (QR mode): groups are not CRM contacts. */
+  contact_id: string | null;
   status: ConversationStatus;
   assigned_agent_id?: string;
   last_message_text?: string;
@@ -192,6 +197,27 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /** QR mode (migration 067): the WhatsApp chat id, and the phone's state. */
+  wa_chat_id?: string | null;
+  is_group?: boolean;
+  group_name?: string | null;
+  group_avatar_url?: string | null;
+  archived?: boolean;
+  pinned_at?: string | null;
+  /** The group member who sent the last message ("Luciana Alves: …"). */
+  last_message_sender?: string | null;
+}
+
+/** What WhatsApp declares about a message's media (migration 067). */
+export interface MediaMeta {
+  /** Base64 JPEG preview (no data: prefix). */
+  thumbnail?: string;
+  durationSeconds?: number;
+  pageCount?: number;
+  sizeBytes?: number;
+  mimetype?: string;
+  /** A voice note was played (by the phone's owner, or in wacrm). */
+  played?: boolean;
 }
 
 // ============================================================
@@ -239,6 +265,13 @@ export interface Message {
   media_url?: string;
   /** Set when WhatsApp no longer has the file (media proxy answered 410). */
   media_expired_at?: string | null;
+  /** Group messages: who sent it (migration 067). */
+  sender_wa_id?: string | null;
+  sender_name?: string | null;
+  /** "Encaminhada" / "Encaminhada com frequência" (score ≥ 4). */
+  is_forwarded?: boolean;
+  forwarding_score?: number | null;
+  media_meta?: MediaMeta | null;
   /**
    * MIME type of `media_url`'s content, as Meta reported it. Inbound
    * media only — outbound URLs already carry a filename and extension.

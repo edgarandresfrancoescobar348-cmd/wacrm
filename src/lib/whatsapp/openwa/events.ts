@@ -8,6 +8,9 @@
 // anything here runs.
 // ============================================================
 
+import { ingestGroupMessage } from './groups'
+import { forwardFlags, mediaMetaFor, statusFromAck } from './parity'
+import { nameFromWhatsApp } from '@/lib/whatsapp/contact-name'
 import crypto from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -62,11 +65,18 @@ export function verifyOpenWaSignature(
 
 // ---- inbound message classification -------------------------------
 
-interface OpenWaMessageData {
+export interface OpenWaMessageData {
   id?: string
   from?: string
   to?: string
   chatId?: string
+  /** Group messages: the member who sent it. */
+  author?: string
+  /** The message's own delivery state (wacrm gateway patch): 1 sent, 2 delivered, 3 read, 4 played. */
+  ack?: number
+  isForwarded?: boolean
+  forwardingScore?: number
+  mentionedIds?: string[]
   body?: string
   type?: string
   timestamp?: number
@@ -75,13 +85,18 @@ interface OpenWaMessageData {
   kind?: string
   isStatusBroadcast?: boolean
   senderPhone?: string | null
-  contact?: { name?: string; pushName?: string }
+  /** With WEBHOOK_CONTACT_DETAILS on the gateway: the sender's full contact. */
+  contact?: { name?: string; pushName?: string; verifiedName?: string; isMyContact?: boolean }
   media?: {
     mimetype?: string
     filename?: string
     data?: string
     omitted?: boolean
     sizeBytes?: number
+    /** wacrm gateway patch: what WhatsApp declares without a download. */
+    durationSeconds?: number
+    pageCount?: number
+    thumbnail?: string
   }
   quotedMessage?: { id?: string; body?: string }
   location?: {
@@ -103,6 +118,12 @@ interface OpenWaMessageData {
  * Only one-to-one chats become conversations. Groups, status posts,
  * channels and broadcast lists are dropped.
  */
+/** A message of a WhatsApp group (not status / broadcast list / channel). */
+export function isGroupMessage(data: OpenWaMessageData): boolean {
+  const chatId = data.chatId ?? data.from ?? ''
+  return chatId.endsWith('@g.us') && !data.isStatusBroadcast
+}
+
 export function isIgnorableChat(data: OpenWaMessageData): boolean {
   const chatId = data.chatId ?? data.from ?? ''
   if (data.isGroup) return true
@@ -400,6 +421,21 @@ function identityFor(phone: string, name: string): WaIdentity {
   return { phone, waUserId: null, waParentUserId: null, waUsername: null, name }
 }
 
+/** The sender as the phone names them (contact-name.ts): saved > verified > push. */
+export function identityFromContact(phone: string, contact: OpenWaMessageData['contact']): WaIdentity {
+  const best = nameFromWhatsApp({
+    savedName: contact?.name,
+    isMyContact: contact?.isMyContact,
+    verifiedName: contact?.verifiedName,
+    pushName: contact?.pushName,
+  })
+  return {
+    ...identityFor(phone, best?.name ?? ''),
+    ...(best ? { nameSource: best.source } : {}),
+    pushName: contact?.pushName ?? null,
+  }
+}
+
 /**
  * The envelope's dispatch time at FULL (millisecond) precision — the
  * newest-wins watermark for session state and edits. Must not go through
@@ -443,6 +479,8 @@ function envelopeSeconds(env: OpenWaEnvelope, fallback?: number): string {
 
 export type OpenWaEventOutcome =
   | 'ingested'
+  /** A WhatsApp group message (QR mode): stored, no bots (groups.ts). */
+  | 'ingested_group'
   | 'ignored_group'
   | 'ignored_no_phone'
   /** A content-less placeholder (isContentlessPlaceholder): nothing stored. */
@@ -474,6 +512,21 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
     case 'message.received': {
       const msg = data as OpenWaMessageData
       if (!msg.id || msg.fromMe) return 'ignored'
+      // Groups are listed like on the phone, but never as CRM contacts and
+      // never with bots (groups.ts). Status, broadcast lists, channels: out.
+      if (isGroupMessage(msg)) {
+        if (isContentlessPlaceholder(msg)) return 'ignored_placeholder'
+        await ingestGroupMessage(ctx.admin, {
+          accountId,
+          userId: ctx.row.user_id,
+          chatId: msg.chatId ?? msg.from ?? '',
+          data: msg,
+          at: new Date(Number(envelopeSeconds(env, msg.timestamp)) * 1000).toISOString(),
+          creds: ctx.creds,
+          sessionId: ctx.row.session_id,
+        })
+        return 'ingested_group'
+      }
       if (isIgnorableChat(msg)) return 'ignored_group'
       // Before anything is created (no phone lookup, contact, conversation
       // or unread): a placeholder isn't a message.
@@ -489,10 +542,14 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
         messageId: msg.id,
         timestamp: envelopeSeconds(env, msg.timestamp),
         type: toIngestType(msg),
-        identity: identityFor(phone, msg.contact?.pushName || msg.contact?.name || ''),
+        identity: identityFromContact(phone, msg.contact),
         contextMessageId: msg.quotedMessage?.id ?? null,
         text: msg.body ?? null,
-        resolveContent: ({ accountId: acct }) => resolveOpenWaContent(ctx, msg, acct),
+        waChatId: chatId,
+        resolveContent: async ({ accountId: acct }) => ({
+          ...(await resolveOpenWaContent(ctx, msg, acct)),
+          extras: { ...forwardFlags(msg), media_meta: mediaMetaFor(msg) },
+        }),
       }
       await ingestInboundMessage(inbound, accountId, ctx.row.user_id, {
         runBots: ctx.activeProvider === 'openwa',
@@ -517,6 +574,19 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
     case 'message.sent': {
       const msg = data as OpenWaMessageData
       if (!msg.id) return 'ignored'
+      if (isGroupMessage({ ...msg, chatId: msg.chatId ?? msg.to })) {
+        if (isContentlessPlaceholder(msg)) return 'ignored_placeholder'
+        await ingestGroupMessage(ctx.admin, {
+          accountId,
+          userId: ctx.row.user_id,
+          chatId: msg.chatId ?? msg.to ?? '',
+          data: { ...msg, fromMe: true },
+          at: new Date(Number(envelopeSeconds(env, msg.timestamp)) * 1000).toISOString(),
+          creds: ctx.creds,
+          sessionId: ctx.row.session_id,
+        })
+        return 'ingested_group'
+      }
       if (isIgnorableChat(msg)) return 'ignored_group'
       if (isContentlessPlaceholder(msg)) return 'ignored_placeholder'
       const chatId = msg.chatId ?? msg.to ?? ''
@@ -547,7 +617,11 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
           identity: identityFor(phone, ''),
           contextMessageId: msg.quotedMessage?.id ?? null,
           text: msg.body ?? null,
-          resolveContent: ({ accountId: acct }) => resolveOpenWaContent(ctx, msg, acct),
+          waChatId: chatId,
+          resolveContent: async ({ accountId: acct }) => ({
+            ...(await resolveOpenWaContent(ctx, msg, acct)),
+            extras: { ...forwardFlags(msg), media_meta: mediaMetaFor(msg), status: statusFromAck(msg.ack) },
+          }),
         },
         accountId,
         ctx.row.user_id,

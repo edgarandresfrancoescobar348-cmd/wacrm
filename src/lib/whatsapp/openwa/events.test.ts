@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   failSession: false,
   rpcs: [] as { fn: string; args: Record<string, unknown> }[],
   rpcError: null as { message: string } | null,
+  ingestGroupMessage: vi.fn(async () => 'ingested'),
 }))
 
 vi.mock('@/lib/whatsapp/inbound/ingest', () => ({
@@ -31,6 +32,7 @@ vi.mock('./client', async (orig) => ({
   getOpenWaContactPhone: h.getOpenWaContactPhone,
   getOpenWaProfilePicture: vi.fn(async () => ({ url: null })),
 }))
+vi.mock('./groups', () => ({ ingestGroupMessage: h.ingestGroupMessage }))
 vi.mock('@/lib/whatsapp/mirror-inbound-media', () => ({
   mirrorInboundMedia: h.mirrorInboundMedia,
 }))
@@ -159,13 +161,24 @@ describe('message.received', () => {
       messageId: text.id,
       timestamp: '1792102503',
       type: 'text',
-      identity: { phone: '5511988887777', name: 'Maria', waUserId: null },
+      // Phase 5e: the name saved in the phone wins over the push name (kept apart).
+      identity: { phone: '5511988887777', name: 'Maria Silva', nameSource: 'saved', pushName: 'Maria', waUserId: null },
       contextMessageId: 'true_5511988887777@c.us_3EB0FF',
       text: 'Olá, quero um orçamento',
     })
     expect(options).toMatchObject({ runBots: true, mapNumberedMenuReplies: true })
     const content = await (inbound.resolveContent as (c: { accountId: string }) => Promise<unknown>)({ accountId: 'acct-1' })
-    expect(content).toEqual({ contentText: text.body, mediaUrl: null, mediaType: null, interactiveReplyId: null, contentType: 'text', meta: null })
+    expect(content).toEqual({
+      contentText: text.body,
+      mediaUrl: null,
+      mediaType: null,
+      interactiveReplyId: null,
+      contentType: 'text',
+      meta: null,
+      // Phase 5e: what the phone shows beyond the content.
+      extras: { is_forwarded: false, forwarding_score: null, media_meta: null },
+    })
+    expect(inbound.waChatId).toBe('5511988887777@c.us')
   })
 
   it('stores but does not run bots when QR is not the active mode', async () => {
@@ -174,9 +187,24 @@ describe('message.received', () => {
     expect(options).toMatchObject({ runBots: false })
   })
 
-  it('ignores group messages', async () => {
-    const group = { ...text, chatId: '120363000000@g.us', from: '120363000000@g.us', isGroup: true, kind: 'group' }
-    expect(await handleOpenWaEvent(env('message.received', group), ctx())).toBe('ignored_group')
+  // Phase 5e: groups are listed like on the phone — through groups.ts,
+  // never the contact pipeline (no CRM contact, no bots, no automations).
+  it('a group message goes to the group path, never the contact pipeline', async () => {
+    h.ingestGroupMessage.mockClear()
+    const group = { ...text, chatId: '120363000000@g.us', from: '120363000000@g.us', author: '5511977776666@c.us', isGroup: true, kind: 'group' }
+    expect(await handleOpenWaEvent(env('message.received', group), ctx())).toBe('ingested_group')
+    expect(h.ingestInboundMessage).not.toHaveBeenCalled()
+    expect(h.ingestGroupMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ accountId: 'acct-1', chatId: '120363000000@g.us', data: expect.objectContaining({ author: '5511977776666@c.us' }) }),
+    )
+  })
+
+  it('status, broadcast lists and channels stay out', async () => {
+    for (const chatId of ['status@broadcast', '12345@broadcast', '120363@newsletter']) {
+      const m = { ...text, chatId, from: chatId, isGroup: false, kind: chatId.includes('newsletter') ? 'channel' : 'broadcast' }
+      expect(await handleOpenWaEvent(env('message.received', m), ctx())).toBe('ignored_group')
+    }
     expect(h.ingestInboundMessage).not.toHaveBeenCalled()
   })
 

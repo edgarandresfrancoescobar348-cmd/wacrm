@@ -35,7 +35,7 @@ describe.skipIf(!pgAvailable())('065: empty imported conversations', () => {
       CREATE TABLE public.contact_custom_values(contact_id uuid, field_id uuid);
       CREATE TABLE public.automation_pending_executions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), contact_id uuid);
       CREATE TABLE public.automation_logs(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), contact_id uuid);`)
-    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql']) await pg.migrate(m)
+    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql', '067_whatsapp_parity.sql']) await pg.migrate(m)
 
     // The import started at T; contacts 1–6 were created by it, 7 before it.
     await pg.sql(`

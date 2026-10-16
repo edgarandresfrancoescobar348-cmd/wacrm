@@ -25,6 +25,8 @@ export async function GET(
       .select(CONVERSATION_SELECT)
       .eq('id', id)
       .eq('account_id', ctx.accountId)
+      // WhatsApp groups (QR mode) are not CRM conversations (migration 067).
+      .eq('is_group', false)
       .maybeSingle();
 
     if (error) {
