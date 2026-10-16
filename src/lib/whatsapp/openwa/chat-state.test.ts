@@ -11,6 +11,7 @@ const conv = {
   pinned_at: null as string | null,
   unread_count: 0,
   group_name: null as string | null,
+  wa_sort_at: '1970-01-01T00:00:01.000Z' as string | null,
   contact: null,
 }
 const chat = { id: '5511@c.us', name: 'Ana Carla - SELO', isGroup: false, unreadCount: 0, timestamp: 1 }
@@ -32,6 +33,10 @@ describe('chatStatePatch', () => {
   it('the unread count is the phone’s (read on the phone → 0 here)', () => {
     expect(chatStatePatch({ ...conv, unread_count: 3 }, chat, NOW)).toEqual({ unread_count: 0 })
     expect(chatStatePatch(conv, { ...chat, unreadCount: 13 }, NOW)).toEqual({ unread_count: 13 })
+  })
+  it('the phone\'s order: WhatsApp\'s chat timestamp (phase 5f)', () => {
+    expect(chatStatePatch({ ...conv, wa_sort_at: null }, { ...chat, timestamp: 1_791_000_000 }, NOW)).toEqual({ wa_sort_at: '2026-10-03T04:00:00.000Z' })
+    expect(chatStatePatch({ ...conv, wa_sort_at: '2026-10-03T04:00:00Z' }, { ...chat, timestamp: 1_791_000_000 }, NOW)).toEqual({})
   })
   it('a group renamed on the phone', () => {
     expect(chatStatePatch({ ...conv, is_group: true, group_name: 'AR' }, { ...chat, name: 'AR SELO' }, NOW)).toEqual({ group_name: 'AR SELO' })

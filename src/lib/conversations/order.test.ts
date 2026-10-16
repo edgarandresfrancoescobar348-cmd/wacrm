@@ -35,4 +35,17 @@ describe('byRecency (inbox order)', () => {
     ]
     expect(byRecency(rows).map((c) => c.id)).toEqual(['pinned-new', 'pinned-old', 'recent', 'older'])
   })
+
+  // Phase 5f: the phone's order — WhatsApp's chat timestamp, which can be
+  // later than the last message wacrm has (a chat with only "waiting" placeholders).
+  it('places a chat by WhatsApp\'s chat timestamp when it is later than its last message', () => {
+    const rows = [
+      { id: 'yesterday', last_message_at: '2026-10-15T21:00:00Z', wa_sort_at: '2026-10-15T21:00:00Z' },
+      { id: 'self', last_message_at: '2026-10-10T10:00:00Z', wa_sort_at: '2026-10-16T06:00:00Z' },
+      { id: 'waiting-only', last_message_at: '2026-10-16T08:00:00Z', wa_sort_at: '2026-10-16T08:00:00Z' },
+      { id: 'live-newer', last_message_at: '2026-10-16T09:00:00Z', wa_sort_at: '2026-10-16T07:00:00Z' },
+      { id: 'official-api', last_message_at: '2026-10-16T07:30:00Z' },
+    ]
+    expect(byRecency(rows).map((c) => c.id)).toEqual(['live-newer', 'waiting-only', 'official-api', 'self', 'yesterday'])
+  })
 })

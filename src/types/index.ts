@@ -210,6 +210,8 @@ export interface Conversation {
   is_self?: boolean;
   /** The newest message's status when it is yours — the list's ticks; null when it is the contact's (068). */
   last_message_status?: MessageStatus | null;
+  /** WhatsApp's chat timestamp: the phone's list order (migration 069). */
+  wa_sort_at?: string | null;
 }
 
 /** What WhatsApp declares about a message's media (migration 067). */

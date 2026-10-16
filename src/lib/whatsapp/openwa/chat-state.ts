@@ -32,6 +32,7 @@ interface ConversationState {
   pinned_at: string | null
   unread_count: number | null
   group_name: string | null
+  wa_sort_at?: string | null
   contact: { id: string; name: string | null; name_source: string | null; push_name: string | null } | null
 }
 
@@ -44,6 +45,11 @@ export function chatStatePatch(conv: ConversationState, chat: OpenWaChatSummary,
   const unread = Math.max(0, chat.unreadCount ?? 0)
   if (unread !== (conv.unread_count ?? 0)) patch.unread_count = unread
   if (conv.is_group && chat.name && chat.name !== conv.group_name) patch.group_name = chat.name
+  // The phone's order (phase 5f): WhatsApp's chat timestamp.
+  if (chat.timestamp && chat.timestamp > 0) {
+    const at = new Date(chat.timestamp * 1000).toISOString()
+    if (Date.parse(conv.wa_sort_at ?? '') !== Date.parse(at)) patch.wa_sort_at = at
+  }
   return patch
 }
 
@@ -65,7 +71,7 @@ export async function syncAccountChatState(
 
   const { data, error } = await admin
     .from('conversations')
-    .select('id, wa_chat_id, is_group, archived, pinned_at, unread_count, group_name, contact:contacts(id, name, name_source, push_name)')
+    .select('id, wa_chat_id, is_group, archived, pinned_at, unread_count, group_name, wa_sort_at, contact:contacts(id, name, name_source, push_name)')
     .eq('account_id', args.accountId)
     .not('wa_chat_id', 'is', null)
   if (error) throw new Error(`chat state lookup failed: ${error.message}`)

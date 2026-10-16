@@ -11,6 +11,8 @@ interface Recency {
   created_at?: string | null
   /** Pinned on the phone (QR mode, migration 067): above everything else. */
   pinned_at?: string | null
+  /** WhatsApp's chat timestamp (QR mode, migration 069): the phone's order. */
+  wa_sort_at?: string | null
 }
 
 const time = (v: string | null | undefined): number => {
@@ -18,11 +20,14 @@ const time = (v: string | null | undefined): number => {
   return Number.isFinite(t) ? t : -Infinity
 }
 
+/** Where a conversation sits: the later of its last message and WhatsApp's chat timestamp. */
+const sortAt = (c: Recency): number => Math.max(time(c.last_message_at), time(c.wa_sort_at))
+
 /**
- * A new array, most recent message first. A conversation with no
- * message yet never sits above one that has messages (WhatsApp doesn't
- * list empty chats at all); those sort by creation, newest first. Ties
- * keep a stable order by id.
+ * A new array, most recent first — in QR mode the phone's order, by
+ * WhatsApp's chat timestamp when it is later than the last message
+ * (phase 5f). A conversation with no time at all sorts below, by
+ * creation, newest first. Ties keep a stable order by id.
  */
 export function byRecency<T extends Recency>(conversations: readonly T[]): T[] {
   return [...conversations].sort((a, b) => {
@@ -31,10 +36,10 @@ export function byRecency<T extends Recency>(conversations: readonly T[]): T[] {
     const bPin = time(b.pinned_at)
     if (Number.isFinite(aPin) !== Number.isFinite(bPin)) return Number.isFinite(aPin) ? -1 : 1
     if (Number.isFinite(aPin) && aPin !== bPin) return bPin - aPin
-    const aHas = Number.isFinite(time(a.last_message_at))
-    const bHas = Number.isFinite(time(b.last_message_at))
+    const aHas = Number.isFinite(sortAt(a))
+    const bHas = Number.isFinite(sortAt(b))
     if (aHas !== bHas) return aHas ? -1 : 1
-    const diff = aHas ? time(b.last_message_at) - time(a.last_message_at) : time(b.created_at) - time(a.created_at)
+    const diff = aHas ? sortAt(b) - sortAt(a) : time(b.created_at) - time(a.created_at)
     return diff || a.id.localeCompare(b.id)
   })
 }
