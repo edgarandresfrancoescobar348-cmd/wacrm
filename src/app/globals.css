@@ -66,6 +66,7 @@
   --color-chip-active: var(--chip-active);
   --color-chip-active-foreground: var(--chip-active-foreground);
   --color-read-ticks: var(--read-ticks);
+  --color-link: var(--link);
   --color-bubble-quote: var(--bubble-quote);
   --color-doodle: var(--doodle);
   --radius-sm: calc(var(--radius) * 0.6);
@@ -148,6 +149,7 @@ html[data-mode="dark"] {
   --chip-active: #103529;
   --chip-active-foreground: #d9fdd3;
   --read-ticks: #53bdeb;
+  --link: #53bdeb;
   --bubble-quote: rgb(0 0 0 / 0.2);
   --doodle: rgb(255 255 255 / 0.06);
 }
@@ -189,6 +191,7 @@ html[data-mode="light"] {
   --chip-active: #d9fdd3;
   --chip-active-foreground: #15603e;
   --read-ticks: #53bdeb;
+  --link: #027eb5;
   --bubble-quote: rgb(11 20 26 / 0.05);
   --doodle: rgb(84 64 40 / 0.07);
 }

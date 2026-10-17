@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { splitLinks } from "@/lib/whatsapp/linkify";
 import { mentionIds, splitMentions } from "@/lib/whatsapp/mentions";
 
 /**
@@ -64,16 +65,46 @@ export function MentionText({
     if (pending.length) request(pending, () => rerender((n) => n + 1));
   }, [key]);
 
-  if (!text || !ids.length) return <>{text}</>;
+  if (!text) return <>{text}</>;
+  if (!ids.length) return plain ? <>{text}</> : <Linked text={text} />;
   return (
     <>
       {splitMentions(text).map((part, i) =>
         "text" in part ? (
-          <span key={i}>{part.text}</span>
+          plain ? <span key={i}>{part.text}</span> : <Linked key={i} text={part.text} />
         ) : (
           <span key={i} className={plain ? undefined : "font-medium text-primary-text"} data-testid="mention">
             @{resolved.get(part.mention) ?? part.mention}
           </span>
+        ),
+      )}
+    </>
+  );
+}
+
+/**
+ * URLs, e-mails and phone numbers as links, like WhatsApp (linkify.ts).
+ * A URL opens in a new tab; a click on a link doesn't reach the bubble.
+ */
+function Linked({ text }: { text: string }) {
+  const parts = splitLinks(text);
+  if (parts.length === 1 && "text" in parts[0]) return <>{text}</>;
+  return (
+    <>
+      {parts.map((part, i) =>
+        "text" in part ? (
+          <span key={i}>{part.text}</span>
+        ) : (
+          <a
+            key={i}
+            href={part.href}
+            {...(part.kind === "url" ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+            onClick={(e) => e.stopPropagation()}
+            className="break-all text-link hover:underline"
+            data-testid="message-link"
+          >
+            {part.link}
+          </a>
         ),
       )}
     </>
