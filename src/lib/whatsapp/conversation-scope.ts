@@ -23,7 +23,10 @@ const t = getT('LibErrors')
 // ------------------------------------------------------------
 
 /**
- * Throw unless `conversationId` is a conversation of `accountId`.
+ * Throw unless `conversationId` is a conversation of `accountId` on a
+ * BUSINESS number, and return that number's id — the one the engines'
+ * reply goes out from. A personal number's conversation (phase 6) never
+ * runs anything automated, so it answers like an unknown one.
  *
  * The message is deliberately the same for "no such conversation" and
  * "not yours" — the engines surface it into automation logs the
@@ -34,10 +37,10 @@ export async function assertConversationInAccount(
   db: SupabaseClient,
   conversationId: string,
   accountId: string,
-): Promise<void> {
+): Promise<{ connectionId: string }> {
   const { data, error } = await db
     .from('conversations')
-    .select('id')
+    .select('id, connection_id')
     .eq('id', conversationId)
     .eq('account_id', accountId)
     .maybeSingle()
@@ -47,4 +50,13 @@ export async function assertConversationInAccount(
   if (!data) {
     throw new Error(t('send.conversationNotFound'))
   }
+  const { data: number } = await db
+    .from('whatsapp_connections')
+    .select('scope')
+    .eq('id', data.connection_id)
+    .maybeSingle()
+  if (number?.scope !== 'business') {
+    throw new Error(t('send.conversationNotFound'))
+  }
+  return { connectionId: data.connection_id as string }
 }

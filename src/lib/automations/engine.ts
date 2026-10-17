@@ -26,6 +26,7 @@ import { engineSendText, engineSendTemplate, engineSendInteractive } from './met
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import { getT } from '@/lib/i18n/translate'
+import { NoBusinessConnectionError, pickBusinessConnection } from '@/lib/whatsapp/connections'
 
 /** Step errors land in automation_logs and are shown on the logs page. */
 const tErr = getT('LibErrors.engine')
@@ -804,11 +805,14 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         agentId = profiles?.[0]?.user_id
       }
       if (!agentId) return 'no agent resolved'
+      // The run's conversation (a business number's) — never every
+      // conversation of the contact: a personal number's isn't the team's.
+      const target = await resolveConversationId(args)
       await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })
+        .eq('id', target)
         .eq('account_id', args.automation.account_id)
-        .eq('contact_id', args.contactId)
       return `assigned to ${agentId}`
     }
 
@@ -919,11 +923,12 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'close_conversation': {
       if (!args.contactId) throw new Error(tErr('needsContact', { step: 'close_conversation' }))
+      const target = await resolveConversationId(args)
       await db
         .from('conversations')
         .update({ status: 'closed', updated_at: new Date().toISOString() })
+        .eq('id', target)
         .eq('account_id', args.automation.account_id)
-        .eq('contact_id', args.contactId)
       return 'conversation closed'
     }
 
@@ -940,8 +945,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
  * Pick the conversation a send-type step should use. Prefer the id the
  * webhook handed us (it's the one that just got the inbound message);
  * fall back to the contact's conversation for resumed/wait paths and
- * manual engine POSTs. Throws if none exists — send steps have
- * no meaningful target without a conversation.
+ * manual engine POSTs — on the automation's business number, else the
+ * account's default one (phase 6). Throws if none exists — send steps
+ * have no meaningful target without a conversation.
  */
 async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   const fromCtx = args.context.conversation_id
@@ -961,10 +967,17 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     return data.id as string
   }
   if (!args.contactId) throw new Error(tErr('noContactForConversation'))
+  let number
+  try {
+    number = await pickBusinessConnection(supabaseAdmin(), args.automation.account_id, args.automation.connection_id)
+  } catch (err) {
+    if (err instanceof NoBusinessConnectionError) throw new Error(tErr('noConversation'))
+    throw err
+  }
   const { data, error } = await supabaseAdmin()
     .from('conversations')
     .select('id')
-    .eq('account_id', args.automation.account_id)
+    .eq('connection_id', number.id)
     .eq('contact_id', args.contactId)
     .maybeSingle()
   if (error) throw new Error(getT('LibErrors.send')('conversationLookupFailed', { message: error.message }))

@@ -1,8 +1,10 @@
-// Access control for the QR-code (OpenWA) settings routes: only an admin
-// (or owner) changes the connection, exactly like whatsapp_config's
-// RLS; members only ever see a sanitized state. The gateway is wacrm's
-// own (server config): there is no URL or key a user can set, and the
-// server key only ever goes to OPENWA_URL.
+// Access control for a QR number's (OpenWA) settings routes (phase 6:
+// per number). A business number is operated by the account's admins; a
+// personal number by its owner only — nobody else may show its QR, pair a
+// phone into it or change it, an admin may still log it out (a member
+// leaving). Members only ever see a sanitized state. The gateway is
+// wacrm's own (server config): there is no URL or key a user can set, and
+// the server key only ever goes to OPENWA_URL.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,9 +13,12 @@ import type { AccountRole } from '@/lib/auth/roles'
 
 const h = vi.hoisted(() => ({
   role: 'owner' as string,
+  userId: 'user-owner',
   fetchCalls: [] as string[],
   writes: [] as { table: string; op: string; value?: unknown }[],
   row: null as Record<string, unknown> | null,
+  /** The number the request names (whatsapp_connections). */
+  number: null as Record<string, unknown> | null,
 }))
 
 vi.mock('@/lib/auth/account', async (importOriginal) => {
@@ -24,14 +29,9 @@ vi.mock('@/lib/auth/account', async (importOriginal) => {
     requireRole: async (min: AccountRole) => {
       if (!hasMinRole(h.role as AccountRole, min)) throw new actual.ForbiddenError()
       return {
-        supabase: {
-          from: () => {
-            const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: { provider: 'openwa' }, error: null }) }
-            return q
-          },
-        },
+        supabase: {},
         accountId: 'acct-1',
-        userId: `user-${h.role}`,
+        userId: h.userId,
         role: h.role,
         account: { id: 'acct-1', name: 'A' },
       }
@@ -46,7 +46,10 @@ vi.mock('@/lib/flows/admin-client', () => ({
       Object.assign(q, {
         select: () => q,
         eq: () => q,
-        maybeSingle: async () => ({ data: table === 'whatsapp_openwa_config' ? h.row : null, error: null }),
+        maybeSingle: async () => ({
+          data: table === 'whatsapp_openwa_config' ? h.row : table === 'whatsapp_connections' ? h.number : null,
+          error: null,
+        }),
         single: async () => ({ data: h.writes.at(-1)?.value ?? h.row, error: null }),
         update: (value: unknown) => {
           h.writes.push({ table, op: 'update', value })
@@ -77,24 +80,50 @@ import { GET as getState, PUT as putConfig } from './route'
 import { POST as postSession } from './session/route'
 import { GET as getQr } from './qr/route'
 import { POST as postPairing } from './pairing-code/route'
-import { PUT as putProvider } from '../provider/route'
 import { __resetRateLimitForTests } from '@/lib/rate-limit'
 
-function json(body: unknown) {
+const NUMBER_ID = '11111111-1111-4111-8111-111111111111'
+
+function number(scope: 'business' | 'personal', owner: string | null = null) {
+  return {
+    id: NUMBER_ID,
+    account_id: 'acct-1',
+    provider: 'openwa',
+    scope,
+    owner_user_id: owner,
+    label: null,
+    status: 'connected',
+    phone: null,
+    connected_at: null,
+    mirror_inbound_media: true,
+    created_by: owner ?? 'user-admin',
+    removed_at: null,
+    created_at: '2026-10-01T00:00:00Z',
+  }
+}
+
+function json(body: Record<string, unknown>) {
   return new Request('http://app/x', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ connection_id: NUMBER_ID, ...body }),
   })
+}
+
+function as(role: string, userId = `user-${role}`) {
+  h.role = role
+  h.userId = userId
 }
 
 beforeEach(() => {
   __resetRateLimitForTests()
   h.fetchCalls.length = 0
   h.writes.length = 0
+  h.number = number('business')
   h.row = {
     id: 'r1',
     account_id: 'acct-1',
+    connection_id: NUMBER_ID,
     user_id: 'u',
     webhook_secret: encrypt('w'.repeat(64)),
     session_id: 'sess-1',
@@ -107,32 +136,33 @@ beforeEach(() => {
   delete process.env.OPENWA_API_KEY_FILE
 })
 
-const getReq = (qs = '') => new Request(`http://app/api/whatsapp/openwa${qs}`)
+const getReq = (qs = '') => new Request(`http://app/api/whatsapp/openwa?connection_id=${NUMBER_ID}${qs}`)
 
-const adminCalls: [string, () => Promise<Response>][] = [
+const operateCalls: [string, () => Promise<Response>][] = [
   ['PUT /openwa', () => putConfig(json({ broadcast_delay_ms: 9000 }))],
-  ['POST /openwa/session', () => postSession(json({ action: 'connect' }))],
-  ['GET /openwa/qr', () => getQr()],
+  ['POST /openwa/session connect', () => postSession(json({ action: 'connect' }))],
+  ['GET /openwa/qr', () => getQr(getReq())],
   ['POST /openwa/pairing-code', () => postPairing(json({ phone: '+5511999999999' }))],
-  ['PUT /provider', () => putProvider(json({ provider: 'openwa' }))],
 ]
 
-describe.each(['agent', 'viewer'])('as %s', (role) => {
-  beforeEach(() => {
-    h.role = role
-  })
+describe.each(['agent', 'viewer'])('a business number, as %s', (role) => {
+  beforeEach(() => as(role))
 
-  it.each(adminCalls)('%s is forbidden and touches neither the gateway nor the DB', async (_name, call) => {
+  it.each(operateCalls)('%s is forbidden and touches neither the gateway nor the DB', async (_name, call) => {
     const res = await call()
     expect(res.status).toBe(403)
     expect(h.fetchCalls).toEqual([])
     expect(h.writes).toEqual([])
   })
 
+  it('logging it out is forbidden too', async () => {
+    expect((await postSession(json({ action: 'logout' }))).status).toBe(403)
+  })
+
   it('GET /openwa returns the state without the key or the webhook secret', async () => {
     process.env.OPENWA_URL = 'http://openwa:2785'
     process.env.OPENWA_API_KEY = 'server-gateway-key'
-    const res = await getState(getReq('?gateway=1'))
+    const res = await getState(getReq('&gateway=1'))
     expect(res.status).toBe(200)
     const body = JSON.stringify(await res.json())
     expect(body).not.toContain('server-gateway-key')
@@ -142,10 +172,51 @@ describe.each(['agent', 'viewer'])('as %s', (role) => {
   })
 })
 
-describe('as admin', () => {
+describe('someone else’s personal number', () => {
   beforeEach(() => {
-    h.role = 'admin'
+    h.number = number('personal', 'user-ana')
   })
+
+  it.each(operateCalls)('%s is forbidden to an admin: nobody pairs a phone into it but its owner', async (_name, call) => {
+    as('admin')
+    expect((await call()).status).toBe(403)
+    expect(h.fetchCalls).toEqual([])
+    expect(h.writes).toEqual([])
+  })
+
+  it('an admin may still log it out (a member leaving) — the gateway is reached', async () => {
+    as('admin')
+    const res = await postSession(json({ action: 'logout' }))
+    // The gateway isn't configured here: it got past the permission check.
+    expect(res.status).toBe(503)
+  })
+
+  it('an agent may not even log it out', async () => {
+    as('agent')
+    expect((await postSession(json({ action: 'logout' }))).status).toBe(403)
+  })
+
+  it('its owner operates it, whatever their role', async () => {
+    as('agent', 'user-ana')
+    h.row = null // first setting saved: the session row is created
+    const res = await putConfig(json({ broadcast_delay_ms: 9000 }))
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('a number of another account, or none', () => {
+  it('answers 403 — the same for "not yours" and "no such number"', async () => {
+    as('owner')
+    h.number = { ...number('business'), account_id: 'acct-2' }
+    expect((await putConfig(json({ broadcast_delay_ms: 9000 }))).status).toBe(403)
+    h.number = null
+    expect((await postSession(json({ action: 'connect' }))).status).toBe(403)
+    expect(h.writes).toEqual([])
+  })
+})
+
+describe('a business number, as admin', () => {
+  beforeEach(() => as('admin'))
 
   it('GET /openwa has no gateway URL or key fields at all', async () => {
     const body = await (await getState(getReq())).json()
@@ -156,18 +227,16 @@ describe('as admin', () => {
   })
 
   it('GET /openwa?gateway=1 says when the gateway is not running', async () => {
-    const body = await (await getState(getReq('?gateway=1'))).json()
+    const body = await (await getState(getReq('&gateway=1'))).json()
     expect(body.gateway).toEqual({ state: 'unconfigured', engine: null })
   })
 
   it('PUT /openwa only takes the broadcast pacing — a URL or key in the body is ignored', async () => {
     h.row = null
-    const res = await putConfig(
-      json({ base_url: 'http://169.254.169.254', api_key: 'k', broadcast_delay_ms: 9000 }),
-    )
+    const res = await putConfig(json({ base_url: 'http://169.254.169.254', api_key: 'k', broadcast_delay_ms: 9000 }))
     expect(res.status).toBe(200)
     const insert = h.writes.find((w) => w.table === 'whatsapp_openwa_config' && w.op === 'insert')
-    expect(insert?.value).toEqual({ account_id: 'acct-1', user_id: 'user-admin', broadcast_delay_ms: 9000 })
+    expect(insert?.value).toEqual({ account_id: 'acct-1', connection_id: NUMBER_ID, user_id: 'user-admin', broadcast_delay_ms: 9000 })
     expect(h.fetchCalls).toEqual([])
   })
 
@@ -185,11 +254,6 @@ describe('as admin', () => {
     expect(h.writes).toEqual([])
   })
 
-  it('PUT /provider rejects an unknown provider', async () => {
-    const res = await putProvider(json({ provider: 'telegram' }))
-    expect(res.status).toBe(400)
-  })
-
   it('pairing code requires a full number', async () => {
     const res = await postPairing(json({ phone: '123' }))
     expect(res.status).toBe(400)
@@ -201,7 +265,7 @@ describe('as admin', () => {
 describe('server key binding', () => {
   const captured: { url: string; key: unknown }[] = []
   beforeEach(() => {
-    h.role = 'admin'
+    as('admin')
     captured.length = 0
     vi.mocked(fetch).mockImplementation(async (url, init) => {
       captured.push({ url: String(url), key: (init?.headers as Record<string, string>)?.['X-API-Key'] })
@@ -219,7 +283,7 @@ describe('server key binding', () => {
   })
 
   it('the gateway probe calls OPENWA_URL with the server key', async () => {
-    const body = await (await getState(getReq('?gateway=1'))).json()
+    const body = await (await getState(getReq('&gateway=1'))).json()
     expect(body.gateway).toEqual({ state: 'ok', engine: 'whatsapp-web.js' })
     expect(captured).toEqual([{ url: 'http://openwa:2785/api/auth/validate', key: 'server-gateway-key' }])
   })

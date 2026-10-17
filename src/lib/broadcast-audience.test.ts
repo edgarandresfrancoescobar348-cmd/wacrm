@@ -115,6 +115,7 @@ function contacts(n: number): Row[] {
   return Array.from({ length: n }, (_, i) => ({
     id: uuid('c', i),
     phone: `+1555${String(i).padStart(7, '0')}`,
+    personal_only: false,
   }));
 }
 
@@ -129,6 +130,17 @@ function tagRows(contactRows: Row[], tagId: string, prefix: string): Row[] {
 const noCsv = async (): Promise<Contact[]> => [];
 
 describe('resolveAudienceContacts', () => {
+  // Phase 6: a contact only the viewer's personal number knows is never
+  // in a business broadcast — RLS shows it to its owner, the audience
+  // leaves it out.
+  it('leaves personal-only contacts out of every audience and of the count', async () => {
+    const all = [...contacts(3), { id: uuid('p', 1), phone: '+15550000999', personal_only: true }];
+    const { db } = cappedPostgrest({ contacts: all, contact_tags: tagRows(all, 'tag-1', 't') });
+    expect((await resolveAudienceContacts(db, { type: 'all' }, noCsv)).map((c) => c.phone)).not.toContain('+15550000999');
+    expect(await resolveAudienceContacts(db, { type: 'tags', tagIds: ['tag-1'] }, noCsv)).toHaveLength(3);
+    expect(await countAudience(db, { type: 'all' })).toBe(3);
+  });
+
   it('returns every contact for "all" beyond the 1000-row cap', async () => {
     const { db } = cappedPostgrest({ contacts: contacts(2812) });
     const result = await resolveAudienceContacts(db, { type: 'all' }, noCsv);

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
-  loadAccountTransport,
+  loadConnectionTransport,
   SendBudgetExceededError,
   sendWithRecipientVariants,
   TransportNotConfiguredError,
@@ -23,6 +23,7 @@ import {
 import { getT } from '@/lib/i18n/translate'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { sendBroadcastRecipient } from '@/lib/whatsapp/broadcast-attempts'
+import { NoBusinessConnectionError, pickBusinessConnection } from '@/lib/whatsapp/connections'
 
 const t = getT('Api')
 
@@ -56,7 +57,8 @@ interface BroadcastResult {
  *   NEW (preferred — supports per-recipient variable substitution):
  *     {
  *       recipients: Array<{ phone: string; params: string[] }>,
- *       template_name, template_language
+ *       template_name, template_language,
+ *       connection_id?   // the business number (default: the account's default)
  *     }
  *
  *   LEGACY (all phones receive the same params — kept so existing
@@ -122,6 +124,7 @@ export async function POST(request: Request) {
       template_name,
       template_language,
       template_params,
+      connection_id,
     } = body
 
     // Normalize to a list of {phone, params} regardless of shape.
@@ -153,10 +156,22 @@ export async function POST(request: Request) {
       )
     }
 
+    // The business number the broadcast goes out from (phase 6) — also
+    // the pacing key between its sends.
     let transport: WhatsAppTransport
+    let paceKey: string
     try {
-      transport = await loadAccountTransport(supabase, accountId)
+      const number = await pickBusinessConnection(
+        supabaseAdmin(),
+        accountId,
+        typeof connection_id === 'string' ? connection_id : null,
+      )
+      transport = (await loadConnectionTransport(number)).transport
+      paceKey = number.id
     } catch (err) {
+      if (err instanceof NoBusinessConnectionError) {
+        return NextResponse.json({ error: err.message }, { status: 400 })
+      }
       if (!(err instanceof TransportNotConfiguredError)) throw err
       return NextResponse.json(
         {
@@ -227,7 +242,7 @@ export async function POST(request: Request) {
               transport,
               sendBy,
               pace: () =>
-                paceBroadcastSend(accountId, transport.capabilities.broadcastDelayMs, { deadline }),
+                paceBroadcastSend(paceKey, transport.capabilities.broadcastDelayMs, { deadline }),
             },
             recipient.recipient_id,
             {
@@ -314,7 +329,7 @@ export async function POST(request: Request) {
       // START in time is returned as `deferred` (not sent, not failed)
       // for the wizard to re-queue.
       const mayStart = await paceBroadcastSend(
-        accountId,
+        paceKey,
         transport.capabilities.broadcastDelayMs,
         { deadline }
       )

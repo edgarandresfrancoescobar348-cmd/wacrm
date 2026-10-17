@@ -120,6 +120,8 @@ export interface Contact {
   name_source?: 'saved' | 'verified' | 'push' | 'phone' | 'import' | 'manual' | null;
   /** The sender's own WhatsApp profile name. */
   push_name?: string | null;
+  /** Exists only because of a personal number: its owner's alone (phase 6, migration 073). */
+  personal_only?: boolean;
   email?: string;
   company?: string;
   avatar_url?: string;
@@ -175,6 +177,8 @@ export type ConversationStatus = 'open' | 'pending' | 'closed';
 export interface Conversation {
   id: string;
   user_id: string;
+  /** The WhatsApp number it is on (phase 6, whatsapp_connections). */
+  connection_id: string;
   /** Null for a WhatsApp group (QR mode): groups are not CRM contacts. */
   contact_id: string | null;
   status: ConversationStatus;
@@ -212,6 +216,8 @@ export interface Conversation {
   last_message_status?: MessageStatus | null;
   /** WhatsApp's chat timestamp: the phone's list order (migration 069). */
   wa_sort_at?: string | null;
+  /** A personal number: the name its owner's address book gives the contact (072). */
+  saved_name?: string | null;
 }
 
 /** What WhatsApp declares about a message's media (migration 067). */
@@ -373,13 +379,9 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
-  /**
-   * When true (the default), the inbound webhook copies received media
-   * into the `chat-media` bucket so attachments outlive Meta's ~30-day
-   * retention. Turning it off keeps storage flat and accepts that
-   * inbound attachments expire. Migration 039.
-   */
-  mirror_inbound_media?: boolean;
+  /** The official number these credentials belong to (phase 6). Media
+   *  retention is the number's own setting (whatsapp_connections). */
+  connection_id?: string;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
@@ -717,6 +719,8 @@ export interface Automation {
   description?: string;
   trigger_type: AutomationTriggerType;
   trigger_config: AutomationTriggerConfig;
+  /** The business number its sends go out from when no conversation names one (null = the account's default). */
+  connection_id?: string | null;
   is_active: boolean;
   execution_count: number;
   last_executed_at?: string | null;

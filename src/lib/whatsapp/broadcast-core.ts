@@ -8,9 +8,14 @@
 //                        `broadcasts` row + `broadcast_recipients`
 //                        rows (status 'pending'), return a plan.
 //   deliverBroadcast() — send each recipient's template through the
-//                        account's transport (phone-variant retry,
-//                        provider pacing), stamp each recipient
-//                        row + the aggregate counts, finalize status.
+//                        broadcast's business number (phone-variant
+//                        retry, provider pacing per number), stamp each
+//                        recipient row + the aggregate counts, finalize
+//                        status.
+//
+// Phase 6: a broadcast goes out from a BUSINESS number — the one named
+// (`connection_id`), else the account's default — recorded on the row so
+// a resume sends from the same one. Never from a personal number.
 //
 // Recipient rows carry `whatsapp_message_id`, so the inbound webhook's
 // status handler (which matches on that column) updates delivered/read
@@ -21,10 +26,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import {
-  loadAccountTransport,
+  loadConnectionTransport,
   TransportNotConfiguredError,
   type WhatsAppTransport,
 } from '@/lib/whatsapp/transport';
+import { NoBusinessConnectionError, pickBusinessConnection } from '@/lib/whatsapp/connections';
 import {
   sendBroadcastRecipient,
   type RecipientSendContext,
@@ -65,6 +71,8 @@ export interface BroadcastRecipientInput {
 
 export interface CreateBroadcastParams {
   name?: string | null;
+  /** The business number to send from (default: the account's default). */
+  connectionId?: string | null;
   templateName: string;
   templateLanguage?: string | null;
   recipients: BroadcastRecipientInput[];
@@ -79,12 +87,14 @@ interface PlannedRecipient {
 }
 
 export interface BroadcastPlan {
-  /** Tenancy key — also the pacing key between sends. */
+  /** Tenancy key. */
   accountId: string;
+  /** The business number it goes out from — also the pacing key between sends. */
+  connectionId: string;
   broadcastId: string;
   templateName: string;
   templateLanguage: string;
-  /** The account's active WhatsApp transport, resolved at plan time. */
+  /** That number's transport, resolved at plan time. */
   transport: WhatsAppTransport;
   templateRow: MessageTemplate | null;
   planned: PlannedRecipient[];
@@ -126,9 +136,9 @@ export async function createBroadcast(
     );
   }
 
-  // The account's WhatsApp transport — fail fast before anything is
-  // persisted when there is no usable connection.
-  const transport = await loadBroadcastTransport(db, accountId);
+  // The business number's transport — fail fast before anything is
+  // persisted when there is no usable one.
+  const { transport, connectionId } = await loadBroadcastTransport(db, accountId, params.connectionId);
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
@@ -261,6 +271,16 @@ export async function createBroadcast(
   }
 
   const broadcastId = createdRows[0].broadcast_id as string;
+  // The number it goes out from — a resume sends from the same one.
+  const { error: numberErr } = await db
+    .from('broadcasts')
+    .update({ connection_id: connectionId })
+    .eq('id', broadcastId)
+    .eq('account_id', accountId);
+  if (numberErr) {
+    console.error('[broadcast-core] could not record the number:', numberErr.message);
+    throw new BroadcastError('internal', 'Failed to create broadcast', 500);
+  }
 
   // Pair each inserted recipient row back to its phone/params by
   // contact_id — unambiguous now that duplicates are collapsed.
@@ -279,6 +299,7 @@ export async function createBroadcast(
 
   return {
     accountId,
+    connectionId,
     broadcastId,
     templateName,
     templateLanguage: resolvedTemplate.language,
@@ -290,17 +311,24 @@ export async function createBroadcast(
 }
 
 /**
- * Resolve the account's transport for a broadcast, mapping "nothing
- * configured" to the {@link BroadcastError} both create and resume
- * surface.
+ * Resolve a broadcast's business number and its transport — `hint` when
+ * given (the broadcast's recorded number), else the account's default —
+ * mapping "nothing usable" to the {@link BroadcastError} both create and
+ * resume surface.
  */
 export async function loadBroadcastTransport(
   db: SupabaseClient,
-  accountId: string
-): Promise<WhatsAppTransport> {
+  accountId: string,
+  hint?: string | null
+): Promise<{ transport: WhatsAppTransport; connectionId: string }> {
   try {
-    return await loadAccountTransport(db, accountId);
+    const number = await pickBusinessConnection(db, accountId, hint);
+    const { transport } = await loadConnectionTransport(number);
+    return { transport, connectionId: number.id };
   } catch (err) {
+    if (err instanceof NoBusinessConnectionError) {
+      throw new BroadcastError('bad_request', err.message, 400);
+    }
     if (err instanceof TransportNotConfiguredError) {
       throw new BroadcastError(
         'whatsapp_not_configured',
@@ -384,7 +412,7 @@ export async function deliverBroadcast(
     sendBy: opts.sendBy,
     now,
     pace: () =>
-      paceBroadcastSend(plan.accountId, plan.transport.capabilities.broadcastDelayMs, {
+      paceBroadcastSend(plan.connectionId, plan.transport.capabilities.broadcastDelayMs, {
         ...opts.pace,
         deadline: opts.deadline,
       }),

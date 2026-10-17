@@ -183,13 +183,46 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
 }));
 
 vi.mock('@/lib/flows/admin-client', () => ({
-  // Only used for the best-effort "pause active flow run" write.
+  // The conversation's number's credentials (phase 6: the transport is
+  // the number's) and the best-effort "pause active flow run" write.
   supabaseAdmin: () => ({
-    from: () => ({
-      update: () => ({
-        eq: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
-      }),
-    }),
+    from: (table: string) =>
+      table === 'whatsapp_config'
+        ? {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: { id: 'cfg-1', phone_number_id: 'pn-1', access_token: 'token' },
+                  error: null,
+                }),
+              }),
+            }),
+          }
+        : {
+            update: () => ({
+              eq: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+            }),
+          },
+  }),
+}));
+
+// The conversation's number: the official one (business).
+vi.mock('@/lib/whatsapp/connections', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  loadConnection: async () => ({
+    id: 'num-1',
+    accountId: 'acct-1',
+    provider: 'meta',
+    scope: 'business',
+    ownerUserId: null,
+    label: null,
+    status: 'connected',
+    phone: null,
+    connectedAt: null,
+    mirrorInboundMedia: true,
+    createdBy: 'u-1',
+    removedAt: null,
+    createdAt: '2026-01-01T00:00:00Z',
   }),
 }));
 
@@ -214,6 +247,7 @@ function sendPathDb(
 ): SupabaseClient {
   const conversation = {
     id: 'cv-1',
+    connection_id: 'num-1',
     contact,
   };
   const config = {

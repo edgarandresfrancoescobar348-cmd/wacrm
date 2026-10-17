@@ -34,6 +34,8 @@ interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
+  /** The conversation's number (phase 6): local templates only go out from a QR number. */
+  provider?: "meta" | "openwa" | null;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -78,6 +80,7 @@ export function TemplatePicker({
   open,
   onOpenChange,
   onSelect,
+  provider = null,
 }: TemplatePickerProps) {
   const t = useTranslations("Inbox.templatePicker");
 
@@ -111,17 +114,13 @@ export function TemplatePicker({
       // user_id. Templates are account-owned, so filtering on the caller's
       // user_id hid templates that a teammate created — leaving them unable
       // to send approved templates in a shared account.
-      // On the official API a `local` template (saved/edited in QR-code
-      // mode) isn't Meta-approved in its current form — not sendable.
-      const { data: cfg } = await supabase
-        .from("whatsapp_config")
-        .select("provider")
-        .maybeSingle();
+      // From the official number a `local` template (a QR number's)
+      // isn't Meta-approved in its current form — not sendable.
       let query = supabase
         .from("message_templates")
         .select("*")
         .eq("status", "APPROVED");
-      if (cfg?.provider !== "openwa") query = query.neq("origin", "local");
+      if (provider !== "openwa") query = query.neq("origin", "local");
       const { data, error } = await query.order("created_at", { ascending: false });
 
       if (cancelled) return;
@@ -137,7 +136,7 @@ export function TemplatePicker({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, provider]);
 
   function resetSelection() {
     setSelected(null);

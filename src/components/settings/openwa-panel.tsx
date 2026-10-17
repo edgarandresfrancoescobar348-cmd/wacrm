@@ -19,8 +19,7 @@ import {
 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 
-import { useAuth } from '@/hooks/use-auth';
-import { createClient } from '@/lib/supabase/client';
+import type { ConnectionView } from '@/hooks/use-whatsapp-connections';
 import { formatDateTimeMedium } from '@/lib/locale-format';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -57,7 +56,6 @@ export interface OpenWaPublicState {
 export type OpenWaGatewayState = 'ok' | 'unconfigured' | 'unreachable' | 'auth_failed' | 'error';
 
 export interface OpenWaApiState {
-  provider: 'meta' | 'openwa' | null;
   openwa: OpenWaPublicState;
   /** The embedded gateway, probed by `?gateway=1` (null when not asked). */
   gateway: { state: OpenWaGatewayState; engine: string | null } | null;
@@ -73,33 +71,54 @@ function formatPhone(digits: string | null): string {
 }
 
 /**
- * Settings → WhatsApp → QR Code. Connects a regular WhatsApp number via
- * the gateway that runs with wacrm (OpenWA, embedded — nothing to
+ * Settings → WhatsApp → one QR number (phase 6: an account may have
+ * several, each Pessoal or Empresa). Connects a regular WhatsApp number
+ * via the gateway that runs with wacrm (OpenWA, embedded — nothing to
  * configure): "Conectar" (session + signed webhook + start), the live QR
  * (refreshed every few seconds until it is scanned) or a pairing code,
  * and the connected state with "Desconectar" / "Reiniciar sessão". When
  * the gateway is down the card says so instead of offering "Conectar".
+ * Only who may operate the number acts on it (a business number's admins,
+ * a personal number's owner).
  */
 export function OpenWaPanel({
-  state,
+  connection,
   onChanged,
 }: {
-  state: OpenWaApiState | null;
+  connection: ConnectionView;
   onChanged: () => Promise<void> | void;
 }) {
   const t = useTranslations('Settings.whatsapp.openwa');
   const locale = useLocale();
-  const { canEditSettings, accountId } = useAuth();
+  const canEditSettings = connection.can_operate;
+  const connectionId = connection.id;
+
+  // This number's session state (+ a gateway probe).
+  const [state, setState] = useState<OpenWaApiState | null>(null);
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/whatsapp/openwa?connection_id=${connectionId}&gateway=1`, { cache: 'no-store' });
+      if (res.ok) setState((await res.json()) as OpenWaApiState);
+    } catch {
+      // keep the last known state
+    }
+  }, [connectionId]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+  const refresh = useCallback(async () => {
+    await reload();
+    await onChanged();
+  }, [reload, onChanged]);
 
   const openwa = state?.openwa ?? null;
-  const isActive = state?.provider === 'openwa';
 
   const [delayS, setDelayS] = useState(String(DEFAULT_DELAY_S));
   const hydratedRef = useRef(false);
 
   const [saving, setSaving] = useState(false);
   const [checkingGateway, setCheckingGateway] = useState(false);
-  const [busy, setBusy] = useState<null | 'connect' | 'restart' | 'logout' | 'activate'>(null);
+  const [busy, setBusy] = useState<null | 'connect' | 'restart' | 'logout'>(null);
 
   const [status, setStatus] = useState<OpenWaStatus | null>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -111,7 +130,7 @@ export function OpenWaPanel({
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingBusy, setPairingBusy] = useState(false);
 
-  const [mirrorMedia, setMirrorMedia] = useState(true);
+  const [mirrorMedia, setMirrorMedia] = useState(connection.mirror_inbound_media);
   const [savingMirror, setSavingMirror] = useState(false);
 
   // Hydrate the form once per load of the server state.
@@ -133,24 +152,15 @@ export function OpenWaPanel({
     setStatus(openwa.status);
   }, [openwa]);
 
-  // Media retention lives on whatsapp_config and applies to both modes.
+  // Media retention is the number's own setting (phase 6).
   useEffect(() => {
-    if (!accountId) return;
-    const supabase = createClient();
-    supabase
-      .from('whatsapp_config')
-      .select('mirror_inbound_media')
-      .eq('account_id', accountId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) setMirrorMedia(data.mirror_inbound_media !== false);
-      });
-  }, [accountId, state]);
+    setMirrorMedia(connection.mirror_inbound_media);
+  }, [connection.mirror_inbound_media]);
 
   // ---- live QR / status polling ------------------------------------
   const poll = useCallback(async () => {
     try {
-      const res = await fetch('/api/whatsapp/openwa/qr', { cache: 'no-store' });
+      const res = await fetch(`/api/whatsapp/openwa/qr?connection_id=${connectionId}`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) return;
       setStatus(data.status ?? null);
@@ -165,12 +175,12 @@ export function OpenWaPanel({
       }
       if (data.status === 'ready') {
         setPairingCode(null);
-        void onChanged();
+        void refresh();
       }
     } catch {
       // transient — next tick retries
     }
-  }, [onChanged]);
+  }, [refresh, connectionId]);
 
   // A linked number shown disconnected is usually the gateway restoring it
   // after a restart (AUTO_START_SESSIONS): follow it until it is back.
@@ -197,7 +207,7 @@ export function OpenWaPanel({
       const res = await fetch('/api/whatsapp/openwa', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ broadcast_delay_ms: Math.round(seconds * 1000) }),
+        body: JSON.stringify({ connection_id: connectionId, broadcast_delay_ms: Math.round(seconds * 1000) }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -206,7 +216,7 @@ export function OpenWaPanel({
       }
       toast.success(t('saved'));
       setLive(data.openwa);
-      await onChanged();
+      await refresh();
       return true;
     } catch {
       toast.error(t('saveFailed'));
@@ -223,13 +233,13 @@ export function OpenWaPanel({
       const res = await fetch('/api/whatsapp/openwa/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ connection_id: connectionId, action }),
       });
       const data = await res.json();
       if (!res.ok) {
         // Gateway down: re-probe so the card shows why, not just a toast.
         if (data.code === 'gateway_unavailable') {
-          await onChanged();
+          await refresh();
           return;
         }
         toast.error(data.error || t('actionFailed'), { duration: 10000 });
@@ -240,7 +250,7 @@ export function OpenWaPanel({
       setQrCode(null);
       if (action === 'logout') toast.success(t('loggedOut'));
       if (action === 'restart') toast.success(t('restarted'));
-      await onChanged();
+      await refresh();
     } catch {
       toast.error(t('actionFailed'));
     } finally {
@@ -251,29 +261,9 @@ export function OpenWaPanel({
   async function handleCheckGateway() {
     setCheckingGateway(true);
     try {
-      await onChanged();
+      await refresh();
     } finally {
       setCheckingGateway(false);
-    }
-  }
-
-  async function handleActivate() {
-    setBusy('activate');
-    try {
-      const res = await fetch('/api/whatsapp/provider', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'openwa' }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || t('actionFailed'));
-        return;
-      }
-      toast.success(t('activated'));
-      await onChanged();
-    } finally {
-      setBusy(null);
     }
   }
 
@@ -284,7 +274,7 @@ export function OpenWaPanel({
       const res = await fetch('/api/whatsapp/openwa/pairing-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: pairingPhone }),
+        body: JSON.stringify({ connection_id: connectionId, phone: pairingPhone }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -300,19 +290,21 @@ export function OpenWaPanel({
   }
 
   async function handleToggleMirror(next: boolean) {
-    if (!accountId) return;
     const previous = mirrorMedia;
     setMirrorMedia(next);
     setSavingMirror(true);
-    const { error } = await createClient()
-      .from('whatsapp_config')
-      .update({ mirror_inbound_media: next })
-      .eq('account_id', accountId);
+    const res = await fetch(`/api/whatsapp/connections/${connectionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mirror_inbound_media: next }),
+    }).catch(() => null);
     setSavingMirror(false);
-    if (error) {
+    if (!res?.ok) {
       setMirrorMedia(previous);
       toast.error(t('mirrorSaveFailed'));
+      return;
     }
+    await onChanged();
   }
 
   // ---- render ---------------------------------------------------------
@@ -325,22 +317,6 @@ export function OpenWaPanel({
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       <div className="space-y-6">
-        {/* Configured, but QR code isn't the active connection */}
-        {state && !isActive && current?.session_id && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-hover-surface p-4">
-            <div className="min-w-0">
-              <p className="text-[15px] text-foreground">{t('inactiveTitle')}</p>
-              <p className="text-sm text-muted-foreground">{t('inactiveDesc')}</p>
-            </div>
-            {canEditSettings && (
-              <Button size="sm" onClick={handleActivate} disabled={busy !== null}>
-                {busy === 'activate' && <Loader2 className="size-4 animate-spin" />}
-                {t('useThisMode')}
-              </Button>
-            )}
-          </div>
-        )}
-
         {restriction && (
           <div role="alert" className="flex items-start gap-3 rounded-xl bg-destructive/10 p-4">
             <ShieldAlert className="mt-0.5 size-5 shrink-0 text-destructive" />
@@ -398,7 +374,7 @@ export function OpenWaPanel({
 
         {/* History import (A1) */}
         {openwa?.session_id ? (
-          <OpenWaHistoryImport connected={status === 'ready'} canEdit={canEditSettings} />
+          <OpenWaHistoryImport connectionId={connectionId} connected={status === 'ready'} canEdit={canEditSettings} />
         ) : null}
 
         {/* Broadcast pacing */}
@@ -468,7 +444,7 @@ export function OpenWaPanel({
           <p className="mt-3 text-xs text-muted-foreground">{t('engineSwitchHint')}</p>
         </section>
 
-        {/* Media retention — shared with the official API mode */}
+        {/* Media retention — this number's own setting */}
         <section className="flex items-start justify-between gap-4 rounded-xl bg-surface p-4 sm:p-6">
           <div className="min-w-0">
             <p className="text-[15px] text-foreground">{t('mirrorTitle')}</p>
@@ -476,7 +452,7 @@ export function OpenWaPanel({
           </div>
           <Switch
             checked={mirrorMedia}
-            disabled={!canEditSettings || savingMirror || !state?.provider}
+            disabled={!canEditSettings || savingMirror}
             onCheckedChange={(v) => void handleToggleMirror(v)}
             aria-label={t('mirrorTitle')}
           />
@@ -528,7 +504,7 @@ function ConnectionBody({
   qrCode: string | null;
   qrUpdatedAt: number | null;
   canEdit: boolean;
-  busy: null | 'connect' | 'restart' | 'logout' | 'activate';
+  busy: null | 'connect' | 'restart' | 'logout';
   onConnect: () => void;
   onRestart: () => void;
   onLogout: () => void;

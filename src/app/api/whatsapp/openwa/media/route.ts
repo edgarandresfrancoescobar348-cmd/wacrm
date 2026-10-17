@@ -6,10 +6,12 @@
 // served, the bytes are mirrored into storage when the account keeps a
 // copy of received media, so the next open doesn't go to WhatsApp. When
 // WhatsApp no longer has the file (gateway 410) the message is marked
-// `media_expired_at` and the bubble says so. Any member of the account may read it, the same
-// audience as the conversation itself; the message must be one of the
-// account's rows pointing at exactly this proxy URL, so the route can't
-// be used to pull arbitrary media off the number.
+// `media_expired_at` and the bubble says so. Whoever can read the
+// conversation may read it: the message is looked up with the caller's
+// own client, so RLS decides (a personal number's media is its owner's
+// alone, migration 073) and it must point at exactly this proxy URL, so
+// the route can't be used to pull arbitrary media off the number. A
+// personal number's copy goes to the private bucket.
 
 import { NextResponse, after } from 'next/server'
 
@@ -20,11 +22,12 @@ import { downloadOpenWaMedia, OpenWaError } from '@/lib/whatsapp/openwa/client'
 import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
 import { mirrorMediaId, openWaMediaProxyUrl } from '@/lib/whatsapp/openwa/events'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
+import { loadConnection } from '@/lib/whatsapp/connections'
 import { requireOpenWaGateway } from '@/lib/whatsapp/openwa/gateway'
 
 export async function GET(request: Request) {
   try {
-    const { accountId } = await requireRole('viewer')
+    const { supabase, accountId } = await requireRole('viewer')
     const url = new URL(request.url)
     const chatId = url.searchParams.get('chat') ?? ''
     const messageId = url.searchParams.get('id') ?? ''
@@ -33,17 +36,18 @@ export async function GET(request: Request) {
     }
 
     const admin = supabaseAdmin()
-    const { data: owned } = await admin
+    const { data: owned } = await supabase
       .from('messages')
-      .select('id, media_type, conversations!inner(account_id)')
+      .select('id, media_type, conversations!inner(account_id, connection_id)')
       .eq('message_id', messageId)
       .eq('media_url', openWaMediaProxyUrl(chatId, messageId))
       .eq('conversations.account_id', accountId)
       .limit(1)
       .maybeSingle()
     if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const connectionId = (owned.conversations as unknown as { connection_id: string }).connection_id
 
-    const row = await loadOpenWaRow(admin, accountId)
+    const row = await loadOpenWaRow(admin, connectionId)
     if (!row?.session_id) {
       return NextResponse.json({ error: 'WhatsApp (QR Code) not connected' }, { status: 400 })
     }
@@ -61,17 +65,14 @@ export async function GET(request: Request) {
     }
     const { bytes, mimeType } = fetched
 
-    // Keep a copy, like live media (whatsapp_config.mirror_inbound_media):
+    // Keep a copy, like live media (the number's mirror_inbound_media):
     // the next open is a storage URL, not a trip to WhatsApp.
     after(async () => {
       try {
-        const { data: config } = await admin
-          .from('whatsapp_config')
-          .select('mirror_inbound_media')
-          .eq('account_id', accountId)
-          .maybeSingle()
-        if (config?.mirror_inbound_media === false) return
+        const number = await loadConnection(admin, connectionId)
+        if (!number || !number.mirrorInboundMedia) return
         const mirrored = await mirrorInboundMedia({
+          privateTo: number.scope === 'personal' ? { connectionId } : null,
           storage: admin.storage,
           accountId,
           mediaId: mirrorMediaId(messageId),

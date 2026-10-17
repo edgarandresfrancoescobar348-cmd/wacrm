@@ -8,12 +8,14 @@ const h = vi.hoisted(() => ({
   refreshed: 0,
 }))
 
-vi.mock('@/lib/auth/account', () => ({
-  requireRole: async () => ({ supabase: {}, accountId: 'acct-1', role: 'agent' }),
-  toErrorResponse: () => new Response('', { status: 500 }),
+// A QR number of the caller's account (phase 6: per number).
+vi.mock('@/lib/whatsapp/connection-access', () => ({
+  requireConnection: async (id: string) => ({
+    ctx: { accountId: 'acct-1', userId: 'u-1', role: 'agent' },
+    connection: { id, accountId: 'acct-1', provider: 'openwa', scope: 'business' },
+  }),
 }))
 vi.mock('@/lib/flows/admin-client', () => ({ supabaseAdmin: () => ({}) }))
-vi.mock('@/lib/whatsapp/transport', () => ({ loadAccountProvider: async () => 'openwa' }))
 vi.mock('@/lib/whatsapp/openwa/connection', () => ({
   loadOpenWaRow: async () => h.row,
   toPublicOpenWaState: (row: { status?: string } | null) => ({ status: row?.status ?? null }),
@@ -31,7 +33,7 @@ vi.mock('@/lib/whatsapp/openwa/session', () => ({
 }))
 
 const { GET, __resetVerifyThrottleForTests } = await import('./route')
-const get = (qs: string) => GET(new Request(`http://app/api/whatsapp/openwa${qs}`))
+const get = (qs: string) => GET(new Request(`http://app/api/whatsapp/openwa?connection_id=num-1${qs.replace('?', '&')}`))
 
 beforeEach(() => {
   __resetVerifyThrottleForTests()
@@ -46,7 +48,7 @@ describe('GET /api/whatsapp/openwa?verify=1', () => {
     expect(body.openwa.status).toBe('ready')
   })
 
-  it('at most once per 20 s per account', async () => {
+  it('at most once per 20 s per number', async () => {
     await get('?verify=1')
     h.row = { session_id: 'sess-1', status: 'disconnected' }
     await get('?verify=1')

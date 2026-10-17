@@ -69,6 +69,9 @@ import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
 import { contactDisplayName as displayNameOf, contactHandleDisplay, contactProfileName } from "@/lib/whatsapp/phone-display";
 import { toast } from "sonner";
+import { AvatarWithScope } from "./scope-badge";
+import { useNumberLabels } from "./scope-bar";
+import type { ConnectionView } from "@/hooks/use-whatsapp-connections";
 
 interface ReplyDraft {
   id: string;
@@ -128,6 +131,10 @@ interface MessageThreadProps {
    * true (official API).
    */
   serviceWindow?: boolean;
+  /** The conversation's WhatsApp number (phase 6): its seal on the header avatar. */
+  number?: ConnectionView;
+  /** Its scope has several numbers: the seal names this one. */
+  severalInScope?: boolean;
 }
 
 function formatDateSeparator(
@@ -198,11 +205,14 @@ export function MessageThread({
   contactPanelOpen,
   onToggleContactPanel,
   serviceWindow = true,
+  number,
+  severalInScope = false,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
   const locale = useLocale();
+  const numberLabels = useNumberLabels();
 
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -1030,7 +1040,8 @@ export function MessageThread({
     );
   }
 
-  const baseName = isGroup ? conversation.group_name || t("group") : displayNameOf(contact!);
+  // A personal number's chat: the owner's address-book name (phase 6).
+  const baseName = isGroup ? conversation.group_name || t("group") : conversation.saved_name || displayNameOf(contact!);
   // Your own chat, like WhatsApp: "Guilherme Varela (Você)" (avatars keep the bare name).
   const displayName = conversation.is_self ? `${baseName} ${t("selfSuffix")}` : baseName;
   const messageGroups = groupMessagesByDate(messages);
@@ -1099,13 +1110,19 @@ export function MessageThread({
                 <ArrowLeft className="h-5 w-5" />
               </button>
             )}
-            {isGroup && !conversation.group_avatar_url ? (
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-hover-surface" aria-hidden>
-                <Users className="size-5 text-muted-foreground" />
-              </span>
-            ) : (
-              <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact!.avatar_url} name={baseName} size={40} />
-            )}
+            <AvatarWithScope
+              scope={number?.scope}
+              label={number ? numberLabels.badge(number, severalInScope) : undefined}
+              size={16}
+            >
+              {isGroup && !conversation.group_avatar_url ? (
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-hover-surface" aria-hidden>
+                  <Users className="size-5 text-muted-foreground" />
+                </span>
+              ) : (
+                <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact!.avatar_url} name={baseName} size={40} />
+              )}
+            </AvatarWithScope>
           </>
         }
         title={displayName}
@@ -1413,12 +1430,15 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        privateTo={number?.scope === "personal" ? number.id : null}
+        numberRemoved={Boolean(number?.removed_at)}
       />
 
       <TemplatePicker
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+        provider={number?.provider ?? null}
       />
 
       {/* Full-size viewer for the thread's images/videos. Renders nothing

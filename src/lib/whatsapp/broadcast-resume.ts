@@ -151,7 +151,7 @@ export async function planBroadcastResume(
 ): Promise<ResumePlan> {
   const { data: broadcast, error: bcError } = await db
     .from('broadcasts')
-    .select('id, template_name, template_language')
+    .select('id, template_name, template_language, connection_id')
     .eq('id', broadcastId)
     .eq('account_id', accountId)
     .maybeSingle();
@@ -185,7 +185,8 @@ export async function planBroadcastResume(
 
   const rows = (rawRows ?? []) as RecipientRow[];
 
-  const transport = await loadBroadcastTransport(db, accountId);
+  // The number it went out from (phase 6) — the same one resumes it.
+  const { transport, connectionId } = await loadBroadcastTransport(db, accountId, broadcast.connection_id);
 
   // A recipient whose contact has no usable phone can never send. Stamp
   // it failed now: leaving it 'pending' would keep the broadcast in
@@ -267,6 +268,7 @@ export async function planBroadcastResume(
 
   const plan: BroadcastPlan = {
     accountId,
+    connectionId,
     broadcastId,
     templateName: broadcast.template_name,
     templateLanguage: resolvedTemplate.language,

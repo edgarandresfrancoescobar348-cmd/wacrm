@@ -67,6 +67,9 @@
   --color-chip-active-foreground: var(--chip-active-foreground);
   --color-read-ticks: var(--read-ticks);
   --color-link: var(--link);
+  /* A WhatsApp number's scope (phase 6): the avatar badge, the chips. */
+  --color-scope-personal: var(--scope-personal);
+  --color-scope-business: var(--scope-business);
   --color-bubble-quote: var(--bubble-quote);
   --color-doodle: var(--doodle);
   --radius-sm: calc(var(--radius) * 0.6);
@@ -150,6 +153,8 @@ html[data-mode="dark"] {
   --chip-active-foreground: #d9fdd3;
   --read-ticks: #53bdeb;
   --link: #53bdeb;
+  --scope-personal: #21c063;
+  --scope-business: #f2b705;
   --bubble-quote: rgb(0 0 0 / 0.2);
   --doodle: rgb(255 255 255 / 0.06);
   --wallpaper-tile-opacity: 0.12;
@@ -194,6 +199,8 @@ html[data-mode="light"] {
   --chip-active-foreground: #15603e;
   --read-ticks: #53bdeb;
   --link: #027eb5;
+  --scope-personal: #1daa61;
+  --scope-business: #e0a100;
   --bubble-quote: rgb(11 20 26 / 0.05);
   --doodle: rgb(84 64 40 / 0.07);
   --wallpaper-tile-opacity: 0.06;

@@ -25,6 +25,8 @@ import {
   RATE_LIMITS,
 } from "@/lib/rate-limit";
 import { getT } from "@/lib/i18n/translate";
+import { supabaseAdmin } from "@/lib/flows/admin-client";
+import { removePersonalConnectionsOf } from "@/lib/whatsapp/connection-admin";
 
 const t = getT("Api");
 
@@ -117,6 +119,15 @@ export async function DELETE(
     });
 
     if (error) return rpcErrorToResponse(error);
+
+    // Their personal WhatsApp numbers here go with them (phase 6): nobody
+    // else may see those chats, and the phone must stop syncing into an
+    // inbox they no longer have.
+    try {
+      await removePersonalConnectionsOf(supabaseAdmin(), ctx.accountId, userId);
+    } catch (err) {
+      console.error("[members] removing the member's personal numbers failed:", err);
+    }
 
     return NextResponse.json({ ok: true, newPersonalAccountId: data });
   } catch (err) {

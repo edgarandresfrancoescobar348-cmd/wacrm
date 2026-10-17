@@ -157,11 +157,6 @@
     }
   },
   "Inbox": {
-    "page": {
-      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account.",
-      "connectNow": "Connect now",
-      "whatsappQrDisconnected": "The WhatsApp QR-code session is disconnected. Scan the QR code again in Settings › WhatsApp to reconnect."
-    },
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
       "filterAll": "All",
@@ -278,7 +273,8 @@
         "audio": "audio"
       },
       "uploadFailed": "Upload failed.",
-      "messagePlaceholder": "Type a message"
+      "messagePlaceholder": "Type a message",
+      "numberRemovedPlaceholder": "This WhatsApp number was removed — history only"
     },
     "bubble": {
       "photo": "Photo",
@@ -392,7 +388,7 @@
       "templates": "Templates",
       "quickReplies": "Quick replies",
       "pipelines": "Pipelines",
-      "reconnectQr": "Reconnect WhatsApp (QR code)"
+      "reconnect": "Reconnect WhatsApp"
     },
     "kinds": {
       "photo": "Photo",
@@ -428,6 +424,28 @@
       "revoked": "This message was deleted",
       "album": "{count} photos",
       "waiting": "Waiting for this message. This may take a while."
+    },
+    "scopes": {
+      "personal": "Personal",
+      "business": "Business",
+      "all": "All",
+      "allOfScope": "All {scope} numbers",
+      "official": "Official API",
+      "personalNumber": "Personal WhatsApp",
+      "businessNumber": "Business WhatsApp",
+      "badgeWithName": "{scope} · {name}",
+      "disconnected": "Disconnected",
+      "notice": {
+        "notConfigured": "No WhatsApp number connected.",
+        "allDown": "{count, plural, one {WhatsApp is disconnected.} other {Your WhatsApp numbers are disconnected.}}",
+        "personalDown": "Your personal WhatsApp is disconnected. Business service continues.",
+        "webDownOfficialUp": "{count, plural, one {WhatsApp Web is disconnected.} other {The WhatsApp Web numbers are disconnected.}} Official service continues.",
+        "officialDown": "The official API is disconnected. Service through WhatsApp Web continues.",
+        "someDown": "Disconnected: {names}. The other numbers keep working.",
+        "connect": "Connect",
+        "reconnect": "Reconnect"
+      },
+      "sendFrom": "Send from"
     }
   },
   "Contacts": {
@@ -1576,8 +1594,7 @@
       "appearance": "{mode} mode · {theme} accent",
       "yourAccount": "Your account",
       "loading": "Loading…",
-      "viaQrCode": "via QR code",
-      "viaOfficialApi": "via official API"
+      "numbersConnected": "{connected} of {total, plural, one {# number} other {# numbers}} connected"
     },
     "members": {
       "title": "Team members",
@@ -1920,31 +1937,8 @@
       "wabaIdNotNumeric": "WhatsApp Business Account ID must contain only digits. Copy it from Meta → WhatsApp → API Setup.",
       "wabaSubscribed": "The WhatsApp Business Account is subscribed to this app — inbound webhooks can be delivered.",
       "wabaNotSubscribed": "The WhatsApp Business Account is not subscribed to this app, so Meta will not deliver inbound webhooks. Re-enter the access token and save again to subscribe it.",
-      "inactiveTitle": "Official API saved, but not active",
-      "inactiveDesc": "This account is using the QR code. The Meta credentials stay saved — switch back whenever you like.",
-      "inactiveEmptyDesc": "This account is using the QR code. Save Meta credentials below to switch to the official API.",
-      "useThisMode": "Use this mode",
-      "modeSwitchFailed": "Couldn't switch the connection mode.",
-      "modeSwitchedMeta": "Official API activated.",
-      "modes": {
-        "label": "Connection mode",
-        "description": "Choose how this account connects to WhatsApp. One mode is active at a time; contacts and conversations are kept when you switch.",
-        "active": "Active",
-        "meta": {
-          "title": "Official API",
-          "tagline": "Meta's Cloud API: approved templates, the 24 h window and verified numbers."
-        },
-        "openwa": {
-          "title": "QR code",
-          "tagline": "A regular WhatsApp number linked by QR code, through the gateway built into wacrm."
-        }
-      },
       "openwa": {
         "loading": "Loading…",
-        "inactiveTitle": "QR code set up, but not active",
-        "inactiveDesc": "This account is using the official API. The QR-code session stays saved.",
-        "useThisMode": "Use this mode",
-        "activated": "QR code activated.",
         "connectionTitle": "Connection",
         "statusNotConfigured": "No number connected",
         "notConfiguredDesc": "Click Connect to get a QR code and scan it with the phone of the number you will use.",
@@ -2050,6 +2044,41 @@
             "failed": "Stopped"
           }
         }
+      },
+      "numbers": {
+        "description": "Your account's numbers: one official (Meta Cloud API) and any linked by QR code — each Personal (only its owner sees its chats) or Business (the team does).",
+        "add": "Add number",
+        "loading": "Loading numbers…",
+        "emptyTitle": "No WhatsApp number yet",
+        "emptyDesc": "Add the official number (Meta) or link one by QR code.",
+        "listLabel": "WhatsApp numbers",
+        "kindOfficial": "Official API",
+        "kindQr": "QR code",
+        "personalOf": "Personal · {name}",
+        "default": "Default",
+        "statusConnected": "Connected",
+        "statusDisconnected": "Disconnected",
+        "remove": "Remove number",
+        "removeConfirm": "Remove {name}? The phone is unlinked; its conversations stay as history.",
+        "removed": "Number removed",
+        "removeFailed": "Could not remove the number",
+        "othersPersonal": "This is a teammate's personal number: only they see and manage its chats. You can remove it (for example when they leave the team).",
+        "addTitle": "Add a WhatsApp number",
+        "addDesc": "Choose how it connects and who sees its conversations. This can't be changed later.",
+        "addOfficial": "Official API (Meta)",
+        "addOfficialDesc": "The business's verified number. The team sees it; bots, broadcasts and templates run on it.",
+        "addPersonal": "QR code · Personal (only I see)",
+        "addPersonalDesc": "Your own phone. Nobody else sees its chats — not even admins — and nothing automated runs on it.",
+        "addBusiness": "QR code · Business (the team sees)",
+        "addBusinessDesc": "A business phone linked by QR code. The team sees its chats; bots and broadcasts run with QR pacing.",
+        "labelLabel": "Name (optional)",
+        "labelPlaceholderPersonal": "e.g. My phone",
+        "labelPlaceholderBusiness": "e.g. Store",
+        "cancel": "Cancel",
+        "continue": "Continue",
+        "addConfirm": "Add and show the QR",
+        "added": "Number added — connect it below",
+        "addFailed": "Could not add the number"
       }
     },
     "sections": {
@@ -2882,7 +2911,8 @@
       "unknownError": "Unknown error",
       "invalidRequestBody": "Invalid request body",
       "titleEmpty": "title cannot be empty",
-      "insertFailed": "insert failed"
+      "insertFailed": "insert failed",
+      "forbidden": "Forbidden"
     },
     "account": {
       "apiKeys": {
@@ -2962,7 +2992,8 @@
         "saveDocFailed": "Failed to save document",
         "savedIndexFailed": "Saved, but semantic indexing failed ({message}). Lexical search still works; use Reindex to retry.",
         "savedKeywordOnly": "Saved with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key)."
-      }
+      },
+      "personalNumber": "AI doesn’t run on a personal WhatsApp number."
     },
     "automations": {
       "copyName": "{name} (Copy)",
@@ -3014,8 +3045,7 @@
       "phoneCheckFailed": "Phone metadata check failed: {message}",
       "wabaNoApps": "WABA has no subscribed apps. Re-save the configuration to subscribe.",
       "wabaCheckFailed": "WABA subscription check failed: {message}",
-      "noWabaId": "No WABA ID on file — webhooks can't be wired without it. Add it in the form and re-save.",
-      "openwaDisconnected": "The number linked by QR code is not online. Open Settings › WhatsApp to reconnect."
+      "noWabaId": "No WABA ID on file — webhooks can't be wired without it. Add it in the form and re-save."
     },
     "media": {
       "idRequired": "Media ID is required",
@@ -3059,8 +3089,7 @@
       "submitFailed": "Failed to submit template.",
       "metaApiStatus": "Meta API error: {status}",
       "syncFailed": "Failed to sync templates",
-      "localSaveFailed": "Couldn't save the template: {message}",
-      "syncLocalMode": "In QR-code mode templates are local — there's no Meta catalog to sync."
+      "localSaveFailed": "Couldn't save the template: {message}"
     }
   },
   "AuthScreen": {

@@ -12,6 +12,8 @@ import {
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
 import { getT } from '@/lib/i18n/translate'
+import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { NoBusinessConnectionError, pickBusinessConnection } from '@/lib/whatsapp/connections'
 
 const t = getT('Api')
 
@@ -61,6 +63,9 @@ export async function POST(request: Request) {
       template_message_params,
       interactive_payload,
       reply_to_message_id,
+      // contact_id path: the business number to send from (default: the
+      // account's default business number). Never a personal one.
+      connection_id,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -129,10 +134,24 @@ export async function POST(request: Request) {
         )
       }
 
+      let number
+      try {
+        number = await pickBusinessConnection(
+          supabaseAdmin(),
+          accountId,
+          typeof connection_id === 'string' ? connection_id : null,
+        )
+      } catch (err) {
+        if (err instanceof NoBusinessConnectionError) {
+          return NextResponse.json({ error: err.message }, { status: 400 })
+        }
+        throw err
+      }
       const resolved = await findOrCreateConversation(
         supabase,
         accountId,
         userId,
+        number.id,
         contact_id
       )
       if (!resolved) {
@@ -195,31 +214,34 @@ export async function POST(request: Request) {
 type SendSupabase = Awaited<ReturnType<typeof createClient>>
 
 /**
- * Return the contact's conversation id in this account, creating one if
- * it doesn't exist yet. Mirrors the webhook's find-or-create so an
- * inbound-then-outbound (or outbound-first) sequence converges on a single
- * thread per contact. Runs under the caller's RLS — the conversations_insert
- * policy requires account agent membership, which the caller already is.
+ * Return the contact's conversation on this business number, creating one
+ * if it doesn't exist yet — one per (number, contact), like the webhook's
+ * find-or-create, so inbound-then-outbound (or outbound-first) converge on
+ * one thread. Runs under the caller's RLS — the conversations_insert
+ * policy requires agent membership and a number the caller can see.
  */
 async function findOrCreateConversation(
   supabase: SendSupabase,
   accountId: string,
   userId: string,
+  connectionId: string,
   contactId: string,
 ): Promise<string | null> {
-  const { data: existing } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .maybeSingle()
-
+  const lookup = () =>
+    supabase
+      .from('conversations')
+      .select('id')
+      .eq('connection_id', connectionId)
+      .eq('contact_id', contactId)
+      .maybeSingle()
+  const { data: existing } = await lookup()
   if (existing) return existing.id
 
   const { data: created, error } = await supabase
     .from('conversations')
     .insert({
       account_id: accountId,
+      connection_id: connectionId,
       user_id: userId,
       contact_id: contactId,
     })
@@ -227,6 +249,11 @@ async function findOrCreateConversation(
     .single()
 
   if (error) {
+    // A concurrent send (or an inbound message) opened it first.
+    if (error.code === '23505') {
+      const { data: raced } = await lookup()
+      if (raced) return raced.id
+    }
     console.error('Error creating conversation for contact send:', error.message)
     return null
   }

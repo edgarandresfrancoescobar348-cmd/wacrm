@@ -116,3 +116,23 @@ export function dedupeByPhone<T extends { phone: string }>(
 
   return { unique, duplicates, invalid };
 }
+
+/**
+ * A member is creating a contact by hand whose number only a personal
+ * WhatsApp number knew (phase 6): that hidden contact becomes the team's
+ * (they typed the number), so the create's duplicate path finds it
+ * instead of a unique-index error on a row nobody can see. Best-effort;
+ * returns the contact's id when one was shared.
+ */
+export async function sharePersonalContact(
+  supabase: SupabaseClient,
+  accountId: string,
+  phone: string,
+): Promise<string | null> {
+  const { data, error } = await supabase.rpc('share_personal_contact', { p_account_id: accountId, p_phone: phone })
+  if (error) {
+    console.warn('[contacts] share personal contact failed:', error.message)
+    return null
+  }
+  return typeof data === 'string' ? data : null
+}

@@ -1,5 +1,6 @@
-// GET /api/whatsapp/openwa/qr — the live pairing QR. Admin only: a QR
-// code links a device to the account's WhatsApp number.
+// GET /api/whatsapp/openwa/qr?connection_id=… — the live pairing QR of a
+// QR number. Only who may operate it (a business number's admins, a
+// personal number's owner): a QR code links a device to that number.
 //
 // Answers { status, qr_code } where qr_code is OpenWA's PNG data URL
 // while the session waits for a scan, else null. The settings page
@@ -7,29 +8,29 @@
 
 import { NextResponse } from 'next/server'
 
-import { requireRole } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { requireConnection } from '@/lib/whatsapp/connection-access'
 import { getOpenWaQr, OpenWaError } from '@/lib/whatsapp/openwa/client'
 import { openWaErrorResponse } from '@/lib/whatsapp/openwa/http'
 import { refreshOpenWa } from '@/lib/whatsapp/openwa/session'
 import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
 import { requireOpenWaGateway } from '@/lib/whatsapp/openwa/gateway'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const { accountId, userId } = await requireRole('admin')
-    const limit = checkRateLimit(`openwa-qr:${userId}`, RATE_LIMITS.openwaQr)
+    const { ctx, connection } = await requireConnection(new URL(request.url).searchParams.get('connection_id'), 'operate')
+    const limit = checkRateLimit(`openwa-qr:${ctx.userId}`, RATE_LIMITS.openwaQr)
     if (!limit.success) return rateLimitResponse(limit)
 
     const admin = supabaseAdmin()
     // Live state first — the session may have been scanned meanwhile.
-    const state = await refreshOpenWa(admin, accountId)
+    const state = await refreshOpenWa(admin, connection.id)
     if (state.status !== 'qr_ready' && state.status !== 'initializing') {
       return NextResponse.json({ status: state.status, qr_code: null, openwa: state })
     }
 
-    const row = await loadOpenWaRow(admin, accountId)
+    const row = await loadOpenWaRow(admin, connection.id)
     if (!row?.session_id) {
       return NextResponse.json({ status: state.status, qr_code: null, openwa: state })
     }

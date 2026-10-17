@@ -8,6 +8,8 @@ import { ArrowRight, Check, FileText, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StepHeading, StepNav } from './wizard-ui';
 import { useTranslations } from 'next-intl';
+import { NumberSelect } from '@/components/whatsapp/number-select';
+import type { ConnectionView } from '@/hooks/use-whatsapp-connections';
 
 // Category pills on WA tokens: marketing = soft green, utility = read
 // tick blue, authentication = neutral.
@@ -18,13 +20,26 @@ const categoryColors: Record<string, string> = {
 };
 
 interface Step1Props {
+  /** The account's numbers (phase 6) and the business one this broadcast goes out from. */
+  numbers?: ConnectionView[];
+  numberId: string | null;
+  onNumberChange: (id: string) => void;
   selectedTemplate: MessageTemplate | null;
   onSelect: (template: MessageTemplate) => void;
   onNext: () => void;
   onBack: () => void;
 }
 
-export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack }: Step1Props) {
+export function Step1ChooseTemplate({
+  numbers,
+  numberId,
+  onNumberChange,
+  selectedTemplate,
+  onSelect,
+  onNext,
+  onBack,
+}: Step1Props) {
+  const provider = numbers?.find((n) => n.id === numberId)?.provider ?? null;
   const t = useTranslations('Broadcasts.wizard');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,17 +52,13 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         // Only APPROVED templates can be sent via Meta — anything else
         // would 400 at broadcast time. Hide them rather than letting
         // the user pick a template that will fail.
-        // On the official API a `local` template (QR-code mode) isn't
-        // Meta-approved in its current form — hide it.
-        const { data: cfg } = await supabase
-          .from('whatsapp_config')
-          .select('provider')
-          .maybeSingle();
+        // From the official number a `local` template (a QR number's)
+        // isn't Meta-approved in its current form — hide it.
         let query = supabase
           .from('message_templates')
           .select('*')
           .eq('status', 'APPROVED');
-        if (cfg?.provider !== 'openwa') query = query.neq('origin', 'local');
+        if (provider !== 'openwa') query = query.neq('origin', 'local');
         const { data, error: fetchError } = await query.order('created_at', {
           ascending: false,
         });
@@ -62,7 +73,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
     }
 
     fetchTemplates();
-  }, []);
+  }, [provider]);
 
   if (loading) {
     return (
@@ -83,6 +94,8 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
   return (
     <div className="space-y-6">
       <StepHeading title={t('chooseTemplate.title')} subtitle={t('chooseTemplate.subtitle')} />
+
+      <NumberSelect numbers={numbers} value={numberId} onChange={onNumberChange} />
 
       {templates.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl bg-surface px-6 py-12 text-center">

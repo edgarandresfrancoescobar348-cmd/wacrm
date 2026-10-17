@@ -6,7 +6,7 @@ import type {
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity'
 import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
 import {
-  loadAccountTransport,
+  loadConnectionTransport,
   sendWithRecipientVariants,
   TransportNotConfiguredError,
   type MediaKind,
@@ -22,26 +22,22 @@ const t = getT('LibErrors')
 // Engine-side WhatsApp senders (text, media, interactive).
 //
 // Used by the Flows runner, the automation engine (interactive sends
-// delegate here) and the AI auto-reply. Every send goes through the
-// account's active transport (`@/lib/whatsapp/transport` — Meta Cloud
+// delegate here) and the AI auto-reply. Every send goes out from the
+// conversation's own number (`@/lib/whatsapp/transport` — Meta Cloud
 // API or OpenWA), so none of these functions know which provider is on
-// the other end. The shared part — account-scoped contact +
-// conversation checks, the recipient-variant retry, the contact phone
-// auto-fix — lives in `sendToContact`.
+// the other end — and only ever a business number's conversation
+// (phase 6: nothing automated runs on a personal one). The shared part —
+// account-scoped contact + conversation checks, the recipient-variant
+// retry, the contact phone auto-fix — lives in `sendToContact`.
 // ------------------------------------------------------------
 
 /**
- * Resolve the account's active WhatsApp transport, mapping "nothing
- * configured" to the engines' localized error. The single home for that
- * lookup — callers outside this file (the AI auto-reply's typing
- * indicator, automation template sends) reuse it.
+ * Resolve a business number's transport, mapping "nothing usable" to the
+ * engines' localized error. The single home for that lookup.
  */
-export async function loadEngineTransport(
-  db: ReturnType<typeof supabaseAdmin>,
-  accountId: string,
-): Promise<WhatsAppTransport> {
+export async function loadEngineTransport(connectionId: string): Promise<WhatsAppTransport> {
   try {
-    return await loadAccountTransport(db, accountId)
+    return (await loadConnectionTransport(connectionId)).transport
   } catch (err) {
     if (err instanceof TransportNotConfiguredError) {
       throw new Error(t('send.notConfigured'))
@@ -51,12 +47,14 @@ export async function loadEngineTransport(
 }
 
 /**
- * Mark an inbound message read and show "typing…" to the contact on
- * the account's active transport. Throws on any failure (no connection,
- * unknown contact, provider error) — callers treat it as best-effort.
+ * Mark an inbound message read and show "typing…" to the contact, from
+ * the conversation's (business) number. Throws on any failure (no
+ * connection, unknown contact, provider error) — callers treat it as
+ * best-effort.
  */
 export async function engineSendTyping(args: {
   accountId: string
+  conversationId: string
   contactId: string
   inboundMessageId: string
 }): Promise<void> {
@@ -74,7 +72,8 @@ export async function engineSendTyping(args: {
       t('send.noWhatsAppAddress', { phone: contact.phone || t('send.none') })
     )
   }
-  const transport = await loadEngineTransport(db, args.accountId)
+  const { connectionId } = await assertConversationInAccount(db, args.conversationId, args.accountId)
+  const transport = await loadEngineTransport(connectionId)
   await transport.sendTyping({
     to: target.target,
     inboundMessageId: args.inboundMessageId,
@@ -114,8 +113,9 @@ export async function sendToContact(
   }
 
   // Same for the conversation the message lands in — see
-  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
-  await assertConversationInAccount(db, args.conversationId, args.accountId)
+  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8). It also names the
+  // number the reply goes out from (a business one).
+  const { connectionId } = await assertConversationInAccount(db, args.conversationId, args.accountId)
 
   // Phone number, or the business-scoped user ID when Meta has never
   // given us a number for this customer (issue #519).
@@ -127,7 +127,7 @@ export async function sendToContact(
   }
   const sanitized = sendTarget.target
 
-  const transport = await loadEngineTransport(db, args.accountId)
+  const transport = await loadEngineTransport(connectionId)
 
   // Phone-variant retry — numbers registered with/without a trunk 0 and
   // Meta's sandbox quirks both need it to reliably land a message.

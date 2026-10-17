@@ -4,6 +4,7 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl } from '@/lib/whatsapp/meta-api'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { resolveInboundIdentity } from '@/lib/whatsapp/wa-identity'
+import { ingestConnectionFor, loadConnection } from '@/lib/whatsapp/connections'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import {
   applyStatusUpdate,
@@ -339,6 +340,17 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const config = configRows[0]
 
+      // The official number these credentials belong to (phase 6).
+      const number = await loadConnection(supabaseAdmin(), config.connection_id).catch((err) => {
+        console.error('[webhook] number lookup failed:', err)
+        return null
+      })
+      if (!number || number.removedAt) {
+        console.error('No live WhatsApp number for phone_number_id:', phoneNumberId)
+        continue
+      }
+      const target = await ingestConnectionFor(supabaseAdmin(), number)
+
       const decryptedAccessToken = decrypt(config.access_token)
 
       for (let i = 0; i < value.messages.length; i++) {
@@ -348,7 +360,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
         // read before migration 039 lands would have it undefined,
         // and losing attachments is the failure mode worth avoiding.
-        const mirrorMedia = config.mirror_inbound_media !== false
+        const mirrorMedia = number.mirrorInboundMedia
         await ingestInboundMessage(
           {
             provider: 'meta',
@@ -374,17 +386,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
                 mirrorMedia ? { accountId } : null
               ),
           },
-          // Tenancy — drives every contact / conversation lookup
-          // and the engines' active-row dispatch.
-          config.account_id,
-          // Audit / sender-of-record — used as the user_id on row
-          // inserts that need it for NOT NULL FK compliance. Always
-          // the admin who saved the WhatsApp config.
-          config.user_id,
-          // A Meta delivery for an account whose active connection is
-          // now the QR code (OpenWA) is still stored — but no bot
-          // answers from the other number.
-          { runBots: (config.provider ?? 'meta') === 'meta' }
+          // The official number: tenancy, the conversation key, and
+          // the audit user of the rows it creates. Always business —
+          // bots run.
+          target,
+          { runBots: true }
         )
       }
     }

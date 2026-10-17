@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import { getT } from "@/lib/i18n/translate";
+import { PRIVATE_MEDIA_BUCKET, privateMediaPath, privateMediaUrl } from "@/lib/whatsapp/private-media";
 
 const t = getT("LibErrors");
 
@@ -152,4 +153,27 @@ export async function deleteAccountMedia(
   const supabase = createClient();
   const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Upload a file sent from a PERSONAL WhatsApp number's conversation
+ * (phase 6) to the private bucket, under `connection-<id>/…` — storage RLS
+ * lets only the number's owner write and read it (migration 073). Returns
+ * the app route the message stores (the send signs a short-lived link for
+ * the provider) and the object path.
+ */
+export async function uploadPrivateChatMedia(
+  connectionId: string,
+  file: File,
+): Promise<UploadAccountMediaResult> {
+  const supabase = createClient();
+  const safe = buildMediaPath("x", file.name).split("/").pop()!;
+  const path = privateMediaPath(connectionId, safe);
+  const { error: upErr } = await supabase.storage.from(PRIVATE_MEDIA_BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type,
+  });
+  if (upErr) throw new Error(upErr.message);
+  return { publicUrl: privateMediaUrl(path), path };
 }

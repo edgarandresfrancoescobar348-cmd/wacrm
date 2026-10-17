@@ -25,12 +25,14 @@
 //                                            // (headerText fills a header {{1}}; required then)
 //     },
 //     "reply_to_message_id": "<uuid>",       // optional, must be in the same conversation
-//     "name": "Jane Doe"                     // optional, names a newly-created contact
+//     "name": "Jane Doe",                    // optional, names a newly-created contact
+//     "connection_id": "<uuid>"              // optional: the business number to send from
+//                                            // (default: the account's default business number)
 //   }
 //
 // Response (201):
 //   { "data": { "message_id", "whatsapp_message_id", "conversation_id",
-//               "contact_id", "contact_created" } }
+//               "connection_id", "contact_id", "contact_created" } }
 // ============================================================
 
 import { requireApiKey } from '@/lib/auth/api-context';
@@ -140,7 +142,8 @@ export async function POST(request: Request) {
       ctx.supabase,
       ctx.accountId,
       to,
-      typeof body.name === 'string' ? body.name : null
+      typeof body.name === 'string' ? body.name : null,
+      typeof body.connection_id === 'string' ? body.connection_id : null
     );
 
     const result = await sendMessageToConversation(
@@ -162,6 +165,7 @@ export async function POST(request: Request) {
           typeof body.reply_to_message_id === 'string'
             ? body.reply_to_message_id
             : null,
+        businessOnly: true,
       }
     );
 
@@ -170,6 +174,7 @@ export async function POST(request: Request) {
         message_id: result.messageId,
         whatsapp_message_id: result.whatsappMessageId,
         conversation_id: resolved.conversationId,
+        connection_id: resolved.connectionId,
         contact_id: resolved.contactId,
         contact_created: resolved.contactCreated,
       },

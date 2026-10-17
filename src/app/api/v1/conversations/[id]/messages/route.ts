@@ -15,6 +15,7 @@ import {
 } from '@/lib/api/v1/pagination';
 import { serializeMessage } from '@/lib/api/v1/conversations';
 import type { Message } from '@/types';
+import { businessConnectionIds, NO_CONNECTION } from '@/lib/whatsapp/connections';
 
 export async function GET(
   request: Request,
@@ -25,12 +26,15 @@ export async function GET(
     const { id } = await params;
     const { limit, cursor } = parseListParams(request);
 
-    // Gate on account ownership of the conversation first.
+    // Gate on account ownership of the conversation first — and on a
+    // business number: a personal number's chats are its owner's alone.
+    const business = await businessConnectionIds(ctx.supabase, ctx.accountId);
     const { data: conv } = await ctx.supabase
       .from('conversations')
       .select('id')
       .eq('id', id)
       .eq('account_id', ctx.accountId)
+      .in('connection_id', business.length ? business : [NO_CONNECTION])
       // WhatsApp groups (QR mode) are not CRM conversations (migration 067).
       .eq('is_group', false)
       .maybeSingle();

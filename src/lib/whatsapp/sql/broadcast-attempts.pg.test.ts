@@ -16,7 +16,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { WA_MIGRATIONS, WA_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
+import { WA_FULL_MIGRATIONS, WA_FULL_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
 import { PgSupabase } from '@/test/pg-supabase'
 import type { SendTemplateArgs, WhatsAppTransport } from '@/lib/whatsapp/transport'
 import { OpenWaError } from '@/lib/whatsapp/openwa/client'
@@ -32,7 +32,8 @@ vi.mock('@/lib/whatsapp/broadcast-core', async (orig) => {
         transportFailures--
         throw new Error('connection reset while loading the transport')
       }
-      return currentTransport
+      // The broadcast's business number (phase 6) and its transport.
+      return { transport: currentTransport, connectionId: NUM }
     },
   }
 })
@@ -44,6 +45,8 @@ const { resetBroadcastPacing } = await import('@/lib/whatsapp/transport/pacing')
 
 const ACCT = '00000000-0000-0000-0000-0000000000a1'
 const BC = '00000000-0000-0000-0000-0000000000b1'
+const NUM = '00000000-0000-0000-0000-0000000000c1'
+const USER = '00000000-0000-0000-0000-0000000000f1'
 const R = (n: number) => `00000000-0000-0000-0000-00000000010${n}`
 const PHONE = (n: number) => `551196666000${n}`
 
@@ -108,6 +111,7 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
   function plan(n: number[], transport: WhatsAppTransport) {
     return {
       accountId: ACCT,
+      connectionId: NUM,
       broadcastId: BC,
       templateName: 'pedido',
       templateLanguage: 'pt_BR',
@@ -120,10 +124,19 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
 
   beforeAll(async () => {
     pg = await startPg()
-    await pg.sql(WA_SCHEMA)
-    await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}');`)
-    if (process.env.PROVE_OLD_ATTEMPTS === '1') await pg.migrate('054_broadcast_send_checkpoint.sql')
-    else for (const m of WA_MIGRATIONS) await pg.migrate(m)
+    await pg.sql(WA_FULL_SCHEMA)
+    await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}'); INSERT INTO auth.users VALUES ('${USER}');
+      INSERT INTO public.profiles(user_id, account_id, account_role) VALUES ('${USER}', '${ACCT}', 'owner');`)
+    // PROVE_OLD_ATTEMPTS=1: the "before" run — only up to the checkpoint (054).
+    if (process.env.PROVE_OLD_ATTEMPTS === '1') {
+      await pg.migrate('053_inbound_completion.sql')
+      await pg.migrate('054_broadcast_send_checkpoint.sql')
+    } else {
+      for (const m of WA_FULL_MIGRATIONS) await pg.migrate(m)
+      // The account's business QR number the broadcast goes out from (phase 6).
+      await pg.sql(`INSERT INTO public.whatsapp_connections(id, account_id, provider, scope, created_by)
+        VALUES ('${NUM}', '${ACCT}', 'openwa', 'business', '${USER}');`)
+    }
     db = new PgSupabase(pg)
   }, 60_000)
   afterAll(() => pg?.stop())
@@ -139,6 +152,7 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
       DELETE FROM public.messages; DELETE FROM public.conversations; DELETE FROM public.contacts;
       INSERT INTO public.broadcasts(id, account_id, status, template_name, template_language)
         VALUES ('${BC}', '${ACCT}', 'sending', 'pedido', 'pt_BR');
+      UPDATE public.broadcasts SET connection_id = '${NUM}' WHERE id = '${BC}';
       INSERT INTO public.contacts(id, account_id, phone) SELECT ('00000000-0000-0000-0000-00000000020' || i)::uuid, '${ACCT}', '551196666000' || i FROM generate_series(1,3) i;
       INSERT INTO public.broadcast_recipients(id, broadcast_id, contact_id, status, template_params)
         SELECT ('00000000-0000-0000-0000-00000000010' || i)::uuid, '${BC}', ('00000000-0000-0000-0000-00000000020' || i)::uuid,
@@ -360,8 +374,16 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
     })
     await deliverBroadcast(db.asClient(), plan([1], transport))
     expect((await recipientsStatus())[0]).toBe('unknown')
+    // Phase 6 (074): an echo from ANOTHER number of the account (same
+    // phone, same text) is not this broadcast's evidence.
+    const other = await db.rpc('broadcast_attempt_reconcile_echo', {
+      p_account_id: ACCT, p_connection_id: '00000000-0000-0000-0000-0000000000c9', p_to_phone: PHONE(1),
+      p_body: 'Olá Cliente 1', p_message_id: 'wa-other', p_sent_at: new Date().toISOString(),
+    })
+    expect(other.data).toBeNull()
+    expect((await recipientsStatus())[0]).toBe('unknown')
     const { data } = await db.rpc('broadcast_attempt_reconcile_echo', {
-      p_account_id: ACCT, p_to_phone: PHONE(1), p_body: 'Olá Cliente 1',
+      p_account_id: ACCT, p_connection_id: NUM, p_to_phone: PHONE(1), p_body: 'Olá Cliente 1',
       p_message_id: 'wa-echo', p_sent_at: new Date().toISOString(),
     })
     expect(data).toBeTruthy()
@@ -369,7 +391,7 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
     expect(sent).toHaveLength(0)
     // The same echo again proves nothing new.
     const again = await db.rpc('broadcast_attempt_reconcile_echo', {
-      p_account_id: ACCT, p_to_phone: PHONE(1), p_body: 'Olá Cliente 1',
+      p_account_id: ACCT, p_connection_id: NUM, p_to_phone: PHONE(1), p_body: 'Olá Cliente 1',
       p_message_id: 'wa-echo', p_sent_at: new Date().toISOString(),
     })
     expect(again.data).toBeNull()

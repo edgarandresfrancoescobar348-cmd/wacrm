@@ -17,7 +17,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 /** Role `requireRole` reads off the caller's profile row. */
 let callerRole = 'admin'
 /** Active WhatsApp connection of the account. */
-let provider = 'meta'
+// Phase 6: does the account have its official number (Meta credentials)?
+let officialNumber = true
 
 const TEMPLATE = {
   id: '3f1c9d2e-4b5a-4c6d-8e7f-0a1b2c3d4e5f',
@@ -46,14 +47,15 @@ function makeSupabaseMock() {
           return { data: TEMPLATE, error: null }
         case 'whatsapp_config':
           return {
-            data: {
-              id: 'cfg-1',
-              account_id: 'acct-1',
-              phone_number_id: 'PNID-1',
-              waba_id: 'WABA-1',
-              access_token: 'enc-token',
-              provider,
-            },
+            data: officialNumber
+              ? {
+                  id: 'cfg-1',
+                  account_id: 'acct-1',
+                  phone_number_id: 'PNID-1',
+                  waba_id: 'WABA-1',
+                  access_token: 'enc-token',
+                }
+              : null,
             error: null,
           }
         default:
@@ -135,7 +137,7 @@ beforeEach(() => {
   templateUpdates.length = 0
   templateDeletes = 0
   callerRole = 'admin'
-  provider = 'meta'
+  officialNumber = true
   supabaseMock = makeSupabaseMock()
   meta.editMessageTemplate.mockClear()
   meta.deleteMessageTemplate.mockClear()
@@ -171,11 +173,12 @@ describe('template lifecycle role gate (GHSA-m4fx-g6pr-hrw8)', () => {
   })
 })
 
-// F9 (review): editing a Meta-approved template in QR mode must not leave
-// a row that still claims Meta's approval for different content.
+// F9 (review): editing a Meta-approved template without the official
+// number (only QR numbers) must not leave a row that still claims Meta's
+// approval for different content.
 describe('local edit of a Meta-approved template (F9)', () => {
   it('drops the Meta association and marks the row local', async () => {
-    provider = 'openwa'
+    officialNumber = false
     const res = await patchTemplate()
     expect(res.status).toBe(200)
     expect(meta.editMessageTemplate).not.toHaveBeenCalled()

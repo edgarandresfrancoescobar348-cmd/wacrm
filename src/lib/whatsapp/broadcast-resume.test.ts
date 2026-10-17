@@ -13,6 +13,35 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: (v: string) => `decrypted:${v}`,
 }));
 
+// Phase 6: a broadcast goes out from its business number. The number is
+// the account's official one; its credentials are the fixture's config
+// row (none → not configured).
+const h = vi.hoisted(() => ({ config: null as Record<string, unknown> | null, hint: undefined as unknown }));
+vi.mock('@/lib/whatsapp/connections', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  pickBusinessConnection: async (_db: unknown, _account: string, hint?: string | null) => {
+    h.hint = hint;
+    return { id: 'num-1', accountId: 'acct-1', provider: 'meta', scope: 'business', removedAt: null };
+  },
+}));
+vi.mock('@/lib/whatsapp/transport', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/whatsapp/transport')>();
+  return {
+    ...real,
+    loadConnectionTransport: async (connection: { id: string }) => {
+      if (!h.config) throw new real.TransportNotConfiguredError();
+      const { createMetaTransport } = await import('@/lib/whatsapp/transport/meta');
+      return {
+        connection,
+        transport: createMetaTransport({
+          phoneNumberId: String(h.config.phone_number_id),
+          accessToken: `decrypted:${String(h.config.access_token)}`,
+        }),
+      };
+    },
+  };
+});
+
 // ============================================================
 // Claim / release — the mutex that stops a double-send.
 // ============================================================
@@ -128,6 +157,7 @@ interface PlanWrites {
 }
 
 function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
+  h.config = fx.config ?? null;
   return {
     from(table: string) {
       const b: Record<string, unknown> = {
@@ -197,6 +227,20 @@ function recipient(
 }
 
 describe('planBroadcastResume', () => {
+  it('resumes from the number the broadcast went out from (phase 6)', async () => {
+    await planBroadcastResume(
+      planDb({
+        broadcast: { ...BROADCAST, connection_id: 'num-loja' },
+        config: CONFIG,
+        recipients: [recipient('r1', '+15551234567')],
+      }),
+      'acct-1',
+      'bc-1',
+      'pending',
+    );
+    expect(h.hint).toBe('num-loja');
+  });
+
   it('plans the outstanding recipients with their frozen params', async () => {
     const writes: PlanWrites = {};
     const { plan, remaining, unsendable } = await planBroadcastResume(
@@ -232,8 +276,9 @@ describe('planBroadcastResume', () => {
         params: ['B456', 'Monday'],
       },
     ]);
-    // The plan carries the account's Meta transport (config row above).
+    // The plan carries its number's transport (config row above).
     expect(plan.transport.provider).toBe('meta');
+    expect(plan.connectionId).toBe('num-1');
     expect(remaining).toBe(0);
     expect(unsendable).toBe(0);
   });

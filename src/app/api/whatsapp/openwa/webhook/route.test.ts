@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   after: [] as (() => Promise<void>)[],
   ledger: new Map<string, LedgerRowShape>(),
   row: null as Record<string, unknown> | null,
+  scope: 'business' as 'business' | 'personal',
 }))
 
 vi.mock('next/server', () => ({
@@ -111,11 +112,28 @@ vi.mock('@/lib/flows/admin-client', () => ({
         return q
       }
       if (table === 'openwa_webhook_deliveries') return ledgerTable()
-      // whatsapp_config
+      // whatsapp_connections: the QR number the session is (phase 6).
       const q = {
         select: () => q,
         eq: () => q,
-        maybeSingle: async () => ({ data: { provider: 'openwa', mirror_inbound_media: true }, error: null }),
+        maybeSingle: async () => ({
+          data: {
+            id: 'num-1',
+            account_id: 'acct-1',
+            provider: 'openwa',
+            scope: h.scope,
+            owner_user_id: h.scope === 'personal' ? 'user-2' : null,
+            label: null,
+            status: 'connected',
+            phone: null,
+            connected_at: null,
+            mirror_inbound_media: true,
+            created_by: 'user-1',
+            removed_at: null,
+            created_at: '2026-10-01T00:00:00Z',
+          },
+          error: null,
+        }),
       }
       return q
     },
@@ -159,8 +177,10 @@ beforeEach(() => {
   h.handleOpenWaEvent.mockClear()
   h.after.length = 0
   h.ledger.clear()
+  h.scope = 'business'
   h.row = {
     account_id: 'acct-1',
+    connection_id: 'num-1',
     user_id: 'user-1',
     session_id: SESSION,
     webhook_secret: encrypt(SECRET),
@@ -175,11 +195,23 @@ describe('OpenWA webhook — fail closed', () => {
     expect(h.handleOpenWaEvent).toHaveBeenCalledTimes(1)
     const [envelope, ctx] = h.handleOpenWaEvent.mock.calls[0] as unknown as [
       { event: string },
-      { activeProvider: string; row: { account_id: string } },
+      { row: { account_id: string }; connection: { id: string; scope: string }; actorId: string },
     ]
     expect(envelope.event).toBe('message.received')
     expect(ctx.row.account_id).toBe('acct-1')
-    expect(ctx.activeProvider).toBe('openwa')
+    // The session's number (phase 6) and who its rows are attributed to.
+    expect(ctx.connection).toMatchObject({ id: 'num-1', scope: 'business' })
+    expect(ctx.actorId).toBe('user-1')
+  })
+
+  it('a personal number’s session: the handler gets the personal number, its owner as the actor', async () => {
+    h.scope = 'personal'
+    const body = delivery()
+    const res = await post(body, { 'x-openwa-signature': sign(body), 'x-openwa-idempotency-key': 'msg_key_1' })
+    expect(res.status).toBe(200)
+    const [, ctx] = h.handleOpenWaEvent.mock.calls[0] as unknown as [unknown, { connection: { scope: string }; actorId: string }]
+    expect(ctx.connection.scope).toBe('personal')
+    expect(ctx.actorId).toBe('user-2')
   })
 
   it('rejects an unsigned delivery', async () => {

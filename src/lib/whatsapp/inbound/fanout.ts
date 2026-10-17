@@ -51,8 +51,12 @@ export interface InboundFanoutPayload {
   interactiveReplyId: string | null
   isFirstInboundMessage: boolean
   contactWasCreated: boolean
-  /** False on the account's inactive connection: webhooks only. */
+  /** False on a personal number (phase 6) and on imported history. */
   botsEnabled: boolean
+  /** The number the message came in on (absent on tasks from before phase 6). */
+  connectionId?: string
+  /** A personal number's message: nothing runs, not even the public webhook. */
+  personal?: boolean
   /** The conversation preview the completion writes (K5 repair). */
   lastMessageText?: string
 }
@@ -254,7 +258,14 @@ async function runSteps(db: SupabaseClient, task: FanoutTask): Promise<FanoutPro
   // The public webhook: the SAME delivery (id) to the endpoints that
   // haven't taken it yet.
   progress = await ownStep(db, task, 'webhook')
-  if (!progress.webhook?.done) {
+  // A personal number's messages never leave for the account's endpoints:
+  // they are its owner's alone (phase 6).
+  if (!progress.webhook?.done && p.personal) {
+    await record('webhook', {
+      ...progress,
+      webhook: { deliveryId: '', occurredAt: new Date().toISOString(), pending: null, done: true },
+    })
+  } else if (!progress.webhook?.done) {
     const prev = progress.webhook
     const r = await dispatchWebhookEvent(
       db,

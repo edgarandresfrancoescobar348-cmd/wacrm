@@ -17,7 +17,7 @@ import {
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { getT } from '@/lib/i18n/translate'
-import { loadAccountProvider } from '@/lib/whatsapp/transport'
+import { hasOfficialNumber } from '@/lib/whatsapp/connections'
 
 const t = getT('Api')
 
@@ -86,7 +86,7 @@ export async function PATCH(
     // meta_template_id and status — fetch explicitly.
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, status, meta_template_id, language')
+      .select('id, name, status, meta_template_id, language, origin')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -94,13 +94,14 @@ export async function PATCH(
       return NextResponse.json({ error: t('templates.notFound') }, { status: 404 })
     }
 
-    // QR-code connection: templates are local (migration 047). An edit
-    // is a local update, ready to use at once. A Meta-approved row edited
-    // here no longer matches what Meta approved, so it stops being that
-    // template: origin 'local' and its Meta id is dropped. Back on the
-    // official API it is refused for sending until it is submitted (and
-    // approved) again — never sent by name while showing other text.
-    const localMode = (await loadAccountProvider(supabase, accountId)) === 'openwa'
+    // A local template (the QR numbers' — migration 047), or an account
+    // without an official number: an edit is a local update, ready to use
+    // at once. A Meta-approved row edited without an official number no
+    // longer matches what Meta approved, so it stops being that template:
+    // origin 'local' and its Meta id is dropped — refused on the official
+    // API until it is submitted (and approved) again, never sent by name
+    // while showing other text.
+    const localMode = existing.origin === 'local' || !(await hasOfficialNumber(supabase, accountId))
     if (localMode) {
       if (payload.category === 'Authentication') {
         return NextResponse.json({ error: t('templates.authNotEditable') }, { status: 400 })
@@ -308,9 +309,9 @@ export async function DELETE(
       return NextResponse.json({ error: t('templates.notFound') }, { status: 404 })
     }
 
-    // On a QR-code connection the Meta side is not reachable (and may not
-    // exist); deleting there removes the local row only.
-    const localMode = (await loadAccountProvider(supabase, accountId)) === 'openwa'
+    // Without an official number the Meta side is not reachable (and may
+    // not exist); deleting then removes the local row only.
+    const localMode = !(await hasOfficialNumber(supabase, accountId))
     if (existing.meta_template_id && !isDryRun() && !localMode) {
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')

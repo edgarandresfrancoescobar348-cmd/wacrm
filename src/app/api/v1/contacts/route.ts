@@ -53,7 +53,9 @@ export async function GET(request: Request) {
     let query = ctx.supabase
       .from('contacts')
       .select(selectClause)
-      .eq('account_id', ctx.accountId);
+      .eq('account_id', ctx.accountId)
+      // A contact only a personal number knows is its owner's (phase 6).
+      .eq('personal_only', false);
 
     if (search) {
       query = query.or(`name.ilike.*${search}*,phone.ilike.*${search}*`);

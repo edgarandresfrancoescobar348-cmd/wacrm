@@ -12,9 +12,19 @@
 //
 // Extracted unchanged from the Meta webhook route, whose test-suite
 // still exercises it end to end.
+//
+// Phase 6: every delivery names the NUMBER it came in on
+// (IngestConnection). The conversation is the (number, contact) one; a
+// personal number's message never runs anything (no flow, automation,
+// AI, public webhook, broadcast reply), the contact it creates is
+// personal-only (hidden from the team, migration 073) and the name the
+// owner's address book gives it stays on that conversation
+// (`saved_name`), never on the shared CRM contact.
 // ============================================================
 
 import type { MediaMeta } from '@/types'
+import type { IngestConnection } from '@/lib/whatsapp/connections'
+export type { IngestConnection } from '@/lib/whatsapp/connections'
 import { contactNamePatch } from '@/lib/whatsapp/contact-name'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import {
@@ -100,9 +110,8 @@ export interface InboundMessage {
 
 export interface IngestOptions {
   /**
-   * False when the delivery came in on the account's inactive
-   * connection: store it, bump unread, fan out webhooks — but no flow,
-   * automation or AI reply runs for it.
+   * False: store it, bump unread — but no flow, automation or AI reply
+   * runs for it. A personal number never runs them whatever this says.
    */
   runBots?: boolean
   /** Map typed replies to the last numbered menu we sent (QR mode). */
@@ -143,7 +152,7 @@ function parityColumns(extras: InboundContent['extras']): Record<string, unknown
 /**
  * Store the WhatsApp chat id on a QR-code conversation the first time it
  * is known — the chat-state sync and group-free replies key on it. A
- * conflict (another row of the account already holds it) is left alone.
+ * conflict (another conversation of the number already holds it) is left alone.
  */
 async function rememberChatId(conversation: { id: string; wa_chat_id?: string | null }, waChatId?: string | null) {
   if (!waChatId || conversation.wa_chat_id) return
@@ -153,6 +162,33 @@ async function rememberChatId(conversation: { id: string; wa_chat_id?: string | 
     .eq('id', conversation.id)
     .is('wa_chat_id', null)
   if (error && !isUniqueViolation(error)) console.warn('[webhook] could not store the chat id:', error.message)
+}
+
+/**
+ * A personal number: the name its owner's address book gives the contact
+ * lives on this conversation only (migration 072's `saved_name`).
+ */
+export async function rememberSavedName(
+  conversation: { id: string; saved_name?: string | null },
+  connection: IngestConnection,
+  identity: WaIdentity,
+) {
+  if (connection.scope !== 'personal' || identity.nameSource !== 'saved') return
+  const name = identity.name?.trim()
+  if (!name || name === conversation.saved_name) return
+  const { error } = await supabaseAdmin().from('conversations').update({ saved_name: name }).eq('id', conversation.id)
+  if (error) console.warn('[webhook] could not store the saved name:', error.message)
+}
+
+/**
+ * What a personal number may write onto the CRM contact: its owner's
+ * address-book name is private (it goes to the conversation instead), the
+ * sender's own profile name is public.
+ */
+export function contactIdentityFor(connection: Pick<IngestConnection, 'scope'>, identity: WaIdentity): WaIdentity {
+  if (connection.scope !== 'personal' || identity.nameSource !== 'saved') return identity
+  const push = identity.pushName?.trim() || ''
+  return { ...identity, name: push, nameSource: push ? 'push' : undefined }
 }
 
 /** A transient failure the provider should retry (see throwOnFailure). */
@@ -319,23 +355,24 @@ export async function applyStatusUpdate(
   const { data: msgRow } = scope.accountId
     ? await supabaseAdmin()
         .from('messages')
-        .select('conversation_id, conversations!inner(account_id)')
+        .select('conversation_id, conversations!inner(account_id, connection_id)')
         .eq('message_id', status.id)
         .eq('conversations.account_id', scope.accountId)
         .limit(1)
         .maybeSingle()
     : await supabaseAdmin()
         .from('messages')
-        .select('conversation_id, conversations(account_id)')
+        .select('conversation_id, conversations(account_id, connection_id)')
         .eq('message_id', status.id)
         .limit(1)
         .maybeSingle()
 
   if (msgRow) {
     // A to-one embed; typed as an array by the generic client.
-    const conv = msgRow.conversations as unknown as { account_id: string } | null
+    const conv = msgRow.conversations as unknown as { account_id: string; connection_id: string } | null
     const accountId = conv?.account_id
-    if (accountId) {
+    // A personal number's receipts stay its owner's (phase 6).
+    if (accountId && conv && !(await isPersonalConnection(conv.connection_id))) {
       await dispatchWebhookEvent(
         supabaseAdmin(),
         accountId,
@@ -350,6 +387,11 @@ export async function applyStatusUpdate(
   }
 }
 
+async function isPersonalConnection(connectionId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin().from('whatsapp_connections').select('scope').eq('id', connectionId).maybeSingle()
+  return data?.scope === 'personal'
+}
+
 /**
  * If an inbound message's sender is on a still-unreplied
  * broadcast_recipients row, flip it to `replied` so the reply count
@@ -358,7 +400,7 @@ export async function applyStatusUpdate(
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
-async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
+async function flagBroadcastReplyIfAny(accountId: string, connectionId: string, contactId: string) {
   try {
     // Most recent outbound broadcast in this account that hasn't
     // been replied to yet. Account-scoped so a shared inbox reply
@@ -366,9 +408,11 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
     // sent it.
     const { data: recs, error } = await supabaseAdmin()
       .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(account_id)')
+      .select('id, status, broadcast_id, broadcasts!inner(account_id, connection_id)')
       .eq('contact_id', contactId)
       .eq('broadcasts.account_id', accountId)
+      // A reply on another number isn't a reply to this broadcast.
+      .eq('broadcasts.connection_id', connectionId)
       .in('status', ['sent', 'delivered', 'read'])
       .order('created_at', { ascending: false })
       .limit(1)
@@ -474,16 +518,13 @@ async function handleReaction(
 
 export async function ingestInboundMessage(
   inbound: InboundMessage,
-  // Tenancy. Resolved from the matched config row; every contact /
-  // conversation / message row created downstream is stamped with this
-  // so any member of the account can see it.
-  accountId: string,
-  // Sender-of-record for inserts that need a NOT NULL user_id FK
-  // (contacts, conversations). Always the admin who saved the
-  // WhatsApp config; the choice is arbitrary post-017 but stable.
-  configOwnerUserId: string,
+  // The number it came in on — tenancy (its account), the conversation
+  // key, and whether anything may run (business) or nothing (personal).
+  connection: IngestConnection,
   options: IngestOptions = {}
 ) {
+  const accountId = connection.accountId
+  const personal = connection.scope === 'personal'
   // Phone number OR business-scoped user ID — Meta sends only the
   // latter for a sender who has adopted a WhatsApp username (#519).
   const identity = inbound.identity
@@ -499,11 +540,7 @@ export async function ingestInboundMessage(
   }
 
   // Find or create contact
-  const contactOutcome = await findOrCreateContact(
-    accountId,
-    configOwnerUserId,
-    identity
-  )
+  const contactOutcome = await findOrCreateContact(connection, identity)
   if (!contactOutcome) {
     if (options.throwOnFailure) throw new IngestFailure('contact')
     return
@@ -518,23 +555,20 @@ export async function ingestInboundMessage(
   }
 
   // Find or create conversation
-  const convResult = await findOrCreateConversation(
-    accountId,
-    configOwnerUserId,
-    contactRecord.id
-  )
+  const convResult = await findOrCreateConversation(connection, contactRecord.id)
   if (!convResult) {
     if (options.throwOnFailure) throw new IngestFailure('conversation')
     return
   }
   const conversation = convResult.conversation
   await rememberChatId(conversation, inbound.waChatId)
+  await rememberSavedName(conversation, connection, identity)
 
   // Emit conversation.created as soon as the thread is opened — BEFORE
   // the reaction short-circuit below — so a conversation first opened by
   // a reaction still fires the event, and a subscriber always sees the
   // thread open before its first message.received.
-  if (convResult.created) {
+  if (convResult.created && !personal) {
     await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
       conversation_id: conversation.id,
       contact_id: contactRecord.id,
@@ -653,7 +687,9 @@ export async function ingestInboundMessage(
   })
   const storedFanout: InboundFanoutPayload = {
     accountId,
-    configOwnerUserId,
+    configOwnerUserId: connection.userId,
+    connectionId: connection.id,
+    ...(personal ? { personal: true } : {}),
     contactId: contactRecord.id,
     conversationId: conversation.id,
     providerMessageId: inbound.messageId,
@@ -663,7 +699,7 @@ export async function ingestInboundMessage(
     interactiveReplyId: interactiveReplyId ?? null,
     isFirstInboundMessage: (priorCustomerMsgCount ?? 0) === 0,
     contactWasCreated: contactOutcome.wasCreated,
-    botsEnabled: options.runBots !== false,
+    botsEnabled: options.runBots !== false && !personal,
     lastMessageText,
   }
   const { data: insertedRows, error: msgError } = await supabaseAdmin()
@@ -832,7 +868,7 @@ export async function ingestInboundMessage(
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003). Best-effort analytics, after
   // completion — never repeated by a redelivery.
-  if (completedNow !== false) await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+  if (completedNow !== false && !personal) await flagBroadcastReplyIfAny(accountId, connection.id, contactRecord.id)
 
   // Run the fan-out. When another delivery completed the message
   // concurrently, its task is the same one — the claim decides who runs
@@ -862,28 +898,23 @@ async function scheduleFanout(messageRowId: string, options: IngestOptions): Pro
  */
 export async function recordOutboundEcho(
   echo: Omit<InboundMessage, 'reaction'>,
-  accountId: string,
-  configOwnerUserId: string,
+  connection: IngestConnection,
   options: { throwOnFailure?: boolean } = {}
 ): Promise<'recorded' | 'duplicate' | 'skipped'> {
+  const accountId = connection.accountId
   const fail = (step: string, cause?: unknown): 'skipped' => {
     if (options.throwOnFailure) throw new IngestFailure(step, cause)
     return 'skipped'
   }
   if (!hasUsableIdentity(echo.identity)) return 'skipped'
   const contactOutcome = await findOrCreateContact(
-    accountId,
-    configOwnerUserId,
+    connection,
     // The recipient's profile name is not in an outbound echo — never
     // let it rename the contact.
     { ...echo.identity, name: '' }
   )
   if (!contactOutcome) return fail('contact')
-  const convResult = await findOrCreateConversation(
-    accountId,
-    configOwnerUserId,
-    contactOutcome.contact.id
-  )
+  const convResult = await findOrCreateConversation(connection, contactOutcome.contact.id)
   if (!convResult) return fail('conversation')
   const conversationId = convResult.conversation.id
   await rememberChatId(convResult.conversation, echo.waChatId)
@@ -1110,10 +1141,12 @@ function contactIdentityPatch(
 }
 
 export async function findOrCreateContact(
-  accountId: string,
-  configOwnerUserId: string,
-  identity: WaIdentity
+  connection: IngestConnection,
+  incoming: WaIdentity
 ): Promise<ContactOutcome | null> {
+  const accountId = connection.accountId
+  // A personal number never writes its owner's address-book name onto the CRM contact.
+  const identity = contactIdentityFor(connection, incoming)
   // BSUID first when we have one. It's stable per (user, business
   // portfolio) and, unlike the phone number, Meta will keep sending it
   // — so it's the key that survives a customer adopting a username.
@@ -1162,8 +1195,9 @@ export async function findOrCreateContact(
 
   // Create new contact. account_id is the tenancy column;
   // user_id is the NOT NULL FK audit column (no inbound message
-  // has a single "user who created" it — we attribute to the
-  // WhatsApp config owner as a stable default).
+  // has a single "user who created" it — we attribute to the number's
+  // owner / whoever added it). A contact a personal number brings in is
+  // its owner's alone until the business talks to it (migration 073).
   //
   // `phone` stays NOT NULL in the schema, so a BSUID-only sender is
   // stored with '' — which migration 022's partial unique index
@@ -1173,7 +1207,8 @@ export async function findOrCreateContact(
     .from('contacts')
     .insert({
       account_id: accountId,
-      user_id: configOwnerUserId,
+      user_id: connection.userId,
+      personal_only: connection.scope === 'personal',
       phone: identity.phone,
       name: identityDisplayName(identity),
       name_source: identity.name ? (identity.nameSource ?? 'push') : identity.waUsername ? 'push' : 'phone',
@@ -1212,11 +1247,12 @@ export async function findOrCreateContact(
 }
 
 export async function findOrCreateConversation(
-  accountId: string,
-  configOwnerUserId: string,
+  connection: IngestConnection,
   contactId: string,
 ) {
-  // Look for an existing conversation in this account, oldest-first.
+  // One conversation per (number, contact) — the same person on two of
+  // the account's numbers is two conversations (migration 072).
+  // Look for an existing one, oldest-first.
   //
   // We deliberately do NOT use `.single()` here. `.single()` errors on
   // *both* 0 rows and ≥2 rows, and the old code treated any error as
@@ -1232,7 +1268,7 @@ export async function findOrCreateConversation(
   const { data: existingRows, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
-    .eq('account_id', accountId)
+    .eq('connection_id', connection.id)
     .eq('contact_id', contactId)
     .order('created_at', { ascending: true })
     .limit(1)
@@ -1251,8 +1287,9 @@ export async function findOrCreateConversation(
   const { data: newConv, error: createError } = await supabaseAdmin()
     .from('conversations')
     .insert({
-      account_id: accountId,
-      user_id: configOwnerUserId,
+      account_id: connection.accountId,
+      connection_id: connection.id,
+      user_id: connection.userId,
       contact_id: contactId,
     })
     .select()
@@ -1267,7 +1304,7 @@ export async function findOrCreateConversation(
       const { data: raced } = await supabaseAdmin()
         .from('conversations')
         .select('*')
-        .eq('account_id', accountId)
+        .eq('connection_id', connection.id)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: true })
         .limit(1)

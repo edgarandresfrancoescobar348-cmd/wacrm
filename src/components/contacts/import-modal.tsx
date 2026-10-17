@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/use-auth';
 import {
   dedupeByPhone,
   isUniqueViolation,
+  sharePersonalContact,
   normalizeKey,
 } from '@/lib/contacts/dedupe';
 import {
@@ -324,6 +325,9 @@ export function ImportModal({
                 });
               }
             } else if (isUniqueViolation(singleErr)) {
+              // Already there — maybe a contact only a personal number
+              // knew, which an import by the team makes the team's.
+              await sharePersonalContact(supabase, accountId, row.phone);
               skipped++;
             } else {
               failed++;

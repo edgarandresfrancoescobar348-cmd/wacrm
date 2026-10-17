@@ -29,10 +29,12 @@ import {
 import { StepCard, StepHeading, StepNav } from './wizard-ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { ShieldAlert } from 'lucide-react';
-import { useWhatsAppConnection } from '@/hooks/use-whatsapp-connection';
+import type { ConnectionView } from '@/hooks/use-whatsapp-connections';
 import { formatNumber } from '@/lib/locale-format';
 
 interface Step4Props {
+  /** The business number it goes out from (phase 6): pacing on a QR one. */
+  number?: ConnectionView;
   name: string;
   onNameChange: (name: string) => void;
   template: MessageTemplate;
@@ -45,6 +47,7 @@ interface Step4Props {
 }
 
 export function Step4ScheduleSend({
+  number,
   name,
   onNameChange,
   template,
@@ -60,9 +63,23 @@ export function Step4ScheduleSend({
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
-  const connection = useWhatsAppConnection();
-  const qrMode = connection.provider === 'openwa';
-  const delaySeconds = Math.round((connection.broadcastDelayMs ?? 8000) / 1000);
+  const qrMode = number?.provider === 'openwa';
+  // A QR number's pause between two sends (its settings).
+  const [delayMs, setDelayMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!qrMode || !number) return;
+    let cancelled = false;
+    fetch(`/api/whatsapp/openwa?connection_id=${number.id}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled) setDelayMs(data?.openwa?.broadcast_delay_ms ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [qrMode, number]);
+  const delaySeconds = Math.round((delayMs ?? 8000) / 1000);
 
   useEffect(() => {
     async function calculateReach() {

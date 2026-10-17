@@ -145,6 +145,13 @@ vi.mock('@/lib/flows/admin-client', () => ({
   }),
 }))
 
+// Phase 6: a contact send goes out from the account's default business
+// number — the official one here.
+vi.mock('@/lib/whatsapp/connections', async (orig) =>
+  (await import('@/test/business-number')).connectionsMock(await orig()))
+vi.mock('@/lib/whatsapp/transport', async (orig) =>
+  (await import('@/test/business-number')).transportMock(await orig()))
+
 vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: vi.fn(() => 'plaintext-token'),
   encrypt: vi.fn(() => 'enc-token'),
@@ -208,6 +215,8 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     expect(conversationInserts).toHaveLength(1)
     expect(conversationInserts[0]).toMatchObject({
       account_id: 'acct-1',
+      // On the account's default business number (phase 6).
+      connection_id: 'num-official',
       contact_id: 'contact-1',
     })
 

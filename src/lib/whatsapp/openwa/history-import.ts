@@ -57,7 +57,9 @@ import type { MediaMeta } from '@/types'
 import {
   findOrCreateContact,
   findOrCreateConversation,
+  rememberSavedName,
 } from '@/lib/whatsapp/inbound/ingest'
+import { ingestConnectionFor, loadConnection, type IngestConnection } from '@/lib/whatsapp/connections'
 import {
   getOpenWaChatHistory,
   getOpenWaContactPhone,
@@ -137,6 +139,8 @@ const TRANSIENT_CHAT_ERROR = /Too Many Requests|ThrottlerException|rate limit|di
 
 export interface HistoryImportJob {
   account_id: string
+  /** The QR number being imported (phase 6: one job per number). */
+  connection_id: string
   session_id: string
   status: 'queued' | 'listing' | 'importing' | 'waiting_session' | 'done' | 'failed'
   started_at: string
@@ -150,6 +154,7 @@ export interface HistoryImportJob {
 
 interface ChatRow {
   account_id: string
+  connection_id: string
   chat_id: string
   name: string | null
   unread_count: number
@@ -168,8 +173,8 @@ type HistoryMessage = Parameters<typeof mapOpenWaMessage>[0] & {
 
 const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-function log(accountId: string, message: string) {
-  console.info(`[history import] ${accountId.slice(0, 8)}: ${message}`)
+function log(connectionId: string, message: string) {
+  console.info(`[history import] ${connectionId.slice(0, 8)}: ${message}`)
 }
 
 const clock = (ms: number) => new Date(ms).toISOString().slice(11, 19) + ' UTC'
@@ -263,17 +268,18 @@ export function storedToHistory(m: OpenWaStoredMessage & {
 }
 
 /**
- * Start (or restart) the import for an account. A restart re-checks
+ * Start (or restart) the import for a QR number. A restart re-checks
  * every chat; messages already imported are skipped by their key.
  */
 export async function startHistoryImport(
   admin: SupabaseClient,
-  accountId: string,
+  number: { id: string; accountId: string },
   sessionId: string,
 ): Promise<void> {
   const { error } = await admin.from('whatsapp_history_imports').upsert(
     {
-      account_id: accountId,
+      account_id: number.accountId,
+      connection_id: number.id,
       session_id: sessionId,
       status: 'queued',
       started_at: new Date().toISOString(),
@@ -288,30 +294,30 @@ export async function startHistoryImport(
       last_error: null,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: 'account_id' },
+    { onConflict: 'connection_id' },
   )
   if (error) throw new HistoryStoreError('start', error)
   const { error: resetErr } = await admin
     .from('whatsapp_history_import_chats')
     .update({ status: 'pending', attempts: 0, error: null, updated_at: new Date().toISOString() })
-    .eq('account_id', accountId)
+    .eq('connection_id', number.id)
   if (resetErr) throw new HistoryStoreError('start (reset chats)', resetErr)
 }
 
-/** Queue the import once per session (the first time QR mode connects). */
+/** Queue the import once per session (the first time a QR number connects). */
 export async function queueHistoryImportOnConnect(
   admin: SupabaseClient,
-  accountId: string,
+  number: { id: string; accountId: string },
   sessionId: string,
 ): Promise<boolean> {
   const { data, error } = await admin
     .from('whatsapp_history_imports')
     .select('session_id')
-    .eq('account_id', accountId)
+    .eq('connection_id', number.id)
     .maybeSingle()
   if (error) throw new HistoryStoreError('lookup', error)
   if (data && data.session_id === sessionId) return false
-  await startHistoryImport(admin, accountId, sessionId)
+  await startHistoryImport(admin, number, sessionId)
   return true
 }
 
@@ -350,11 +356,11 @@ function sessionNotReady(err: unknown): boolean {
   return err instanceof OpenWaError && (err.status === 409 || err.status === 400) && /not connected|not ready|not active/i.test(err.message)
 }
 
-async function updateJob(admin: SupabaseClient, accountId: string, patch: Record<string, unknown>) {
+async function updateJob(admin: SupabaseClient, connectionId: string, patch: Record<string, unknown>) {
   const { error } = await admin
     .from('whatsapp_history_imports')
     .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('account_id', accountId)
+    .eq('connection_id', connectionId)
   if (error) throw new HistoryStoreError('job update', error)
 }
 
@@ -386,6 +392,7 @@ async function listChats(
       const { error } = await admin.from('whatsapp_history_import_chats').upsert(
         individual.map((c) => ({
           account_id: job.account_id,
+          connection_id: job.connection_id,
           chat_id: c.id,
           name: c.name || null,
           unread_count: c.unreadCount ?? 0,
@@ -395,7 +402,7 @@ async function listChats(
           pinned: Boolean(c.pinned),
           updated_at: new Date().toISOString(),
         })),
-        { onConflict: 'account_id,chat_id' },
+        { onConflict: 'connection_id,chat_id' },
       )
       if (error) throw new HistoryStoreError('chat list', error)
       total += individual.length
@@ -425,7 +432,7 @@ async function chatMessages(
       if (!(err instanceof OpenWaError && err.status === 501)) throw err
       // Baileys: no live history. Only what the gateway stored.
       job.limited_history = true
-      await updateJob(admin, job.account_id, { limited_history: true })
+      await updateJob(admin, job.connection_id, { limited_history: true })
     }
   }
   const out: HistoryMessage[] = []
@@ -456,7 +463,7 @@ export const SKIP_NO_MESSAGES = 'no messages to import'
 async function importChat(
   admin: SupabaseClient,
   job: HistoryImportJob,
-  row: OpenWaConnectionRow,
+  target: IngestConnection,
   creds: OpenWaCredentials,
   chat: ChatRow,
   ctx: RunCtx,
@@ -487,7 +494,8 @@ async function importChat(
     await pace(ctx)
     const group = await findOrCreateGroupConversation(admin, {
       accountId: job.account_id,
-      userId: row.user_id,
+      connectionId: job.connection_id,
+      userId: target.userId,
       chatId: chat.chat_id,
       name: chat.name,
       creds,
@@ -509,7 +517,7 @@ async function importChat(
       isEnterprise: incoming?.isEnterprise,
       pushName: incoming?.pushName,
     })
-    const contactOutcome = await findOrCreateContact(job.account_id, row.user_id, {
+    const contactOutcome = await findOrCreateContact(target, {
       phone: phone!,
       name: best?.name ?? '',
       ...(best ? { nameSource: best.source } : {}),
@@ -542,10 +550,21 @@ async function importChat(
         }
       }
     }
-    const conv = await findOrCreateConversation(job.account_id, row.user_id, contactOutcome.contact.id)
+    const conv = await findOrCreateConversation(target, contactOutcome.contact.id)
     if (!conv) throw new HistoryStoreError('conversation')
     conversationId = conv.conversation.id as string
     conversationCreated = conv.created
+    // A personal number: its owner's address-book name stays on the conversation.
+    if (best?.source === 'saved') {
+      await rememberSavedName(conv.conversation, target, {
+        phone: phone!,
+        name: best.name,
+        nameSource: 'saved',
+        waUserId: null,
+        waParentUserId: null,
+        waUsername: null,
+      })
+    }
   }
   // The phone's state of the chat: its id, archived, pinned (the
   // chat-state sync keeps them current afterwards).
@@ -714,7 +733,7 @@ async function importChat(
       error: null,
       updated_at: new Date().toISOString(),
     })
-    .eq('account_id', job.account_id)
+    .eq('connection_id', job.connection_id)
     .eq('chat_id', chat.chat_id)
   if (chatErr) throw new HistoryStoreError('chat checkpoint', chatErr)
   return inserted
@@ -804,7 +823,7 @@ async function requeueTransientFailures(admin: SupabaseClient, job: HistoryImpor
   const { data, error } = await admin
     .from('whatsapp_history_import_chats')
     .select('chat_id, error')
-    .eq('account_id', job.account_id)
+    .eq('connection_id', job.connection_id)
     .eq('status', 'failed')
   if (error) throw new HistoryStoreError('failed chats', error)
   const ids = ((data ?? []) as { chat_id: string; error: string | null }[])
@@ -815,7 +834,7 @@ async function requeueTransientFailures(admin: SupabaseClient, job: HistoryImpor
     const { error: upErr } = await admin
       .from('whatsapp_history_import_chats')
       .update({ status: 'pending', attempts: 0, error: null, updated_at: new Date().toISOString() })
-      .eq('account_id', job.account_id)
+      .eq('connection_id', job.connection_id)
       .in('chat_id', slice)
     if (upErr) throw new HistoryStoreError('requeue', upErr)
   }
@@ -823,11 +842,11 @@ async function requeueTransientFailures(admin: SupabaseClient, job: HistoryImpor
   const { count: failed, error: countErr } = await admin
     .from('whatsapp_history_import_chats')
     .select('chat_id', { count: 'exact', head: true })
-    .eq('account_id', job.account_id)
+    .eq('connection_id', job.connection_id)
     .eq('status', 'failed')
   if (countErr) throw new HistoryStoreError('failed count', countErr)
   job.errors = failed ?? 0
-  await updateJob(admin, job.account_id, {
+  await updateJob(admin, job.connection_id, {
     errors: job.errors,
     ...(job.errors === 0 ? { last_error: null } : {}),
   })
@@ -842,7 +861,8 @@ async function requeueTransientFailures(admin: SupabaseClient, job: HistoryImpor
 export async function runHistoryImport(
   admin: SupabaseClient,
   opts: {
-    accountId?: string
+    /** Only this QR number's job. */
+    connectionId?: string
     deadline: number
     now?: () => number
     pauseMs?: number
@@ -855,7 +875,7 @@ export async function runHistoryImport(
   const runStarted = now()
   const ctx: RunCtx = { deadline: opts.deadline, now, callIntervalMs: opts.callIntervalMs ?? importCallIntervalMs() }
   const { data, error } = await admin.rpc('claim_history_import', {
-    p_account_id: opts.accountId ?? null,
+    p_connection_id: opts.connectionId ?? null,
     p_lease_seconds: HISTORY_LEASE_SECONDS,
   })
   if (error) throw new HistoryStoreError('claim', error)
@@ -865,17 +885,19 @@ export async function runHistoryImport(
   const { data: rowData, error: rowErr } = await admin
     .from('whatsapp_openwa_config')
     .select('*')
-    .eq('account_id', job.account_id)
+    .eq('connection_id', job.connection_id)
     .maybeSingle()
   if (rowErr) throw new HistoryStoreError('connection', rowErr)
   const row = rowData as OpenWaConnectionRow | null
-  if (!row?.session_id || row.session_id !== job.session_id) {
-    await updateJob(admin, job.account_id, { status: 'failed', last_error: 'The QR-code session changed; start the import again', lease_until: null })
-    log(job.account_id, 'stopped: the QR-code session changed')
+  const number = row ? await loadConnection(admin, row.connection_id) : null
+  if (!row?.session_id || row.session_id !== job.session_id || !number || number.removedAt) {
+    await updateJob(admin, job.connection_id, { status: 'failed', last_error: 'The QR-code session changed; start the import again', lease_until: null })
+    log(job.connection_id, 'stopped: the QR-code session changed')
     return { ...job, status: 'failed' }
   }
+  const target = await ingestConnectionFor(admin, number)
   log(
-    job.account_id,
+    job.connection_id,
     `run (${job.status}, ${job.chats_done + job.chats_skipped}/${job.chats_total} chats, ${job.messages_imported} messages, ` +
       `1 gateway call / ${ctx.callIntervalMs} ms)`,
   )
@@ -888,23 +910,23 @@ export async function runHistoryImport(
     // Chats an earlier run gave up on for a transient reason (429, timeout)
     // go back to the queue: not the chat's fault, never a definitive error.
     const requeued = await requeueTransientFailures(admin, job)
-    if (requeued) log(job.account_id, `${requeued} chats that failed on a 429/timeout are back in the queue`)
+    if (requeued) log(job.connection_id, `${requeued} chats that failed on a 429/timeout are back in the queue`)
     if (job.status === 'queued' || job.status === 'listing' || job.status === 'waiting_session') {
-      await updateJob(admin, job.account_id, { status: 'listing' })
+      await updateJob(admin, job.connection_id, { status: 'listing' })
       job.status = 'listing'
       const listStarted = now()
       const total = await listChats(admin, job, creds, { ...ctx, listTimeoutMs: opts.listTimeoutMs ?? LIST_TIMEOUT_MS })
       job.status = 'importing'
       job.chats_total = total
-      await updateJob(admin, job.account_id, { status: 'importing', chats_total: total, last_error: null })
-      log(job.account_id, `listed ${total} chats (one-to-one and groups) in ${((now() - listStarted) / 1000).toFixed(1)} s`)
+      await updateJob(admin, job.connection_id, { status: 'importing', chats_total: total, last_error: null })
+      log(job.connection_id, `listed ${total} chats (one-to-one and groups) in ${((now() - listStarted) / 1000).toFixed(1)} s`)
     }
 
     while (now() < opts.deadline) {
       const { data: next, error: nextErr } = await admin
         .from('whatsapp_history_import_chats')
         .select('account_id, chat_id, name, unread_count, chat_timestamp, attempts, is_group, archived, pinned')
-        .eq('account_id', job.account_id)
+        .eq('connection_id', job.connection_id)
         .eq('status', 'pending')
         .order('chat_timestamp', { ascending: false })
         .limit(deferred.size + 1)
@@ -913,8 +935,8 @@ export async function runHistoryImport(
       if (!chat && deferred.size) {
         // Only chats that just failed transiently are left: retry shortly.
         const retryAt = now() + WARMING_RETRY_MS
-        await updateJob(admin, job.account_id, { lease_until: null, next_run_at: new Date(retryAt).toISOString() })
-        log(job.account_id, `${deferred.size} chats back in the queue (gateway busy or slow); next attempt at ${clock(retryAt)}`)
+        await updateJob(admin, job.connection_id, { lease_until: null, next_run_at: new Date(retryAt).toISOString() })
+        log(job.connection_id, `${deferred.size} chats back in the queue (gateway busy or slow); next attempt at ${clock(retryAt)}`)
         return job
       }
       if (!chat) {
@@ -924,11 +946,11 @@ export async function runHistoryImport(
         const { count: failed, error: countErr } = await admin
           .from('whatsapp_history_import_chats')
           .select('chat_id', { count: 'exact', head: true })
-          .eq('account_id', job.account_id)
+          .eq('connection_id', job.connection_id)
           .eq('status', 'failed')
         if (countErr) throw new HistoryStoreError('failed count', countErr)
         job.errors = failed ?? 0
-        await updateJob(admin, job.account_id, {
+        await updateJob(admin, job.connection_id, {
           status: 'done',
           finished_at: new Date().toISOString(),
           lease_until: null,
@@ -936,18 +958,18 @@ export async function runHistoryImport(
           ...(job.errors === 0 ? { last_error: null } : {}),
         })
         log(
-          job.account_id,
+          job.connection_id,
           `done: ${job.chats_done} chats, ${job.messages_imported} messages, ${job.chats_skipped} skipped, ${job.errors} errors`,
         )
         return { ...job, status: 'done' }
       }
       try {
-        const n = await importChat(admin, job, row, creds, chat, ctx)
+        const n = await importChat(admin, job, target, creds, chat, ctx)
         if (typeof n !== 'number') {
           job.chats_skipped++
           await admin.from('whatsapp_history_import_chats')
             .update({ status: 'skipped', error: n.skipped, updated_at: new Date().toISOString() })
-            .eq('account_id', job.account_id).eq('chat_id', chat.chat_id)
+            .eq('connection_id', job.connection_id).eq('chat_id', chat.chat_id)
         } else {
           job.chats_done++
           job.messages_imported += n
@@ -963,7 +985,7 @@ export async function runHistoryImport(
           const message = err instanceof Error ? err.message : String(err)
           await admin.from('whatsapp_history_import_chats')
             .update({ status: 'pending', error: `retrying: ${message}`.slice(0, 300), updated_at: new Date().toISOString() })
-            .eq('account_id', job.account_id).eq('chat_id', chat.chat_id)
+            .eq('connection_id', job.connection_id).eq('chat_id', chat.chat_id)
           continue
         }
         // `errors` counts chats that failed for good, not attempts.
@@ -977,10 +999,10 @@ export async function runHistoryImport(
             error: message.slice(0, 300),
             updated_at: new Date().toISOString(),
           })
-          .eq('account_id', job.account_id).eq('chat_id', chat.chat_id)
-        await updateJob(admin, job.account_id, { errors: job.errors, last_error: message.slice(0, 300) })
+          .eq('connection_id', job.connection_id).eq('chat_id', chat.chat_id)
+        await updateJob(admin, job.connection_id, { errors: job.errors, last_error: message.slice(0, 300) })
       }
-      await updateJob(admin, job.account_id, {
+      await updateJob(admin, job.connection_id, {
         chats_done: job.chats_done,
         chats_skipped: job.chats_skipped,
         messages_imported: job.messages_imported,
@@ -988,16 +1010,16 @@ export async function runHistoryImport(
       await sleepMs(opts.pauseMs ?? CHAT_PAUSE_MS)
     }
     // Out of time: the next tick continues from the checkpoint.
-    await updateJob(admin, job.account_id, { lease_until: null, next_run_at: new Date().toISOString() })
+    await updateJob(admin, job.connection_id, { lease_until: null, next_run_at: new Date().toISOString() })
     log(
-      job.account_id,
+      job.connection_id,
       `paused after ${((now() - runStarted) / 1000).toFixed(0)} s: ${job.chats_done + job.chats_skipped}/${job.chats_total} chats, ${job.messages_imported} messages; the next tick continues`,
     )
     return job
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (err instanceof Throttled) {
-      await updateJob(admin, job.account_id, {
+      await updateJob(admin, job.connection_id, {
         last_error: err.message,
         lease_until: null,
         next_run_at: new Date(err.retryAt).toISOString(),
@@ -1005,19 +1027,19 @@ export async function runHistoryImport(
         console.error('[history import] could not record the stop:', updateErr instanceof Error ? updateErr.message : updateErr),
       )
       log(
-        job.account_id,
+        job.connection_id,
         `gateway rate limit (429): paused at ${job.chats_done + job.chats_skipped}/${job.chats_total} chats; resuming at ${clock(err.retryAt)}`,
       )
       return job
     }
     if (err instanceof OutOfTime) {
-      await updateJob(admin, job.account_id, { lease_until: null, next_run_at: new Date().toISOString() })
-      log(job.account_id, 'paused before the chat list (run deadline); the next tick continues')
+      await updateJob(admin, job.connection_id, { lease_until: null, next_run_at: new Date().toISOString() })
+      log(job.connection_id, 'paused before the chat list (run deadline); the next tick continues')
       return job
     }
     const waiting = err instanceof GatewayWarming || sessionNotReady(err)
     const retryAt = now() + (err instanceof GatewayWarming ? WARMING_RETRY_MS : waiting ? SESSION_RETRY_MS : ERROR_RETRY_MS)
-    await updateJob(admin, job.account_id, {
+    await updateJob(admin, job.connection_id, {
       ...(waiting ? { status: 'waiting_session' } : {}),
       last_error: message.slice(0, 300),
       lease_until: null,
@@ -1026,7 +1048,7 @@ export async function runHistoryImport(
       // The lease still expires (HISTORY_LEASE_SECONDS) and the next tick reclaims it.
       console.error('[history import] could not record the stop:', updateErr instanceof Error ? updateErr.message : updateErr),
     )
-    log(job.account_id, `${waiting ? 'waiting' : 'error'}: ${message.slice(0, 200)} — next attempt at ${clock(retryAt)}`)
+    log(job.connection_id, `${waiting ? 'waiting' : 'error'}: ${message.slice(0, 200)} — next attempt at ${clock(retryAt)}`)
     return { ...job, status: waiting ? 'waiting_session' : job.status }
   }
 }

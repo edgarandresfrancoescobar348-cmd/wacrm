@@ -268,12 +268,15 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
     // actually be sent (anything else 400s at send time), matching the
     // broadcast picker.
     void (async () => {
-      // On the official API a `local` template (QR-code mode) isn't
-      // Meta-approved in its current form — not offered.
-      const { data: cfg } = await supabase
-        .from("whatsapp_config")
-        .select("provider")
-        .maybeSingle();
+      // A `local` template (a QR number's) isn't Meta-approved in its
+      // current form: offered only when a business QR number can send it
+      // (phase 6 — the official number refuses it).
+      const numbers = await fetch("/api/whatsapp/connections", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      const hasBusinessQr = ((numbers?.connections ?? []) as { provider: string; scope: string; removed_at: string | null }[]).some(
+        (n) => n.provider === "openwa" && n.scope === "business" && !n.removed_at,
+      );
       const templatesQuery = supabase
         .from("message_templates")
         .select("*")
@@ -281,7 +284,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
       const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes] =
         await Promise.all([
           supabase.from("tags").select("*").order("name"),
-          (cfg?.provider === "openwa"
+          (hasBusinessQr
             ? templatesQuery
             : templatesQuery.neq("origin", "local")
           ).order("name"),

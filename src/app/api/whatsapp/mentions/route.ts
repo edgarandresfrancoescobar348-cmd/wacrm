@@ -3,12 +3,13 @@
 // What an @mention reads as, like WhatsApp Web: the contact's name, else
 // its number formatted. Any member of the account (the audience of the
 // conversation). An id is a phone number or a LID (privacy id):
-//   1. a contact of the account with that phone;
-//   2. else, on a QR-code connection, the gateway resolves `<id>@lid` to a
-//      phone (GET /contacts/:id/phone) → that contact's name, else the
-//      formatted phone;
+//   1. a contact the caller can see with that phone (their own client:
+//      a personal number's private contacts stay its owner's, phase 6);
+//   2. else, through a QR number the caller can see, the gateway resolves
+//      `<id>@lid` to a phone (GET /contacts/:id/phone) → that contact's
+//      name, else the formatted phone;
 //   3. else null — the text keeps "@<id>".
-// Resolved names are cached per account for an hour (a LID's phone doesn't change).
+// Resolved names are cached per user for an hour (a LID's phone doesn't change).
 
 import { NextResponse } from 'next/server'
 
@@ -16,6 +17,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getOpenWaContactPhone } from '@/lib/whatsapp/openwa/client'
 import { loadOpenWaRow } from '@/lib/whatsapp/openwa/connection'
+import { canSeeConnection, loadAccountConnections } from '@/lib/whatsapp/connections'
 import { openWaGateway } from '@/lib/whatsapp/openwa/gateway'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { contactDisplayName, formatPhoneDisplay } from '@/lib/whatsapp/phone-display'
@@ -36,7 +38,7 @@ type ContactRow = { phone: string | null; name: string | null }
 
 export async function GET(request: Request) {
   try {
-    const { accountId } = await requireRole('viewer')
+    const { supabase, accountId, userId } = await requireRole('viewer')
     const ids = [
       ...new Set(
         (new URL(request.url).searchParams.get('ids') ?? '')
@@ -48,7 +50,7 @@ export async function GET(request: Request) {
     const names: Record<string, string | null> = {}
     const now = Date.now()
     const todo = ids.filter((id) => {
-      const hit = cache.get(`${accountId}:${id}`)
+      const hit = cache.get(`${userId}:${id}`)
       if (hit && now - hit.at < TTL_MS) {
         names[id] = hit.value
         return false
@@ -60,7 +62,7 @@ export async function GET(request: Request) {
     const admin = supabaseAdmin()
     const byPhone = async (phones: string[]) => {
       if (!phones.length) return new Map<string, string>()
-      const { data } = await admin.from('contacts').select('phone, name').eq('account_id', accountId).in('phone', phones)
+      const { data } = await supabase.from('contacts').select('phone, name').eq('account_id', accountId).in('phone', phones)
       return new Map(((data ?? []) as ContactRow[]).filter((c) => c.phone).map((c) => [c.phone!, contactDisplayName(c)]))
     }
 
@@ -73,7 +75,14 @@ export async function GET(request: Request) {
 
     // Privacy ids (LIDs): the gateway knows the phone behind them.
     const gateway = openWaGateway()
-    const row = gateway && unresolved.length ? await loadOpenWaRow(admin, accountId) : null
+    let row: Awaited<ReturnType<typeof loadOpenWaRow>> = null
+    if (gateway && unresolved.length) {
+      const qr = (await loadAccountConnections(admin, accountId)).filter(
+        (c) => c.provider === 'openwa' && c.status === 'connected' && canSeeConnection(c, userId),
+      )
+      // Any connected QR number the caller can see knows the LIDs it met.
+      row = qr.length ? await loadOpenWaRow(admin, qr[0].id) : null
+    }
     const lidPhones = new Map<string, string>()
     if (gateway && row?.session_id) {
       for (const id of unresolved.slice(0, MAX_GATEWAY_LOOKUPS)) {
@@ -94,7 +103,7 @@ export async function GET(request: Request) {
 
     // Only resolved names are cached: an id the gateway couldn't answer
     // (down, not reached in this request) is tried again on a later view.
-    for (const id of todo) if (names[id]) cache.set(`${accountId}:${id}`, { value: names[id], at: now })
+    for (const id of todo) if (names[id]) cache.set(`${userId}:${id}`, { value: names[id], at: now })
     return NextResponse.json({ names })
   } catch (err) {
     return toErrorResponse(err)

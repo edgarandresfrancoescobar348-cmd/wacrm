@@ -32,6 +32,7 @@ import {
   AccordionContent,
 } from '@/components/ui/accordion';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
+import type { ConnectionView } from '@/hooks/use-whatsapp-connections';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -63,15 +64,15 @@ type WabaSubscription = {
 
 export function WhatsAppConfig({
   embedded = false,
-  active = true,
-  onActivated,
+  connection = null,
+  onSaved,
 }: {
   /** Rendered inside WhatsAppSettings, which owns the panel head. */
   embedded?: boolean;
-  /** Is the official API the account's ACTIVE connection? */
-  active?: boolean;
-  /** Called after this panel made the official API active. */
-  onActivated?: () => void;
+  /** The official number (phase 6), once its credentials were saved. */
+  connection?: ConnectionView | null;
+  /** Called after the credentials were saved (the numbers list refreshes). */
+  onSaved?: () => void;
 } = {}) {
   const t = useTranslations('Settings.whatsapp');
   const locale = useLocale();
@@ -184,9 +185,6 @@ export function WhatsAppConfig({
         setVerifyEdited(false);
         setPin('');
         setTokenEdited(false);
-        // Undefined on a row read before migration 039 — treat that as
-        // on, matching the webhook's own default.
-        setMirrorMedia(data.mirror_inbound_media !== false);
       } else {
         setConfig(null);
         setPhoneNumberId('');
@@ -196,7 +194,6 @@ export function WhatsAppConfig({
         setPin('');
         setTokenEdited(false);
         setVerifyEdited(false);
-        setMirrorMedia(true);
       }
       // Clear any stale probe result when reloading the row.
       setRegistrationProbe(null);
@@ -204,7 +201,7 @@ export function WhatsAppConfig({
       // Then verify health via the API (decrypts token + pings Meta)
       if (data) {
         try {
-          const res = await fetch('/api/whatsapp/config?mode=meta', { method: 'GET' });
+          const res = await fetch('/api/whatsapp/config', { method: 'GET' });
           const payload = await res.json();
 
           if (payload.connected) {
@@ -256,50 +253,32 @@ export function WhatsAppConfig({
     fetchConfig(accountId);
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
 
+  // Media retention is the official number's own setting (phase 6).
+  useEffect(() => {
+    if (connection) setMirrorMedia(connection.mirror_inbound_media);
+  }, [connection]);
+
   async function handleToggleMirrorMedia(next: boolean) {
-    if (!config || !accountId || savingMirror) return;
+    if (!config || !connection || savingMirror) return;
     // Optimistic — the switch should feel instant; a failure rolls it
     // back rather than leaving the UI ahead of the row.
     const previous = mirrorMedia;
     setMirrorMedia(next);
     setSavingMirror(true);
     try {
-      const { error } = await supabase
-        .from('whatsapp_config')
-        .update({ mirror_inbound_media: next })
-        .eq('account_id', accountId);
-      if (error) throw new Error(error.message);
-      setConfig({ ...config, mirror_inbound_media: next });
+      const res = await fetch(`/api/whatsapp/connections/${connection.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mirror_inbound_media: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onSaved?.();
     } catch (error) {
       console.error('Failed to update media retention setting:', error);
       setMirrorMedia(previous);
       toast.error(t('mirrorInboundSaveFailed'));
     } finally {
       setSavingMirror(false);
-    }
-  }
-
-  const [activating, setActivating] = useState(false);
-  async function handleActivate() {
-    setActivating(true);
-    try {
-      const res = await fetch('/api/whatsapp/provider', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'meta' }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || t('modeSwitchFailed'));
-        return;
-      }
-      toast.success(t('modeSwitchedMeta'));
-      onActivated?.();
-      if (accountId) await fetchConfig(accountId);
-    } catch {
-      toast.error(t('modeSwitchFailed'));
-    } finally {
-      setActivating(false);
     }
   }
 
@@ -417,8 +396,8 @@ export function WhatsAppConfig({
       }
 
       if (accountId) await fetchConfig(accountId);
-      // Saving Meta credentials makes the official API the active mode.
-      onActivated?.();
+      // Saving the credentials creates / updates the official number.
+      onSaved?.();
     } catch (err) {
       console.error('Save error:', err);
       toast.error(t('saveFailed'));
@@ -589,26 +568,6 @@ export function WhatsAppConfig({
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">
-        {/* Saved but not the active connection (QR code is) */}
-        {!active && (
-          <Alert className="border-transparent bg-hover-surface">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0">
-                <AlertTitle className="mb-1 text-foreground">{t('inactiveTitle')}</AlertTitle>
-                <AlertDescription className="text-muted-foreground text-sm">
-                  {config?.phone_number_id ? t('inactiveDesc') : t('inactiveEmptyDesc')}
-                </AlertDescription>
-              </div>
-              {config?.phone_number_id && canEditSettings && (
-                <Button size="sm" onClick={handleActivate} disabled={activating}>
-                  {activating && <Loader2 className="size-4 animate-spin" />}
-                  {t('useThisMode')}
-                </Button>
-              )}
-            </div>
-          </Alert>
-        )}
-
         {/* Corrupted-token reset banner */}
         {showResetBanner && (
           <Alert className="border-transparent bg-amber-500/10">

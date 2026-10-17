@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     // row means "not yours / not found" either way.
     const { data: conversation, error: convErr } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, connection_id')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr) {
@@ -59,6 +59,16 @@ export async function POST(request: Request) {
     }
     if (!conversation) {
       return NextResponse.json({ error: t('common.conversationNotFound') }, { status: 404 })
+    }
+    // No AI on a personal number (phase 6): its chats stay its owner's,
+    // never sent to the account's model.
+    const { data: number } = await supabaseAdmin()
+      .from('whatsapp_connections')
+      .select('scope')
+      .eq('id', conversation.connection_id)
+      .maybeSingle()
+    if (number?.scope !== 'business') {
+      return NextResponse.json({ error: t('ai.personalNumber'), code: 'personal_number' }, { status: 400 })
     }
 
     const config = await loadAiConfig(supabase, accountId).catch((err) => {

@@ -144,14 +144,6 @@ export async function POST() {
       .eq('account_id', accountId)
       .single()
 
-    // QR-code connection: there is no Meta catalog to sync from.
-    if (config?.provider === 'openwa') {
-      return NextResponse.json(
-        { error: t('templates.syncLocalMode'), code: 'local_templates' },
-        { status: 409 },
-      )
-    }
-
     if (configError || !config) {
       return NextResponse.json(
         {

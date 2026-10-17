@@ -1,6 +1,9 @@
 import { downloadMedia } from "./meta-api";
 import { extensionForMime } from "@/lib/media/filename";
 import { buildMediaPath, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
+import { PRIVATE_MEDIA_BUCKET, privateMediaPath, privateMediaUrl } from "./private-media";
+
+export { PRIVATE_MEDIA_BUCKET };
 
 /**
  * Copies inbound WhatsApp media into the `chat-media` bucket so it
@@ -66,6 +69,8 @@ export interface MirrorInboundMediaArgs {
   messageTimestamp?: string | number | null;
   /** Injected in tests. */
   download?: typeof downloadMedia;
+  /** A personal number's media: the private bucket, returning its app route. */
+  privateTo?: { connectionId: string } | null;
 }
 
 /**
@@ -160,6 +165,7 @@ export async function mirrorInboundMedia(
     fileName,
     messageTimestamp,
     download = downloadMedia,
+    privateTo,
   } = args;
 
   const normalizedMime = normalizeMimeType(mimeType);
@@ -205,12 +211,17 @@ export async function mirrorInboundMedia(
     // `null` suppresses buildMediaPath's wall-clock stamp: the media id
     // already makes this path unique AND stable, and it's the stability
     // that makes a redelivery idempotent rather than duplicative.
-    const path = buildMediaPath(accountId, objectName, null, MIRROR_FOLDER);
+    const accountPath = buildMediaPath(accountId, objectName, null, MIRROR_FOLDER);
+    // Same sanitised name; a personal number's under its own folder.
+    const path = privateTo
+      ? privateMediaPath(privateTo.connectionId, accountPath.split("/").slice(1).join("/"))
+      : accountPath;
+    const bucket = privateTo ? PRIVATE_MEDIA_BUCKET : MIRROR_BUCKET;
 
     // `upsert: true` for that same reason: on the rare Meta redelivery
     // the second pass rewrites byte-identical content at the same key
     // instead of erroring or orphaning a duplicate.
-    const { error } = await storage.from(MIRROR_BUCKET).upload(path, buffer, {
+    const { error } = await storage.from(bucket).upload(path, buffer, {
       contentType: uploadType,
       cacheControl: "3600",
       upsert: true,
@@ -226,6 +237,7 @@ export async function mirrorInboundMedia(
       return null;
     }
 
+    if (privateTo) return privateMediaUrl(path);
     const {
       data: { publicUrl },
     } = storage.from(MIRROR_BUCKET).getPublicUrl(path);

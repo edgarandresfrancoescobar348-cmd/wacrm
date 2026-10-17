@@ -15,6 +15,8 @@ import { Check, X } from 'lucide-react';
 import { WaIconButton, WaPanelHeader } from '@/components/layout/wa-panel';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import { useWhatsAppConnections } from '@/hooks/use-whatsapp-connections';
+import { defaultNumberId } from '@/components/whatsapp/number-select';
 
 const steps = [
   { label: 'template', key: 'template' },
@@ -30,6 +32,12 @@ export default function NewBroadcastPage() {
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
+  // The business number it goes out from (phase 6): the default one
+  // unless the user picks another.
+  const { connections: numbers } = useWhatsAppConnections({ poll: false });
+  const [pickedNumber, setPickedNumber] = useState<string | null>(null);
+  const numberId = pickedNumber ?? defaultNumberId(numbers);
+  const number = numbers?.find((n) => n.id === numberId);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
   const [audience, setAudience] = useState<{
     type: 'all' | 'tags' | 'custom_field' | 'csv';
@@ -53,6 +61,7 @@ export default function NewBroadcastPage() {
 
     try {
       const broadcastId = await createAndSendBroadcast({
+        connectionId: numberId,
         name,
         template,
         audience: {
@@ -106,6 +115,7 @@ export default function NewBroadcastPage() {
     const { error } = await supabase.from('broadcasts').insert({
       user_id: user.id,
       account_id: accountId,
+      connection_id: numberId,
       name: name.trim(),
       template_name: template.name,
       template_language: template.language ?? 'en_US',
@@ -209,6 +219,13 @@ export default function NewBroadcastPage() {
         >
           {currentStep === 0 && (
             <Step1ChooseTemplate
+              numbers={numbers}
+              numberId={numberId}
+              onNumberChange={(id) => {
+                setPickedNumber(id);
+                // Its templates differ (official vs QR): pick again.
+                setTemplate(null);
+              }}
               selectedTemplate={template}
               onSelect={setTemplate}
               onNext={() => setCurrentStep(1)}
@@ -236,6 +253,7 @@ export default function NewBroadcastPage() {
           )}
           {currentStep === 3 && template && (
             <Step4ScheduleSend
+              number={number}
               name={name}
               onNameChange={setName}
               template={template}

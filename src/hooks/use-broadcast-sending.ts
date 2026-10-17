@@ -35,6 +35,8 @@ export type VariableMapping =
   | { type: 'custom_field'; value: string };
 
 interface BroadcastPayload {
+  /** The business WhatsApp number it goes out from (phase 6; null = the account's default). */
+  connectionId?: string | null;
   name: string;
   template: MessageTemplate;
   audience: AudienceConfig;
@@ -315,6 +317,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         .insert({
           user_id: user.id,
           account_id: accountId,
+          connection_id: payload.connectionId ?? null,
           name: payload.name,
           template_name: payload.template.name,
           template_language: payload.template.language ?? 'en_US',
@@ -462,6 +465,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 recipients: apiRecipients,
+                connection_id: payload.connectionId ?? undefined,
                 template_name: payload.template.name,
                 template_language: payload.template.language ?? 'en_US',
               }),

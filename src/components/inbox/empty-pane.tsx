@@ -9,6 +9,7 @@ import {
   Zap,
 } from "lucide-react";
 import { WaEmptyState } from "@/components/layout/wa-panel";
+import type { ConnectionNoticeKind } from "@/lib/whatsapp/connection-status";
 
 /**
  * Inbox main pane when no conversation is selected (WA home, ref image 4):
@@ -16,13 +17,11 @@ import { WaEmptyState } from "@/components/layout/wa-panel";
  * CRM actions an agent reaches for most.
  */
 export function EmptyPane({
-  whatsappConnected,
-  provider,
+  noticeKind,
 }: {
-  /** `false` adds a "Connect WhatsApp" call to action to the card. */
-  whatsappConnected?: boolean | null;
-  /** The active mode: a QR session is "reconnected", not set up. */
-  provider?: "meta" | "openwa" | null;
+  /** What the inbox says about the numbers (connection-status.ts): a
+   *  call to action when nothing is connected or something is down. */
+  noticeKind?: ConnectionNoticeKind;
 }) {
   const t = useTranslations("Inbox.emptyPane");
 
@@ -33,9 +32,9 @@ export function EmptyPane({
         title={t("title")}
         description={t("subtitle")}
         cta={
-          whatsappConnected === false
+          noticeKind
             ? {
-                label: provider === "openwa" ? t("reconnectQr") : t("connectWhatsapp"),
+                label: noticeKind === "not_configured" ? t("connectWhatsapp") : t("reconnect"),
                 href: "/settings?tab=whatsapp",
               }
             : undefined

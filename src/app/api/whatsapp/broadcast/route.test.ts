@@ -54,9 +54,14 @@ vi.mock('@/lib/whatsapp/template-body', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   resolveTemplateRow: async () => ({ row: null, malformed: false, language: 'pt_BR' }),
 }))
+// Phase 6: the broadcast's business number — a QR one here (paced).
+vi.mock('@/lib/whatsapp/connections', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  pickBusinessConnection: async () => ({ id: 'num-qr', accountId: 'acct-route', provider: 'openwa', scope: 'business', removedAt: null }),
+}))
 vi.mock('@/lib/whatsapp/transport', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  loadAccountTransport: async () => ({
+  loadConnectionTransport: async (connection: unknown) => ({ connection, transport: {
     provider: 'openwa',
     capabilities: { templates: 'local', serviceWindow: false, interactive: 'numbered_text', broadcastDelayMs: h.delay },
     recipientVariants: (p: string) => [p],
@@ -64,7 +69,7 @@ vi.mock('@/lib/whatsapp/transport', async (importOriginal) => ({
     sendTemplate: async ({ to, idempotencyKey }: { to: string; idempotencyKey?: string }) => (
       h.sends.push({ to, key: idempotencyKey }), h.sendTimes.push(Date.now()), { messageId: `id-${to}` }
     ),
-  }),
+  } }),
 }))
 
 import { POST, maxDuration } from './route'

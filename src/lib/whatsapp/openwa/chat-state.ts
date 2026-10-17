@@ -2,11 +2,13 @@
 // archived, pinned, each chat's unread count, a group's name, and the
 // name the phone shows for a contact (contact-name.ts). The gateway sends
 // no webhook for archiving, pinning or reading on the phone, so the
-// scheduler tick runs this (≤ once a minute per account), paced under
+// scheduler tick runs this (≤ once a minute per QR number), paced under
 // the gateway's rate limit like the history import.
 //
-// Only conversations that already exist and know their chat id are
-// touched; new chats arrive through the webhooks / the history import.
+// Only the number's own conversations that already exist and know their
+// chat id are touched; new chats arrive through the webhooks / the
+// history import. A personal number's address-book name goes to the
+// conversation (`saved_name`), never to the shared CRM contact (phase 6).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -35,6 +37,7 @@ interface ConversationState {
   unread_count: number | null
   group_name: string | null
   wa_sort_at?: string | null
+  saved_name?: string | null
   contact: { id: string; name: string | null; name_source: string | null; push_name: string | null } | null
 }
 
@@ -55,10 +58,18 @@ export function chatStatePatch(conv: ConversationState, chat: OpenWaChatSummary,
   return patch
 }
 
-/** One account: read its chat list, write what changed. Returns rows changed. */
+/** One QR number: read its chat list, write what changed. Returns rows changed. */
 export async function syncAccountChatState(
   admin: SupabaseClient,
-  args: { accountId: string; sessionId: string; deadline: number; now?: () => number },
+  args: {
+    accountId: string
+    connectionId: string
+    /** A personal number: the phone's name for a contact stays on the conversation. */
+    personal?: boolean
+    sessionId: string
+    deadline: number
+    now?: () => number
+  },
 ): Promise<number> {
   const gateway = openWaGateway()
   if (!gateway) return 0
@@ -78,8 +89,8 @@ export async function syncAccountChatState(
     data = await fetchAllPages((from, to) =>
       admin
         .from('conversations')
-        .select('id, wa_chat_id, is_group, archived, pinned_at, unread_count, group_name, wa_sort_at, contact:contacts(id, name, name_source, push_name)')
-        .eq('account_id', args.accountId)
+        .select('id, wa_chat_id, is_group, archived, pinned_at, unread_count, group_name, wa_sort_at, saved_name, contact:contacts(id, name, name_source, push_name)')
+        .eq('connection_id', args.connectionId)
         .not('wa_chat_id', 'is', null)
         .order('id')
         .range(from, to),
@@ -100,7 +111,12 @@ export async function syncAccountChatState(
     }
     // The phone's name for the contact: the chat title is the address-book
     // name when the contact is saved (a renamed entry follows too).
-    if (conv.contact && !conv.is_group) {
+    if (args.personal) {
+      const saved = conv.is_group ? null : (nameFromWhatsApp({ chatTitle: chat.name })?.name ?? null)
+      if (saved && saved !== conv.saved_name) {
+        await admin.from('conversations').update({ saved_name: saved }).eq('id', conv.id).eq('account_id', args.accountId)
+      }
+    } else if (conv.contact && !conv.is_group) {
       const namePatch = contactNamePatch(conv.contact, nameFromWhatsApp({ chatTitle: chat.name }))
       if (namePatch) {
         await admin.from('contacts').update(namePatch).eq('id', conv.contact.id).eq('account_id', args.accountId)
@@ -110,27 +126,42 @@ export async function syncAccountChatState(
   return changed
 }
 
-/** Every connected QR-code account, each at most once per SYNC_EVERY_MS. Never throws. */
+/** Every connected QR number, each at most once per SYNC_EVERY_MS. Never throws. */
 export async function syncOpenWaChatState(admin: SupabaseClient, opts: { deadline: number }): Promise<void> {
   if (!openWaGateway()) return
   const { data, error } = await admin
     .from('whatsapp_openwa_config')
-    .select('account_id, session_id, status')
+    .select('account_id, connection_id, session_id, status')
     .eq('status', 'ready')
     .not('session_id', 'is', null)
   if (error) {
-    console.error('[chat state] accounts lookup failed:', error.message)
+    console.error('[chat state] numbers lookup failed:', error.message)
     return
   }
-  for (const row of (data ?? []) as { account_id: string; session_id: string }[]) {
+  const rows = (data ?? []) as { account_id: string; connection_id: string; session_id: string }[]
+  const scopes = new Map<string, string>()
+  if (rows.length) {
+    const { data: numbers } = await admin
+      .from('whatsapp_connections')
+      .select('id, scope')
+      .in('id', rows.map((r) => r.connection_id))
+    for (const n of (numbers ?? []) as { id: string; scope: string }[]) scopes.set(n.id, n.scope)
+  }
+  for (const row of rows) {
     if (Date.now() >= opts.deadline) return
-    if (Date.now() - (lastSync.get(row.account_id) ?? 0) < SYNC_EVERY_MS) continue
-    lastSync.set(row.account_id, Date.now())
+    if (Date.now() - (lastSync.get(row.connection_id) ?? 0) < SYNC_EVERY_MS) continue
+    lastSync.set(row.connection_id, Date.now())
     try {
-      const changed = await syncAccountChatState(admin, { accountId: row.account_id, sessionId: row.session_id, deadline: opts.deadline })
-      if (changed) console.info(`[chat state] ${row.account_id.slice(0, 8)}: ${changed} conversations follow the phone`)
+      const changed = await syncAccountChatState(admin, {
+        accountId: row.account_id,
+        connectionId: row.connection_id,
+        personal: scopes.get(row.connection_id) === 'personal',
+        sessionId: row.session_id,
+        deadline: opts.deadline,
+      })
+      if (changed) console.info(`[chat state] ${row.connection_id.slice(0, 8)}: ${changed} conversations follow the phone`)
     } catch (err) {
-      console.warn(`[chat state] ${row.account_id.slice(0, 8)}: ${err instanceof Error ? err.message : err}`)
+      console.warn(`[chat state] ${row.connection_id.slice(0, 8)}: ${err instanceof Error ? err.message : err}`)
     }
   }
 }

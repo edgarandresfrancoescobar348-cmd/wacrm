@@ -12,7 +12,8 @@
 //       { "to": "+14155550124" },
 //       // structured, when the template header has a {{1}} (required then):
 //       { "to": "+14155550125", "params": { "body": ["Ana"], "headerText": "#101" } }
-//     ]
+//     ],
+//     "connection_id": "<uuid>"              // optional: the business number to send from
 //   }
 //
 // The broadcast + its recipient rows are persisted synchronously, then
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
     const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
 
     const plan = await createBroadcast(ctx.supabase, ctx.accountId, auditUserId, {
+      connectionId: typeof body.connection_id === 'string' ? body.connection_id : null,
       name: typeof body.name === 'string' ? body.name : null,
       templateName,
       templateLanguage:

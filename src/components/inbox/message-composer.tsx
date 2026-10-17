@@ -45,8 +45,10 @@ import { toast } from "sonner";
 import {
   uploadAccountMedia,
   deleteAccountMedia,
+  uploadPrivateChatMedia,
   MEDIA_MAX_BYTES_BY_KIND,
 } from "@/lib/storage/upload-media";
+import { PRIVATE_MEDIA_BUCKET } from "@/lib/whatsapp/private-media";
 import { ReplyQuote } from "./reply-quote";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDecimal } from "@/lib/locale-format";
@@ -120,6 +122,10 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** A personal number's conversation (phase 6): attachments go to its private bucket. */
+  privateTo?: string | null;
+  /** The conversation's number was removed: history only, nothing to send from. */
+  numberRemoved?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -142,6 +148,8 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  privateTo = null,
+  numberRemoved = false,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
   const locale = useLocale();
@@ -177,8 +185,13 @@ export function MessageComposer({
   // Best-effort GC of a staged object the user never sent. Fire-and-forget.
   const removeStaged = useCallback((path: string | undefined) => {
     if (!path) return;
-    void deleteAccountMedia(CHAT_MEDIA_BUCKET, path).catch(() => {});
-  }, []);
+    void deleteAccountMedia(privateTo ? PRIVATE_MEDIA_BUCKET : CHAT_MEDIA_BUCKET, path).catch(() => {});
+  }, [privateTo]);
+  // A personal number's files are its owner's: the private bucket.
+  const upload = useCallback(
+    (file: File) => (privateTo ? uploadPrivateChatMedia(privateTo, file) : uploadAccountMedia(CHAT_MEDIA_BUCKET, file)),
+    [privateTo],
+  );
 
   // Voice recording state. The recorder encodes Ogg/Opus in-browser
   // (opus-recorder) so there's no server-side transcode.
@@ -192,7 +205,7 @@ export function MessageComposer({
   // For solo users this is always true — single-owner accounts pass
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
-  const readOnly = !canSend;
+  const readOnly = !canSend || numberRemoved;
   // Media (like free-form text) is only allowed inside the 24h window.
   const inputsDisabled = readOnly || sessionExpired;
 
@@ -404,7 +417,7 @@ export function MessageComposer({
       }
       setBusy(true);
       try {
-        const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
+        const { publicUrl, path } = await upload(file);
         // Replacing an existing draft? GC the previous object first.
         removeStaged(draftRef.current?.path);
         setDraft({ kind, mediaUrl: publicUrl, path, filename: file.name, caption: "" });
@@ -414,7 +427,7 @@ export function MessageComposer({
         setBusy(false);
       }
     },
-    [removeStaged, t, locale],
+    [removeStaged, upload, t, locale],
   );
 
   const handlePicked = useCallback(
@@ -442,7 +455,7 @@ export function MessageComposer({
       }
       setBusy(true);
       try {
-        const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
+        const { publicUrl, path } = await upload(file);
         removeStaged(draftRef.current?.path);
         setDraft({ kind: "audio", mediaUrl: publicUrl, path, filename: file.name, caption: "" });
       } catch (err) {
@@ -451,7 +464,7 @@ export function MessageComposer({
         setBusy(false);
       }
     },
-    [removeStaged, t],
+    [removeStaged, upload, t],
   );
 
   const startRecording = useCallback(async () => {
@@ -726,7 +739,9 @@ export function MessageComposer({
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder={
-              readOnly
+              numberRemoved
+                ? t("numberRemovedPlaceholder")
+                : readOnly
                 ? t("readOnlyPlaceholder")
                 : sessionExpired
                   ? t("sessionExpiredPlaceholder")

@@ -202,6 +202,8 @@ describe('dispatchInboundToAiReply — typing indicator (#527)', () => {
     expect(h.engineSendTyping).toHaveBeenCalledTimes(1)
     expect(h.engineSendTyping).toHaveBeenCalledWith({
       accountId: 'acct-1',
+      // From the conversation's own (business) number (phase 6).
+      conversationId: expect.any(String),
       contactId: 'contact-1',
       inboundMessageId: 'wamid.inbound-1',
     })

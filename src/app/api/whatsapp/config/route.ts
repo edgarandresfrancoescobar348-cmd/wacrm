@@ -99,7 +99,7 @@ function metaFailure(err: unknown, step: MetaConnectStep, ctx: MetaErrorContext)
  *   { connected: false, reason: 'meta_api_error',   message: '...',
  *     meta: { code, subcode, fbtrace_id, step, field, message } }
  */
-export async function GET(request?: Request) {
+export async function GET() {
   try {
     const supabase = await createClient()
 
@@ -126,7 +126,7 @@ export async function GET(request?: Request) {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, waba_id, access_token, status, provider')
+      .select('phone_number_id, waba_id, access_token, status')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -149,25 +149,8 @@ export async function GET(request?: Request) {
       )
     }
 
-    // Try to decrypt the stored token with the current ENCRYPTION_KEY.
-    // If this fails, the key changed (or was never consistent across envs).
-    // QR-code mode (migration 047): the connection's health is the
-    // OpenWA session state the webhook / settings page keep mirrored into
-    // `status`. The Meta checks below don't apply.
-    // `?mode=meta` (the Meta settings panel) always checks the Meta
-    // credentials, even while QR mode is the active connection.
-    const forceMeta =
-      request ? new URL(request.url).searchParams.get('mode') === 'meta' : false
-    if (config.provider === 'openwa' && !forceMeta) {
-      return NextResponse.json({
-        connected: config.status === 'connected',
-        provider: 'openwa',
-        ...(config.status === 'connected'
-          ? {}
-          : { reason: 'openwa_disconnected', message: t('whatsappConfig.openwaDisconnected') }),
-      })
-    }
-
+    // The official number's credentials (phase 6: a QR number is its own
+    // connection, checked through /api/whatsapp/openwa).
     if (!config.access_token || !config.phone_number_id) {
       return NextResponse.json(
         { connected: false, reason: 'no_config', message: t('whatsappConfig.noConfig') },
@@ -529,9 +512,6 @@ export async function POST(request: Request) {
     // store the credentials and the error so the UI can guide the
     // user through a retry.
     const baseRow = {
-      // Saving Meta credentials makes the official API the active
-      // connection (migration 047); QR-code settings stay saved.
-      provider: 'meta',
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
@@ -558,6 +538,41 @@ export async function POST(request: Request) {
         )
       }
     } else {
+      // The official number these credentials belong to (phase 6): the
+      // account's live one, else a new business number. Only an admin
+      // gets here with RLS's blessing — check it before creating it.
+      const { data: me } = await supabase
+        .from('profiles')
+        .select('account_role')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!me || !['owner', 'admin'].includes(String(me.account_role))) {
+        return NextResponse.json({ error: t('common.forbidden') }, { status: 403 })
+      }
+      const admin = supabaseAdmin()
+      const { data: live } = await admin
+        .from('whatsapp_connections')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('provider', 'meta')
+        .is('removed_at', null)
+        .maybeSingle()
+      let connectionId = live?.id as string | undefined
+      let createdNumber = false
+      if (!connectionId) {
+        const { data: created, error: numberErr } = await admin
+          .from('whatsapp_connections')
+          .insert({ account_id: accountId, provider: 'meta', scope: 'business', created_by: user.id })
+          .select('id')
+          .single()
+        if (numberErr || !created) {
+          console.error('Error creating the official number:', numberErr)
+          return NextResponse.json({ error: t('whatsappConfig.saveFailed') }, { status: 500 })
+        }
+        connectionId = created.id as string
+        createdNumber = true
+      }
+
       // Insert with both columns: `account_id` is the tenancy key
       // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
       // up-front), `user_id` is the audit column identifying which
@@ -566,11 +581,13 @@ export async function POST(request: Request) {
         .from('whatsapp_config')
         .insert({
           account_id: accountId,
+          connection_id: connectionId,
           user_id: user.id,
           ...baseRow,
         })
 
       if (insertError) {
+        if (createdNumber) await admin.from('whatsapp_connections').delete().eq('id', connectionId)
         console.error('Error inserting whatsapp_config:', insertError)
         return NextResponse.json(
           { error: t('whatsappConfig.saveFailed') },
@@ -639,32 +656,19 @@ export async function DELETE() {
       )
     }
 
-    // In QR-code mode the row is the active connection's record — reset
-    // only the Meta half of it instead of dropping the row.
-    const { data: current } = await supabase
+    // The credentials go; the official number stays (its history too),
+    // "not set up" until credentials are saved again.
+    const { data: deleted, error: deleteError } = await supabase
       .from('whatsapp_config')
-      .select('provider')
+      .delete()
       .eq('account_id', accountId)
-      .maybeSingle()
-
-    const { error: deleteError } =
-      current?.provider === 'openwa'
-        ? await supabase
-            .from('whatsapp_config')
-            .update({
-              phone_number_id: null,
-              waba_id: null,
-              access_token: null,
-              verify_token: null,
-              registered_at: null,
-              subscribed_apps_at: null,
-              last_registration_error: null,
-            })
-            .eq('account_id', accountId)
-        : await supabase
-            .from('whatsapp_config')
-            .delete()
-            .eq('account_id', accountId)
+      .select('connection_id')
+    for (const row of (deleted ?? []) as { connection_id: string }[]) {
+      await supabaseAdmin()
+        .from('whatsapp_connections')
+        .update({ status: 'disconnected', connected_at: null })
+        .eq('id', row.connection_id)
+    }
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)

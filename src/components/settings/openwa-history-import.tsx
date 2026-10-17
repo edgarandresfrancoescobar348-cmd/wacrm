@@ -46,7 +46,16 @@ function isStalled(job: ImportState, now: number): boolean {
   return !leased && Date.parse(job.next_run_at) < now - STALLED_AFTER_MS;
 }
 
-export function OpenWaHistoryImport({ connected, canEdit }: { connected: boolean; canEdit: boolean }) {
+export function OpenWaHistoryImport({
+  connectionId,
+  connected,
+  canEdit,
+}: {
+  /** The QR number whose phone's history is imported (phase 6). */
+  connectionId: string;
+  connected: boolean;
+  canEdit: boolean;
+}) {
   const t = useTranslations('Settings.whatsapp.openwa.history');
   const locale = useLocale();
   const time = (iso: string | null) =>
@@ -57,12 +66,12 @@ export function OpenWaHistoryImport({ connected, canEdit }: { connected: boolean
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/whatsapp/openwa/history', { cache: 'no-store' });
+      const res = await fetch(`/api/whatsapp/openwa/history?connection_id=${connectionId}`, { cache: 'no-store' });
       if (res.ok) setJob(((await res.json()) as { import: ImportState | null }).import);
     } finally {
       setLoaded(true);
     }
-  }, []);
+  }, [connectionId]);
 
   useEffect(() => {
     void load();
@@ -78,7 +87,11 @@ export function OpenWaHistoryImport({ connected, canEdit }: { connected: boolean
   async function start() {
     setStarting(true);
     try {
-      const res = await fetch('/api/whatsapp/openwa/history', { method: 'POST' });
+      const res = await fetch('/api/whatsapp/openwa/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connection_id: connectionId }),
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         toast.error(body?.error || t('startFailed'));

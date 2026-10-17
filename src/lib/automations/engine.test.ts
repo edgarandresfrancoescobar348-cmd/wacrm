@@ -153,6 +153,11 @@ vi.mock("./admin-client", () => {
   };
 });
 
+// Phase 6: a contact's conversation is looked up on the account's
+// business number.
+vi.mock("@/lib/whatsapp/connections", async (orig) =>
+  (await import("@/test/business-number")).connectionsMock(await orig()));
+
 vi.mock("./meta-send", () => ({
   engineSendText: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
   engineSendTemplate: vi.fn(async () => ({ whatsapp_message_id: "m1" })),

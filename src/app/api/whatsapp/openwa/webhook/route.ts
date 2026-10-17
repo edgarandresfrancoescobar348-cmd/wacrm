@@ -2,8 +2,8 @@
 // POST /api/whatsapp/openwa/webhook — inbound deliveries from OpenWA.
 //
 // Fails closed. A delivery is processed only when
-//   1. its envelope names a session one of our accounts owns,
-//   2. that account has a webhook secret, and
+//   1. its envelope names a session one of our QR numbers owns,
+//   2. that session has a webhook secret, and
 //   3. `X-OpenWA-Signature: sha256=<hex>` is the HMAC-SHA256 of the
 //      raw body under that secret (constant-time compare).
 // Anything else is a 401 with no detail. OpenWA delivers at least
@@ -22,6 +22,7 @@
 import { NextResponse, after } from 'next/server'
 
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { connectionActorId, loadConnection } from '@/lib/whatsapp/connections'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { OpenWaConnectionRow } from '@/lib/whatsapp/openwa/connection'
 import { claimDelivery, finishDelivery, releaseDelivery } from '@/lib/whatsapp/openwa/delivery-ledger'
@@ -136,11 +137,19 @@ export async function POST(request: Request) {
   }
   const attempt = claim.attempt
 
-  const { data: config } = await admin
-    .from('whatsapp_config')
-    .select('provider, mirror_inbound_media')
-    .eq('account_id', row.account_id)
-    .maybeSingle()
+  // The QR number this session is: business (bots run) or personal
+  // (stored for its owner only, nothing runs).
+  let number: Awaited<ReturnType<typeof loadConnection>>
+  let actorId: string
+  try {
+    number = await loadConnection(admin, row.connection_id)
+    if (!number) throw new Error('the session has no WhatsApp number')
+    actorId = await connectionActorId(admin, number)
+  } catch (err) {
+    console.error('[openwa webhook] number lookup failed:', err)
+    await releaseDelivery(admin, { key: idempotencyKey, accountId: row.account_id, attempt }).catch(() => undefined)
+    return NextResponse.json({ error: 'Lookup failed' }, { status: 503 })
+  }
 
   // The durable part (message, status, session state) runs inside the
   // request, so a failure can still be answered non-2xx and OpenWA
@@ -167,8 +176,8 @@ export async function POST(request: Request) {
       admin,
       row: connection,
       creds: requireOpenWaGateway(),
-      activeProvider: config?.provider ?? 'meta',
-      mirrorMedia: config?.mirror_inbound_media !== false,
+      connection: number,
+      actorId,
       defer: (task) => deferred.push(task),
     })
   } catch (err) {

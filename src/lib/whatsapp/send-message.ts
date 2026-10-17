@@ -22,7 +22,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  loadAccountTransport,
+  loadConnectionTransport,
   providerErrorLabel,
   sendWithRecipientVariants,
   TransportNotConfiguredError,
@@ -36,6 +36,7 @@ import {
 } from '@/lib/whatsapp/interactive';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { persistOutboundMessage } from '@/lib/whatsapp/outbound-persist';
+import { sendableMediaLink } from '@/lib/whatsapp/private-media';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import type { MessageTemplate } from '@/types';
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
@@ -87,6 +88,12 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /**
+   * Refuse a personal number's conversation as if it didn't exist. The
+   * public API sets it (its keys are the account's, and a personal
+   * number's chats are its owner's alone); the inbox relies on RLS.
+   */
+  businessOnly?: boolean;
 }
 
 export interface SendMessageResult {
@@ -102,6 +109,9 @@ export interface SendMessageResult {
  * `db` may be an RLS-scoped user client (dashboard) or the service-
  * role client (public API) — every query is filtered by `accountId`
  * either way, so tenancy holds regardless of which client is passed.
+ * The user client also limits a personal number's conversations to
+ * its owner (RLS, migration 073); the public API passes `businessOnly`.
+ * The message goes out from the conversation's own number.
  */
 /**
  * Validate the message-shape params (type, required content, caption
@@ -200,6 +210,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    businessOnly,
   } = params;
 
   if (!conversationId) {
@@ -261,18 +272,23 @@ export async function sendMessageToConversation(
   const hasValidPhone = resolvedTarget.isPhone;
   const sanitizedPhone = hasValidPhone ? sendTarget : '';
 
-  // The account's active WhatsApp connection (Meta Cloud API or an
-  // OpenWA QR session), account-scoped.
+  // The conversation's own number (phase 6): the reply goes out from it.
   let transport: WhatsAppTransport;
+  let personalNumber = false;
   try {
-    transport = await loadAccountTransport(db, accountId, {
+    const loaded = await loadConnectionTransport(conversation.connection_id as string, {
       upgradeLegacyToken: true,
     });
+    if (businessOnly && loaded.connection.scope !== 'business') {
+      throw new SendMessageError('not_found', 'Conversation not found', 404);
+    }
+    transport = loaded.transport;
+    personalNumber = loaded.connection.scope === 'personal';
   } catch (err) {
     if (err instanceof TransportNotConfiguredError) {
       throw new SendMessageError(
         'whatsapp_not_configured',
-        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        'This conversation’s WhatsApp number is not connected.',
         400
       );
     }
@@ -346,6 +362,10 @@ export async function sendMessageToConversation(
     }
   }
 
+  // A personal number's file sits in the private bucket: the provider
+  // gets a short-lived signed link, the message keeps the app route.
+  const mediaLink = isMediaKind && mediaUrl ? await sendableMediaLink(supabaseAdmin(), mediaUrl) : null;
+
   const attempt = async (to: string): Promise<string> => {
     if (messageType === 'template') {
       const result = await transport.sendTemplate({
@@ -365,7 +385,7 @@ export async function sendMessageToConversation(
       const result = await transport.sendMedia({
         to,
         kind: messageType as MediaKind,
-        link: mediaUrl!,
+        link: mediaLink!,
         caption: contentText || undefined,
         filename: filename || undefined,
         contextMessageId,
@@ -492,8 +512,8 @@ export async function sendMessageToConversation(
 
   // Pause any active Flow run for this contact — the agent stepping in
   // is the strongest "yield, human is here" signal. Best-effort. Groups
-  // never run flows.
-  if (contact) try {
+  // never run flows, and a personal number's reply isn't the business's.
+  if (contact && !personalNumber) try {
     const { error: pauseErr } = await supabaseAdmin()
       .from('flow_runs')
       .update({

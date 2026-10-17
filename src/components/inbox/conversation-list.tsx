@@ -49,6 +49,14 @@ import { usePreviewParts } from "./message-preview";
 import { filterOptionsFor, type InboxFilter } from "@/lib/inbox/filters";
 import { previewLead } from "@/lib/inbox/preview-lead";
 import { StatusIcon } from "./message-bubble";
+import { AvatarWithScope } from "./scope-badge";
+import { InboxScopeBar, useNumberLabels } from "./scope-bar";
+import type { ConnectionView } from "@/hooks/use-whatsapp-connections";
+import type { ConnectionNotice } from "@/lib/whatsapp/connection-status";
+import { matchesScope, scopeChoices, validScopeFilter, type ScopeFilter } from "@/lib/inbox/scope-filter";
+
+/** Remembers the scope chip across reloads (device-scoped, like the theme prefs). */
+const SCOPE_STORAGE_KEY = "wacrm:inbox:scope";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -62,9 +70,11 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
-  /** Optional notice rendered under the filter chips (e.g. WhatsApp not connected). */
-  banner?: React.ReactNode;
-  /** QR-code mode: the phone's filters come first, "Grupos" always shown. */
+  /** The account's WhatsApp numbers as the viewer sees them (phase 6); undefined while loading. */
+  numbers?: ConnectionView[];
+  /** What the inbox says about them (connection-status.ts). */
+  notice?: ConnectionNotice;
+  /** A QR-code number is there: the phone's filters come first, "Grupos" always shown. */
   qrMode?: boolean;
 }
 
@@ -81,7 +91,8 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
-  banner,
+  numbers,
+  notice = { kind: null, down: [] },
   qrMode = false,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
@@ -101,6 +112,37 @@ export function ConversationList({
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  // "Pessoal / Empresa / Todos" (phase 6), restored after mount.
+  const [savedScope, setSavedScope] = useState<ScopeFilter>({ scope: "all" });
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SCOPE_STORAGE_KEY);
+      // Restored after mount: reading it while rendering would differ from the server.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (stored) setSavedScope(JSON.parse(stored) as ScopeFilter);
+    } catch {
+      // localStorage can throw in private-browsing / sandboxed contexts.
+    }
+  }, []);
+  const changeScope = useCallback((next: ScopeFilter) => {
+    setSavedScope(next);
+    try {
+      localStorage.setItem(SCOPE_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Persistence is best-effort.
+    }
+  }, []);
+  const choices = useMemo(() => scopeChoices(numbers), [numbers]);
+  // A saved choice that no longer applies (number removed) reads as "Todos".
+  const scopeFilter = useMemo(
+    () => (numbers ? validScopeFilter(savedScope, choices) : savedScope),
+    [numbers, savedScope, choices],
+  );
+  const numbersById = useMemo(() => new Map((numbers ?? []).map((n) => [n.id, n])), [numbers]);
+  const scopeOf = useMemo(
+    () => new Map((numbers ?? []).map((n) => [n.id, n.scope] as const)),
+    [numbers],
+  );
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -184,6 +226,10 @@ export function ConversationList({
   const filtered = useMemo(() => {
     // Archived chats (mirrored from the phone) only in their own view.
     let result = conversations.filter((c) => Boolean(c.archived) === showArchived);
+    // The scope chip (phase 6).
+    if (scopeFilter.scope !== "all") {
+      result = result.filter((c) => matchesScope(c, scopeFilter, scopeOf));
+    }
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
@@ -215,7 +261,7 @@ export function ConversationList({
 
     // Most recent first, like WhatsApp — realtime patches rows in place.
     return byRecency(result);
-  }, [conversations, filter, search, selectedTagIds, selectedCompany, showArchived]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, showArchived, scopeFilter, scopeOf]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -237,10 +283,25 @@ export function ConversationList({
     [onSelect]
   );
 
-  const unreadTotal = useMemo(
-    () => conversations.filter((c) => c.unread_count > 0 && !c.archived).length,
-    [conversations],
+  const inScope = useMemo(
+    () => (scopeFilter.scope === "all" ? conversations : conversations.filter((c) => matchesScope(c, scopeFilter, scopeOf))),
+    [conversations, scopeFilter, scopeOf],
   );
+  const unreadTotal = useMemo(
+    () => inScope.filter((c) => c.unread_count > 0 && !c.archived).length,
+    [inScope],
+  );
+  // The scope chips' counts: unread chats per scope, like WhatsApp's tabs.
+  const unreadByScope = useMemo(() => {
+    const out = { personal: 0, business: 0, all: 0 };
+    for (const c of conversations) {
+      if (!(c.unread_count > 0) || c.archived) continue;
+      out.all++;
+      const scope = scopeOf.get(c.connection_id);
+      if (scope) out[scope]++;
+    }
+    return out;
+  }, [conversations, scopeOf]);
   const archivedCount = useMemo(() => conversations.filter((c) => c.archived).length, [conversations]);
   const hasGroups = useMemo(() => conversations.some((c) => c.is_group), [conversations]);
   // WhatsApp's order — Todas, Não lidas, Grupos — then the CRM's own.
@@ -284,6 +345,15 @@ export function ConversationList({
           </DropdownMenu>
           <WaPrimaryAction icon={UserPlus} label={t("newContact")} href="/contacts" />
         </>
+      }
+      scopes={
+        <InboxScopeBar
+          numbers={numbers}
+          notice={notice}
+          value={scopeFilter}
+          onChange={changeScope}
+          unread={unreadByScope}
+        />
       }
       search={
         <WaSearchPill
@@ -409,7 +479,6 @@ export function ConversationList({
           )}
         </div>
       }
-      banner={banner}
     >
       {showArchived ? (
         <button
@@ -450,6 +519,10 @@ export function ConversationList({
             <ConversationItem
               key={conv.id}
               conversation={conv}
+              number={numbersById.get(conv.connection_id)}
+              severalInScope={
+                (numbersById.get(conv.connection_id)?.scope === "personal" ? choices.personal : choices.business).length > 1
+              }
               isActive={conv.id === activeConversationId}
               onSelect={handleSelect}
               t={t}
@@ -465,6 +538,10 @@ export function ConversationList({
 
 interface ConversationItemProps {
   conversation: Conversation;
+  /** Its WhatsApp number: the seal on the avatar (phase 6). */
+  number?: ConnectionView;
+  /** Its scope has several numbers: the seal's tooltip names this one. */
+  severalInScope?: boolean;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
@@ -474,6 +551,8 @@ interface ConversationItemProps {
 
 function ConversationItem({
   conversation,
+  number,
+  severalInScope = false,
   isActive,
   onSelect,
   t,
@@ -481,11 +560,14 @@ function ConversationItem({
   yesterdayLabel,
 }: ConversationItemProps) {
   const previewOf = usePreviewParts();
+  const labels = useNumberLabels();
   const contact = conversation.contact;
   const isGroup = Boolean(conversation.is_group);
+  // A personal number's chat is titled like on its owner's phone: the
+  // address-book name kept on the conversation (phase 6).
   const baseName = isGroup
     ? conversation.group_name || t("group")
-    : (contact && contactDisplayName(contact)) || t("unknown");
+    : conversation.saved_name || (contact && contactDisplayName(contact)) || t("unknown");
   // Your own chat, like WhatsApp: "Guilherme Varela (Você)".
   const displayName = conversation.is_self ? `${baseName} ${t("selfSuffix")}` : baseName;
   const unread = conversation.unread_count > 0;
@@ -509,13 +591,15 @@ function ConversationItem({
       onClick={handleClick}
       active={isActive}
       avatar={
-        isGroup && !conversation.group_avatar_url ? (
-          <span className="flex size-[49px] shrink-0 items-center justify-center rounded-full bg-hover-surface" aria-hidden>
-            <Users className="size-6 text-muted-foreground" />
-          </span>
-        ) : (
-          <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact?.avatar_url} name={baseName} size={49} />
-        )
+        <AvatarWithScope scope={number?.scope} label={number ? labels.badge(number, severalInScope) : undefined}>
+          {isGroup && !conversation.group_avatar_url ? (
+            <span className="flex size-[49px] shrink-0 items-center justify-center rounded-full bg-hover-surface" aria-hidden>
+              <Users className="size-6 text-muted-foreground" />
+            </span>
+          ) : (
+            <WaAvatar src={isGroup ? conversation.group_avatar_url ?? undefined : contact?.avatar_url} name={baseName} size={49} />
+          )}
+        </AvatarWithScope>
       }
       title={displayName}
       meta={time}

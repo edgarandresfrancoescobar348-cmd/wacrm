@@ -9,9 +9,13 @@
 //
 // It deliberately reuses the exact find-or-create logic the inbound
 // webhook uses (the `findExistingContact` dedupe helper, the
-// one-conversation-per-(account, contact) convention, the
+// one-conversation-per-(number, contact) convention, the
 // account_id-tenancy / user_id-audit split) so a contact created via
 // the API is indistinguishable from one created by an inbound message.
+//
+// Phase 6: the conversation is on a BUSINESS number — the one the caller
+// names (`connection_id`), else the account's default. A contact only a
+// personal number knew joins the team by it (migration 073's trigger).
 //
 // Audit user: created rows need a NOT NULL `user_id`. As with the
 // webhook (where there's no logged-in human either), we attribute
@@ -24,10 +28,13 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
+import { NoBusinessConnectionError, pickBusinessConnection } from '@/lib/whatsapp/connections';
 
 export interface ResolvedConversation {
   conversationId: string;
   contactId: string;
+  /** The business number it is on. */
+  connectionId: string;
   /** True if this call created the contact (vs matched an existing one). */
   contactCreated: boolean;
 }
@@ -42,7 +49,8 @@ export async function resolveConversationByPhone(
   db: SupabaseClient,
   accountId: string,
   phone: string,
-  name?: string | null
+  name?: string | null,
+  connectionId?: string | null
 ): Promise<ResolvedConversation> {
   // Raw integrator input: the leading `+` is required so the country
   // code is explicit — "4155551212" would otherwise be delivered to
@@ -56,19 +64,22 @@ export async function resolveConversationByPhone(
     );
   }
 
-  // Fail fast (and create nothing) when the account has no WhatsApp
-  // connected — the same error the send would raise anyway.
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('id')
-    .eq('account_id', accountId)
-    .maybeSingle();
-  if (!config) {
-    throw new SendMessageError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
+  // Fail fast (and create nothing) when the account has no business
+  // number (or the one named isn't one of them).
+  let number;
+  try {
+    number = await pickBusinessConnection(db, accountId, connectionId);
+  } catch (err) {
+    if (err instanceof NoBusinessConnectionError) {
+      throw new SendMessageError(
+        connectionId ? 'bad_request' : 'whatsapp_not_configured',
+        connectionId
+          ? "'connection_id' is not one of this account's business WhatsApp numbers"
+          : 'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    throw err;
   }
 
   // Audit user for created rows = the single account-wide default used
@@ -140,7 +151,7 @@ export async function resolveConversationByPhone(
   }
 
   // ---- conversation -------------------------------------------
-  // One conversation per (account, contact) — same convention as the
+  // One conversation per (number, contact) — same convention as the
   // webhook. Order oldest-first and take one row rather than
   // `.maybeSingle()`, which errors on ≥2 rows: if duplicates predate the
   // unique index (migration 036), we resolve to the canonical survivor
@@ -148,29 +159,31 @@ export async function resolveConversationByPhone(
   const conversationId = await findOrCreateConversationRow(
     db,
     accountId,
+    number.id,
     contactId,
     ownerUserId
   );
 
-  return { conversationId, contactId, contactCreated };
+  return { conversationId, contactId, connectionId: number.id, contactCreated };
 }
 
 /**
  * Find (oldest-first) or create the single conversation for
- * `(accountId, contactId)`. Handles the unique-index race the same way
+ * `(connectionId, contactId)`. Handles the unique-index race the same way
  * the inbound webhook does: on a 23505 from a concurrent create,
  * re-resolve the winning row rather than failing the send.
  */
 async function findOrCreateConversationRow(
   db: SupabaseClient,
   accountId: string,
+  connectionId: string,
   contactId: string,
   ownerUserId: string
 ): Promise<string> {
   const { data: existing, error: findErr } = await db
     .from('conversations')
     .select('id')
-    .eq('account_id', accountId)
+    .eq('connection_id', connectionId)
     .eq('contact_id', contactId)
     .order('created_at', { ascending: true })
     .limit(1);
@@ -188,6 +201,7 @@ async function findOrCreateConversationRow(
     .from('conversations')
     .insert({
       account_id: accountId,
+      connection_id: connectionId,
       user_id: ownerUserId,
       contact_id: contactId,
     })
@@ -199,7 +213,7 @@ async function findOrCreateConversationRow(
       const { data: raced } = await db
         .from('conversations')
         .select('id')
-        .eq('account_id', accountId)
+        .eq('connection_id', connectionId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: true })
         .limit(1);

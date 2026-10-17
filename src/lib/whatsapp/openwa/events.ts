@@ -33,6 +33,7 @@ import {
   type OpenWaCredentials,
 } from './client'
 import type { OpenWaConnectionRow } from './connection'
+import type { IngestConnection, WaConnection } from '@/lib/whatsapp/connections'
 import { parseVcards, type ContentMeta } from '@/lib/whatsapp/message-content'
 import { reconcileAttemptFromEcho } from '@/lib/whatsapp/broadcast-attempts'
 import { queueHistoryImportOnConnect } from './history-import'
@@ -315,9 +316,10 @@ export interface EventContext {
   admin: SupabaseClient
   row: OpenWaConnectionRow
   creds: OpenWaCredentials
-  /** whatsapp_config.provider for the account ('meta' | 'openwa'). */
-  activeProvider: string
-  mirrorMedia: boolean
+  /** The QR number this session is (phase 6): business or personal. */
+  connection: WaConnection
+  /** Who the contact / conversation rows it creates are attributed to (connectionActorId). */
+  actorId: string
   /**
    * Receives the bot fan-out of an ingested message (flows, automations,
    * AI, public webhooks) to run after the delivery is acknowledged.
@@ -359,7 +361,7 @@ async function resolveOpenWaContent(
   const proxyUrl = openWaMediaProxyUrl(chatId, messageId)
 
   const shape = { contentType: mapped.contentType, meta: mapped.meta }
-  if (!ctx.mirrorMedia) {
+  if (!ctx.connection.mirrorInboundMedia) {
     return { ...empty, ...shape, contentText: caption, mediaUrl: proxyUrl, mediaType: mimeType }
   }
 
@@ -373,6 +375,8 @@ async function resolveOpenWaContent(
     fileSize: data.media?.sizeBytes ?? null,
     fileName: data.media?.filename ?? null,
     messageTimestamp: data.timestamp ?? null,
+    // A personal number's media is its owner's: the private bucket (073).
+    privateTo: ctx.connection.scope === 'personal' ? { connectionId: ctx.connection.id } : null,
     // Inline base64 (≤ 1 MiB) or the gateway's media route.
     download: async () => {
       if (data.media?.data) {
@@ -418,6 +422,11 @@ async function resolveChatPhone(
     return r.phone ? normalizePhone(r.phone) || null : null
   }
   return null
+}
+
+/** The number, as ingestion needs it. */
+function ingestTarget(ctx: EventContext): IngestConnection {
+  return { id: ctx.connection.id, accountId: ctx.connection.accountId, scope: ctx.connection.scope, userId: ctx.actorId }
 }
 
 function identityFor(phone: string, name: string): WaIdentity {
@@ -524,7 +533,8 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
         if (isContentlessPlaceholder(msg)) return 'ignored_placeholder'
         await ingestGroupMessage(ctx.admin, {
           accountId,
-          userId: ctx.row.user_id,
+          connectionId: ctx.connection.id,
+          userId: ctx.actorId,
           chatId: msg.chatId ?? msg.from ?? '',
           data: msg,
           at: new Date(Number(envelopeSeconds(env, msg.timestamp)) * 1000).toISOString(),
@@ -557,8 +567,9 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
           extras: { ...forwardFlags(msg), media_meta: mediaMetaFor(msg) },
         }),
       }
-      await ingestInboundMessage(inbound, accountId, ctx.row.user_id, {
-        runBots: ctx.activeProvider === 'openwa',
+      // Bots run on a business number; never on a personal one (ingest).
+      await ingestInboundMessage(inbound, ingestTarget(ctx), {
+        runBots: true,
         mapNumberedMenuReplies: true,
         throwOnFailure: true,
         deferFanOut: ctx.defer,
@@ -584,7 +595,8 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
         if (isContentlessPlaceholder(msg)) return 'ignored_placeholder'
         await ingestGroupMessage(ctx.admin, {
           accountId,
-          userId: ctx.row.user_id,
+          connectionId: ctx.connection.id,
+          userId: ctx.actorId,
           chatId: msg.chatId ?? msg.to ?? '',
           data: { ...msg, fromMe: true },
           at: new Date(Number(envelopeSeconds(env, msg.timestamp)) * 1000).toISOString(),
@@ -602,8 +614,9 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
       // timeout, "outcome unknown"): this echo proves it went out —
       // reconcile its attempt instead of ever resending it. Essential:
       // a failure is retried (the delivery is answered non-2xx).
-      await reconcileAttemptFromEcho(ctx.admin, {
+      if (ctx.connection.scope === 'business') await reconcileAttemptFromEcho(ctx.admin, {
         accountId,
+        connectionId: ctx.connection.id,
         toPhone: phone,
         body: msg.body ?? null,
         messageId: msg.id,
@@ -629,8 +642,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
             extras: { ...forwardFlags(msg), media_meta: mediaMetaFor(msg), status: statusFromAck(msg.ack) },
           }),
         },
-        accountId,
-        ctx.row.user_id,
+        ingestTarget(ctx),
         { throwOnFailure: true },
       )
       return 'echo'
@@ -686,8 +698,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
             interactiveReplyId: null,
           }),
         },
-        accountId,
-        ctx.row.user_id,
+        ingestTarget(ctx),
         { runBots: false, throwOnFailure: true },
       )
       return 'ingested'
@@ -733,7 +744,7 @@ async function dispatch(env: OpenWaEnvelope, ctx: EventContext): Promise<OpenWaE
   }
 }
 
-/** Session lifecycle → `whatsapp_openwa_config` (+ whatsapp_config.status). */
+/** Session lifecycle → `whatsapp_openwa_config` (+ the number's status). */
 async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promise<void> {
   const data = (env.data ?? {}) as Record<string, unknown>
   const now = new Date().toISOString()
@@ -794,11 +805,11 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   // not overwrite newer state — e.g. an old "disconnected" over a live
   // session.
   const eventAt = eventInstant(env)
-  // One RPC: the per-account connection lock first (061, K6), then the
-  // session row, newest-wins on the event time; the active-connection
-  // flag follows in the same transaction (058).
+  // One RPC: the number's lock first (061/072), then the session row,
+  // newest-wins on the event time; the number's status follows in the
+  // same transaction (072).
   const { data: applied, error } = await ctx.admin.rpc('apply_openwa_session_state', {
-    p_account_id: ctx.row.account_id,
+    p_connection_id: ctx.connection.id,
     p_patch: patch,
     p_session_id: env.sessionId,
     p_event_at: eventAt,
@@ -815,15 +826,15 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   // the linked phone holds (A1). Only queued — the first chat listing
   // after pairing can take minutes; the scheduler tick runs it.
   if (patch.status === 'ready' && ctx.defer) {
-    const accountId = ctx.row.account_id
+    const connection = ctx.connection
     const sessionId = env.sessionId
     ctx.defer(async () => {
-      if (await queueHistoryImportOnConnect(ctx.admin, accountId, sessionId)) {
-        console.info(`[history import] ${accountId.slice(0, 8)}: queued on connect (the scheduler runs it)`)
+      if (await queueHistoryImportOnConnect(ctx.admin, connection, sessionId)) {
+        console.info(`[history import] ${connection.id.slice(0, 8)}: queued on connect (the scheduler runs it)`)
       }
     })
   }
-  // The active-connection flag (whatsapp_config.status) is NOT written
-  // here: migration 058 derives it from this row in the same statement,
+  // The number's status (whatsapp_connections.status) is NOT written
+  // here: migration 072 derives it from this row in the same statement,
   // so it can never disagree with the newest applied session state.
 }

@@ -16,6 +16,12 @@ vi.mock('@/lib/api/v1/contacts', () => ({
   findOrCreateContact: (...args: unknown[]) => (findOrCreateContact as unknown as (...a: unknown[]) => unknown)(...args),
 }))
 
+// Phase 6: the broadcast goes out from the account's official number.
+vi.mock('@/lib/whatsapp/connections', async (orig) =>
+  (await import('@/test/business-number')).connectionsMock(await orig()))
+vi.mock('@/lib/whatsapp/transport', async (orig) =>
+  (await import('@/test/business-number')).transportMock(await orig()))
+
 type Row = Record<string, unknown>
 
 const TEMPLATE = {
@@ -32,6 +38,8 @@ function createDb(template: Row = TEMPLATE) {
         select: () => q,
         eq: () => q,
         single: async () => ({ data: { phone_number_id: 'pn', access_token: 'enc' }, error: null }),
+        // The number the broadcast goes out from, recorded on it.
+        update: () => q,
         maybeSingle: async () => ({ data: null, error: null }),
         then: (resolve: (r: unknown) => unknown) =>
           Promise.resolve({ data: table === 'message_templates' ? [template] : [], error: null }).then(resolve),
@@ -133,6 +141,7 @@ function deliverDb(recipients: Map<string, Row>) {
 function plan(sendTemplate: (a: SendTemplateArgs) => Promise<{ messageId: string }>, planned: BroadcastPlan['planned']): BroadcastPlan {
   return {
     accountId: `acct-${Math.random()}`,
+    connectionId: `num-${Math.random()}`,
     broadcastId: 'b1',
     templateName: 'pedido',
     templateLanguage: 'pt_BR',

@@ -1,19 +1,21 @@
 // ============================================================
 // WhatsApp transport — the one boundary every sender goes through.
 //
-// An account talks to WhatsApp through exactly one active connection
-// (`whatsapp_config.provider`):
+// An account talks to WhatsApp through its numbers (phase 6:
+// `whatsapp_connections`, at most one official + any QR ones), each on a
+// provider:
 //
 //   - 'meta'   — Meta's official Cloud API (`meta-api.ts`).
 //   - 'openwa' — a self-hosted OpenWA gateway driving a regular
 //                WhatsApp number paired by QR code (`openwa-api.ts`).
 //
 // Callers (inbox send, reactions, broadcasts, automations, flows, the AI
-// auto-reply, the public API) load a transport with
-// `loadAccountTransport` and call these methods. They never branch on
-// the provider themselves: what differs between the two lives here, and
-// what a caller needs to know about the difference (does the 24h window
-// apply? are templates Meta-approved?) is exposed as `capabilities`.
+// auto-reply, the public API) load the transport of a number with
+// `loadConnectionTransport` / `loadConversationTransport` and call these
+// methods. They never branch on the provider themselves: what differs
+// between the two lives here, and what a caller needs to know about the
+// difference (does the 24h window apply? are templates Meta-approved?)
+// is exposed as `capabilities`.
 // ============================================================
 
 import type { MessageTemplate } from '@/types'

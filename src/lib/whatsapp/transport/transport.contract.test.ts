@@ -79,6 +79,7 @@ const harnesses: Harness[] = [
     transport: () =>
       createOpenWaTransport({
         accountId: 'acct-1',
+        connectionId: 'num-1',
         userId: 'user-1',
         baseUrl: fake.baseUrl,
         apiKey: fake.apiKey,
@@ -310,7 +311,7 @@ describe('OpenWA transport — time budget and idempotency (G7)', () => {
     const port = (server.address() as { port: number }).port
     try {
       const tr = createOpenWaTransport({
-        accountId: 'a', userId: 'u', baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', sessionId: SESSION,
+        accountId: 'a', connectionId: 'n', userId: 'u', baseUrl: `http://127.0.0.1:${port}`, apiKey: 'k', sessionId: SESSION,
         sessionName: null, webhookId: null, webhookSecret: null, engine: null, status: 'ready', phone: null, pushName: null,
         broadcastDelayMs: 8000,
       })

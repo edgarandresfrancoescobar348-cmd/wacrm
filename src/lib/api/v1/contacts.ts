@@ -126,7 +126,17 @@ export async function findOrCreateContact(
   }
 
   const existing = await findExistingContact(db, accountId, sanitized);
-  if (existing) return { id: existing.id, created: false };
+  if (existing) {
+    // Only a personal number knew it: the business naming it makes it
+    // the team's (phase 6, like a member creating it by hand).
+    const { error: shareErr } = await db
+      .from('contacts')
+      .update({ personal_only: false })
+      .eq('id', existing.id)
+      .eq('personal_only', true);
+    if (shareErr) throw new ContactError('Failed to resolve contact', 500);
+    return { id: existing.id, created: false };
+  }
 
   const { data: created, error } = await db
     .from('contacts')
@@ -231,7 +241,10 @@ export async function setContactTags(
   }
 }
 
-/** Fetch + serialize a single contact scoped to the account, or null. */
+/**
+ * Fetch + serialize a single contact scoped to the account, or null. A
+ * personal-only contact (phase 6) is its number's owner's alone: null.
+ */
 export async function getContactById(
   db: SupabaseClient,
   accountId: string,
@@ -242,6 +255,7 @@ export async function getContactById(
     .select(CONTACT_SELECT)
     .eq('id', contactId)
     .eq('account_id', accountId)
+    .eq('personal_only', false)
     .maybeSingle();
   if (error || !data) return null;
   return serializeContact(data as Record<string, unknown>);

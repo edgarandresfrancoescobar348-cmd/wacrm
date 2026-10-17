@@ -46,6 +46,7 @@ import {
   identityFromContact,
 } from './events'
 import type { OpenWaConnectionRow } from './connection'
+import type { WaConnection } from '@/lib/whatsapp/connections'
 
 const admin = {
   storage: {},
@@ -89,9 +90,36 @@ const row = {
   connected_at: null,
 } as unknown as OpenWaConnectionRow
 
-function ctx(activeProvider = 'openwa') {
-  return { admin, row, creds: { baseUrl: 'http://gw', apiKey: 'k' }, activeProvider, mirrorMedia: true }
+/** The QR number the session is (phase 6): business by default. */
+function number(scope: 'business' | 'personal' = 'business'): WaConnection {
+  return {
+    id: 'num-1',
+    accountId: 'acct-1',
+    provider: 'openwa',
+    scope,
+    ownerUserId: scope === 'personal' ? 'user-2' : null,
+    label: null,
+    status: 'connected',
+    phone: '5511977776666',
+    connectedAt: null,
+    mirrorInboundMedia: true,
+    createdBy: 'user-1',
+    removedAt: null,
+    createdAt: '2026-10-01T00:00:00Z',
+  }
 }
+
+function ctx(scope: 'business' | 'personal' = 'business') {
+  return {
+    admin,
+    row,
+    creds: { baseUrl: 'http://gw', apiKey: 'k' },
+    connection: number(scope),
+    actorId: scope === 'personal' ? 'user-2' : 'user-1',
+  }
+}
+
+const BUSINESS_TARGET = { id: 'num-1', accountId: 'acct-1', scope: 'business', userId: 'user-1' }
 
 function env(event: string, data: Record<string, unknown>): OpenWaEnvelope {
   return { event, sessionId: 'sess-1', timestamp: '2026-10-15T22:17:00.250Z', data }
@@ -165,14 +193,13 @@ describe('message.received', () => {
 
   it('becomes an InboundMessage on the shared path, with menu mapping on', async () => {
     expect(await handleOpenWaEvent(env('message.received', text), ctx())).toBe('ingested')
-    const [inbound, accountId, owner, options] = h.ingestInboundMessage.mock.calls[0] as unknown as [
+    const [inbound, target, options] = h.ingestInboundMessage.mock.calls[0] as unknown as [
       Record<string, unknown>,
-      string,
-      string,
+      Record<string, unknown>,
       Record<string, unknown>,
     ]
-    expect(accountId).toBe('acct-1')
-    expect(owner).toBe('user-1')
+    // The number it came in on (phase 6): its account, scope and audit user.
+    expect(target).toEqual(BUSINESS_TARGET)
     expect(inbound).toMatchObject({
       provider: 'openwa',
       messageId: text.id,
@@ -198,10 +225,15 @@ describe('message.received', () => {
     expect(inbound.waChatId).toBe('5511988887777@c.us')
   })
 
-  it('stores but does not run bots when QR is not the active mode', async () => {
-    await handleOpenWaEvent(env('message.received', text), ctx('meta'))
-    const options = (h.ingestInboundMessage.mock.calls[0] as unknown as unknown[])[3]
-    expect(options).toMatchObject({ runBots: false })
+  // Phase 6: a personal number's message is its owner's — the target says
+  // so (ingest then runs nothing for it) and its media goes private.
+  it('a personal number: the target is the owner’s, the media goes to the private bucket', async () => {
+    await handleOpenWaEvent(env('message.received', { ...text, media: { mimetype: 'image/jpeg', data: 'AA==' }, type: 'image' }), ctx('personal'))
+    const [inbound, target] = h.ingestInboundMessage.mock.calls[0] as unknown as [Record<string, unknown>, Record<string, unknown>]
+    expect(target).toEqual({ id: 'num-1', accountId: 'acct-1', scope: 'personal', userId: 'user-2' })
+    await (inbound.resolveContent as (c: { accountId: string }) => Promise<unknown>)({ accountId: 'acct-1' })
+    const mirrorArgs = (h.mirrorInboundMedia.mock.calls[0] as unknown as [Record<string, unknown>])[0]
+    expect(mirrorArgs.privateTo).toEqual({ connectionId: 'num-1' })
   })
 
   // Phase 5e: groups are listed like on the phone — through groups.ts,
@@ -297,7 +329,7 @@ describe('acks, failures, reactions, mutations', () => {
       env('message.reaction', { messageId: 'true_x', chatId: '5511988887777@c.us', senderId: '5511988887777@c.us', reaction: '❤️' }),
       ctx(),
     )
-    const [inbound, , , options] = h.ingestInboundMessage.mock.calls[0] as unknown as [Record<string, unknown>, string, string, Record<string, unknown>]
+    const [inbound, , options] = h.ingestInboundMessage.mock.calls[0] as unknown as [Record<string, unknown>, unknown, Record<string, unknown>]
     expect(inbound).toMatchObject({ type: 'reaction', reaction: { targetMessageId: 'true_x', emoji: '❤️' } })
     expect(options).toEqual({ runBots: false, throwOnFailure: true })
   })
@@ -361,6 +393,8 @@ describe('message.sent (phone echo)', () => {
         fn: 'broadcast_attempt_reconcile_echo',
         args: {
           p_account_id: 'acct-1',
+          // Only this number's broadcasts (migration 074).
+          p_connection_id: 'num-1',
           p_to_phone: '5511988887777',
           p_body: 'Olá Ana',
           p_message_id: 'true_5511988887777@c.us_AB',
@@ -388,8 +422,7 @@ describe('message.sent (phone echo)', () => {
     expect(outcome).toBe('echo')
     expect(h.recordOutboundEcho).toHaveBeenCalledWith(
       expect.objectContaining({ messageId: 'true_5511988887777@c.us_AB', identity: expect.objectContaining({ phone: '5511988887777', name: '' }) }),
-      'acct-1',
-      'user-1',
+      BUSINESS_TARGET,
       { throwOnFailure: true },
     )
   })
@@ -491,8 +524,7 @@ describe('content-less placeholders (Teste real 1)', () => {
     expect(outcome).toBe('ingested')
     expect(h.ingestInboundMessage).toHaveBeenCalledWith(
       expect.objectContaining({ messageId: real.id, text: 'Oi, tudo bem?' }),
-      'acct-1',
-      'user-1',
+      BUSINESS_TARGET,
       expect.anything(),
     )
   })

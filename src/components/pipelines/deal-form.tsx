@@ -365,7 +365,7 @@ export function DealForm({
 
               {linkedConversation && (
                 <Link
-                  href="/inbox"
+                  href={`/inbox?c=${linkedConversation.id}`}
                   className="flex items-center gap-3 rounded-xl bg-chip-active px-3 py-2.5 text-sm text-chip-active-foreground transition-opacity hover:opacity-90"
                 >
                   <MessageSquare className="size-4 shrink-0" />

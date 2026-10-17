@@ -75,7 +75,16 @@ function table(name: string) {
   }
   const q: Record<string, unknown> = {
     select: () => q,
-    insert: (v: Row) => ((op = 'insert'), (payload = v), (upsertOpts = { onConflict: 'conversation_id,message_id' }), q),
+    // The unique index each insert can hit (migrations 037, 072, 022).
+    insert: (v: Row) => (
+      (op = 'insert'),
+      (payload = v),
+      (upsertOpts = {
+        onConflict:
+          name === 'messages' ? 'conversation_id,message_id' : name === 'conversations' ? 'connection_id,contact_id' : name === 'contacts' ? 'account_id,phone' : '',
+      }),
+      q
+    ),
     upsert: (v: Row, o: typeof upsertOpts) => ((op = 'upsert'), (payload = v), (upsertOpts = o), q),
     update: (v: Row) => ((op = 'update'), (payload = v), q),
     // Embedded-resource filters (`conversations.account_id`) are not
@@ -153,6 +162,8 @@ import { supabaseAdmin } from '@/lib/flows/admin-client'
 
 const ACCOUNT = 'acct-1'
 const PHONE = '5511999999999'
+/** The number deliveries come in on (phase 6): the account's business QR number. */
+const NUMBER = { id: 'num-1', accountId: ACCOUNT, scope: 'business' as const, userId: 'owner' }
 
 function inbound(over: Partial<InboundMessage> & { body?: string } = {}): InboundMessage {
   const body = over.body ?? 'olá'
@@ -171,7 +182,7 @@ function inbound(over: Partial<InboundMessage> & { body?: string } = {}): Inboun
 beforeEach(() => {
   h.tables = {
     contacts: [{ id: 'contact-1', account_id: ACCOUNT, phone: PHONE, name: 'Cliente' }],
-    conversations: [{ id: 'conv-1', account_id: ACCOUNT, contact_id: 'contact-1', created_at: '2026-01-01' }],
+    conversations: [{ id: 'conv-1', account_id: ACCOUNT, connection_id: 'num-1', contact_id: 'contact-1', created_at: '2026-01-01' }],
     messages: [],
   }
   h.failInsertOn = null
@@ -187,28 +198,28 @@ describe('F3 — failures propagate so the provider redelivers', () => {
   it('throws IngestFailure when the message insert fails (throwOnFailure)', async () => {
     h.failInsertOn = 'messages'
     await expect(
-      ingestInboundMessage(inbound(), ACCOUNT, 'owner', { throwOnFailure: true }),
+      ingestInboundMessage(inbound(), NUMBER, { throwOnFailure: true }),
     ).rejects.toBeInstanceOf(IngestFailure)
   })
 
   it('keeps the lenient behaviour for callers that do not opt in (Meta)', async () => {
     h.failInsertOn = 'messages'
-    await expect(ingestInboundMessage(inbound(), ACCOUNT, 'owner')).resolves.toBeUndefined()
+    await expect(ingestInboundMessage(inbound(), NUMBER)).resolves.toBeUndefined()
   })
 
   it('a redelivery after the failure inserts the message exactly once', async () => {
     const msg = inbound()
     h.failInsertOn = 'messages'
-    await expect(ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true })).rejects.toThrow()
+    await expect(ingestInboundMessage(msg, NUMBER, { throwOnFailure: true })).rejects.toThrow()
     h.failInsertOn = null
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true })
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true })
+    await ingestInboundMessage(msg, NUMBER, { throwOnFailure: true })
+    await ingestInboundMessage(msg, NUMBER, { throwOnFailure: true })
     expect(h.tables.messages.filter((m) => m.message_id === msg.messageId)).toHaveLength(1)
   })
 
   it('hands the bot fan-out to deferFanOut instead of running it inline', async () => {
     const deferred: (() => Promise<void>)[] = []
-    await ingestInboundMessage(inbound(), ACCOUNT, 'owner', { deferFanOut: (t) => deferred.push(t) })
+    await ingestInboundMessage(inbound(), NUMBER, { deferFanOut: (t) => deferred.push(t) })
     expect(h.tables.messages).toHaveLength(1)
     expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
     await deferred[0]()
@@ -241,8 +252,7 @@ describe('F5 — echo vs sender reconcile, the sender never fails', () => {
         text: 'Escolha\n\n1. A',
         resolveContent: async () => ({ contentText: 'Escolha\n\n1. A', mediaUrl: null, mediaType: null, interactiveReplyId: null }),
       },
-      ACCOUNT,
-      'owner',
+      NUMBER,
       { throwOnFailure: true },
     )
 
@@ -320,19 +330,19 @@ describe('F7 — a quoted reply maps only against the quoted menu', () => {
     // Menu B is the latest outbound message — the reviewer's scenario.
     h.tables.messages = h.tables.messages.filter((m) => m.id !== 'plain')
     const msg = inbound({ body: '1', contextMessageId: 'prov-menu-A' })
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { mapNumberedMenuReplies: true, runBots: false })
+    await ingestInboundMessage(msg, NUMBER, { mapNumberedMenuReplies: true, runBots: false })
     expect(inserted(msg.messageId)).toMatchObject({ reply_to_message_id: 'menu-a', interactive_reply_id: 'A_buy', content_type: 'interactive' })
   })
 
   it('a quote of a plain message leaves the text alone', async () => {
     const msg = inbound({ body: '1', contextMessageId: 'prov-plain' })
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { mapNumberedMenuReplies: true, runBots: false })
+    await ingestInboundMessage(msg, NUMBER, { mapNumberedMenuReplies: true, runBots: false })
     expect(inserted(msg.messageId)).toMatchObject({ content_type: 'text', interactive_reply_id: null })
   })
 
   it('a quote of an unknown message leaves the text alone', async () => {
     const msg = inbound({ body: '1', contextMessageId: 'prov-unknown' })
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { mapNumberedMenuReplies: true, runBots: false })
+    await ingestInboundMessage(msg, NUMBER, { mapNumberedMenuReplies: true, runBots: false })
     expect(inserted(msg.messageId)).toMatchObject({ content_type: 'text', interactive_reply_id: null })
   })
 })
@@ -343,13 +353,13 @@ describe('G5 — essential post-insert writes, repaired on redelivery', () => {
   it('a failed conversation update throws, and the redelivery completes it exactly once', async () => {
     const msg = inbound()
     h.rpcError = { message: 'connection reset' }
-    await expect(ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true })).rejects.toBeInstanceOf(IngestFailure)
+    await expect(ingestInboundMessage(msg, NUMBER, { throwOnFailure: true })).rejects.toBeInstanceOf(IngestFailure)
     expect(h.tables.messages).toHaveLength(1)
     expect(h.tables.messages[0].ingest_completed_at).toBeUndefined()
 
     h.rpcError = null
     const deferred: (() => Promise<void>)[] = []
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => deferred.push(t) })
+    await ingestInboundMessage(msg, NUMBER, { throwOnFailure: true, deferFanOut: (t) => deferred.push(t) })
     expect(h.bumps).toBe(1)
     expect(h.tables.messages[0].ingest_completed_at).toBeTruthy()
     // the repaired delivery also gets its bot fan-out
@@ -359,7 +369,7 @@ describe('G5 — essential post-insert writes, repaired on redelivery', () => {
 
     // a third delivery of the now complete message enqueues nothing and
     // re-runs nothing: its fan-out task is already done (H1)
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => deferred.push(t) })
+    await ingestInboundMessage(msg, NUMBER, { throwOnFailure: true, deferFanOut: (t) => deferred.push(t) })
     for (const run of deferred.slice(1)) await run()
     expect(h.bumps).toBe(1)
     expect(h.tables.inbound_fanout_tasks).toHaveLength(1)
@@ -372,12 +382,12 @@ describe('G5 — essential post-insert writes, repaired on redelivery', () => {
   it('a completed message whose fan-out never ran gets it from the redelivery, once', async () => {
     const msg = inbound()
     const lost: (() => Promise<void>)[] = []
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => lost.push(t) })
+    await ingestInboundMessage(msg, NUMBER, { throwOnFailure: true, deferFanOut: (t) => lost.push(t) })
     // the first request's after() never ran its task (dropped)
     expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
 
     const redelivery: (() => Promise<void>)[] = []
-    await ingestInboundMessage(msg, ACCOUNT, 'owner', { throwOnFailure: true, deferFanOut: (t) => redelivery.push(t) })
+    await ingestInboundMessage(msg, NUMBER, { throwOnFailure: true, deferFanOut: (t) => redelivery.push(t) })
     for (const run of redelivery) await run()
     expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
     expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(expect.anything(), ACCOUNT, 'message.received', expect.anything(), expect.anything())
@@ -394,8 +404,7 @@ describe('G5 — essential post-insert writes, repaired on redelivery', () => {
     await expect(
       ingestInboundMessage(
         inbound({ type: 'reaction', reaction: { targetMessageId: 'prov-target', emoji: '❤️' } }),
-        ACCOUNT,
-        'owner',
+        NUMBER,
         { throwOnFailure: true, runBots: false },
       ),
     ).rejects.toBeInstanceOf(IngestFailure)
@@ -408,7 +417,7 @@ describe('K5 — completion errors on the Meta path', () => {
   it('a lost answer to a completion that committed runs the fan-out once, through its task', async () => {
     const msg = inbound()
     h.loseCompletionAnswer = true
-    await ingestInboundMessage(msg, ACCOUNT, 'owner')
+    await ingestInboundMessage(msg, NUMBER)
     expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
     // the cron later tries the same task: nothing runs twice
     const { runFanoutForMessage } = await import('./fanout')
@@ -420,9 +429,69 @@ describe('K5 — completion errors on the Meta path', () => {
   it('a completion that really failed runs nothing now; the inputs are stored for the cron', async () => {
     const msg = inbound()
     h.completionFails = 2
-    await ingestInboundMessage(msg, ACCOUNT, 'owner')
+    await ingestInboundMessage(msg, NUMBER)
     expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
     expect(h.tables.messages[0].ingest_completed_at).toBeUndefined()
     expect(h.tables.messages[0].ingest_fanout).toMatchObject({ providerMessageId: msg.messageId, lastMessageText: 'olá' })
+  })
+})
+
+// Phase 6: a personal number's delivery is its owner's — nothing
+// automated runs, the contact it brings in stays hidden from the team
+// (personal_only, migration 073) and the owner's address-book name stays
+// on the conversation, never on the shared CRM contact.
+describe('phase 6 — a personal number', () => {
+  const PERSONAL = { id: 'num-p', accountId: ACCOUNT, scope: 'personal' as const, userId: 'agent-1' }
+  const STRANGER = '5511988880000'
+
+  it('runs nothing: no bots, no public webhook, the fan-out task says personal', async () => {
+    h.dispatchWebhookEvent.mockClear()
+    await ingestInboundMessage(inbound({ identity: { phone: STRANGER, name: 'Fulano', waUserId: null, waParentUserId: null, waUsername: null } }), PERSONAL)
+    const task = (h.tables.inbound_fanout_tasks ?? [])[0]
+    expect(task.payload).toMatchObject({ botsEnabled: false, personal: true, connectionId: 'num-p' })
+    expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
+    // No `conversation.created` to the account's endpoints either.
+    expect(h.dispatchWebhookEvent).not.toHaveBeenCalled()
+  })
+
+  it('a contact it brings in is personal-only, attributed to the owner', async () => {
+    await ingestInboundMessage(inbound({ identity: { phone: STRANGER, name: 'Fulano', waUserId: null, waParentUserId: null, waUsername: null } }), PERSONAL)
+    const contact = h.tables.contacts.find((c) => c.phone === STRANGER)!
+    expect(contact).toMatchObject({ personal_only: true, user_id: 'agent-1' })
+    const conv = h.tables.conversations.find((c) => c.contact_id === contact.id)!
+    expect(conv).toMatchObject({ connection_id: 'num-p', user_id: 'agent-1' })
+  })
+
+  it('the owner’s address-book name stays on the conversation; the contact gets the public profile name', async () => {
+    await ingestInboundMessage(
+      inbound({
+        identity: { phone: STRANGER, name: 'Mãe', nameSource: 'saved', pushName: 'Maria Souza', waUserId: null, waParentUserId: null, waUsername: null },
+      }),
+      PERSONAL,
+    )
+    const contact = h.tables.contacts.find((c) => c.phone === STRANGER)!
+    expect(contact.name).toBe('Maria Souza')
+    expect(contact.name_source).toBe('push')
+    expect(h.tables.conversations.find((c) => c.contact_id === contact.id)!.saved_name).toBe('Mãe')
+  })
+
+  it('a business number keeps writing the saved name onto the contact (unchanged)', async () => {
+    await ingestInboundMessage(
+      inbound({
+        identity: { phone: STRANGER, name: 'Cliente VIP', nameSource: 'saved', pushName: 'Maria Souza', waUserId: null, waParentUserId: null, waUsername: null },
+      }),
+      NUMBER,
+    )
+    const contact = h.tables.contacts.find((c) => c.phone === STRANGER)!
+    expect(contact).toMatchObject({ name: 'Cliente VIP', name_source: 'saved', personal_only: false })
+  })
+
+  it('the same person on two numbers: two conversations, one contact', async () => {
+    await ingestInboundMessage(inbound(), PERSONAL)
+    expect(h.tables.contacts.filter((c) => c.phone === PHONE)).toHaveLength(1)
+    expect(h.tables.conversations.filter((c) => c.contact_id === 'contact-1').map((c) => c.connection_id).sort()).toEqual([
+      'num-1',
+      'num-p',
+    ])
   })
 })

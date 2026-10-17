@@ -25,9 +25,9 @@ interface OverviewCounts {
 }
 
 interface WhatsAppStatus {
-  configured: boolean;
-  connected: boolean;
-  provider: 'meta' | 'openwa';
+  /** The live numbers the viewer sees. */
+  total: number;
+  connected: number;
 }
 
 export function SettingsOverview({
@@ -57,7 +57,6 @@ export function SettingsOverview({
     let cancelled = false;
     const supabase = createClient();
     const userId = user.id;
-    const acctId = accountId;
 
     // Cheap counts — resolve fast, render immediately.
     (async () => {
@@ -120,22 +119,18 @@ export function SettingsOverview({
     // WhatsApp connection status — slower, independent.
     (async () => {
       setWhatsappLoading(true);
-      const [row, health] = await Promise.allSettled([
-        supabase
-          .from('whatsapp_config')
-          .select('phone_number_id, provider')
-          .eq('account_id', acctId)
-          .maybeSingle(),
-        fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
-      ]);
+      // The account's numbers (phase 6): how many of the ones the viewer
+      // sees are connected.
+      const res = await fetch('/api/whatsapp/connections', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
       if (cancelled) return;
-      const cfg = row.status === 'fulfilled' ? row.value.data : null;
-      // Either connection mode counts (migration 047): a QR-code account
-      // has no Meta phone_number_id.
+      const live = ((res?.connections ?? []) as { visible: boolean; removed_at: string | null; status: string }[]).filter(
+        (n) => n.visible && !n.removed_at,
+      );
       setWhatsapp({
-        configured: !!cfg && (cfg.provider === 'openwa' || !!cfg.phone_number_id),
-        connected: health.status === 'fulfilled' && !!health.value?.connected,
-        provider: cfg?.provider === 'openwa' ? 'openwa' : 'meta',
+        total: live.length,
+        connected: live.filter((n) => n.status === 'connected').length,
       });
       setWhatsappLoading(false);
     })();
@@ -165,12 +160,15 @@ export function SettingsOverview({
     {
       section: 'whatsapp',
       loading: whatsappLoading,
-      subtitle: !whatsapp?.configured ? (
+      subtitle: !whatsapp?.total ? (
         t('notSetup')
-      ) : whatsapp.connected ? (
+      ) : whatsapp.connected === whatsapp.total ? (
         <>
-          <StatusDot tone="ok" /> {t('connected')} ·{' '}
-          {whatsapp.provider === 'openwa' ? t('viaQrCode') : t('viaOfficialApi')}
+          <StatusDot tone="ok" /> {t('numbersConnected', { connected: whatsapp.connected, total: whatsapp.total })}
+        </>
+      ) : whatsapp.connected > 0 ? (
+        <>
+          <StatusDot tone="muted" /> {t('numbersConnected', { connected: whatsapp.connected, total: whatsapp.total })}
         </>
       ) : (
         <>

@@ -53,6 +53,8 @@ import { cn } from '@/lib/utils';
 import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+import { useWhatsAppConnections } from '@/hooks/use-whatsapp-connections';
+import { NumberSelect, defaultNumberId } from '@/components/whatsapp/number-select';
 
 interface ContactDetailViewProps {
   contactId: string | null;
@@ -98,6 +100,12 @@ export function ContactDetailView({
   // find-or-creates the conversation, so no inbound message is required.
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [sendingTemplate, setSendingTemplate] = useState(false);
+  // The business number it goes out from (phase 6): the default one
+  // unless the user picks another.
+  const { connections: numbers } = useWhatsAppConnections({ poll: false });
+  const [pickedNumber, setPickedNumber] = useState<string | null>(null);
+  const numberId = pickedNumber ?? defaultNumberId(numbers);
+  const numberProvider = numbers?.find((n) => n.id === numberId)?.provider ?? null;
 
   // Details tab
   const [editName, setEditName] = useState('');
@@ -376,8 +384,10 @@ export function ContactDetailView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           // No conversation_id — the route find-or-creates one for this
-          // contact, mirroring the inbox template-send payload otherwise.
+          // contact on the chosen business number, mirroring the inbox
+          // template-send payload otherwise.
           contact_id: contactId,
+          connection_id: numberId ?? undefined,
           message_type: 'template',
           template_name: template.name,
           template_language: template.language,
@@ -528,7 +538,10 @@ export function ContactDetailView({
                 )}
               </p>
             )}
-            <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <div className="mt-5 flex justify-center">
+              <NumberSelect numbers={numbers} value={numberId} onChange={setPickedNumber} />
+            </div>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
               <Button onClick={() => setTemplatePickerOpen(true)} disabled={sendingTemplate}>
                 {sendingTemplate ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -810,6 +823,7 @@ export function ContactDetailView({
         open={templatePickerOpen}
         onOpenChange={setTemplatePickerOpen}
         onSelect={handleSendTemplate}
+        provider={numberProvider}
       />
     </div>
   );

@@ -68,13 +68,43 @@ vi.mock('@supabase/supabase-js', () => ({
                   data: [
                     {
                       account_id: 'acc-1',
+                      connection_id: 'num-1',
                       user_id: 'user-1',
                       access_token: 'enc',
-                      mirror_inbound_media: h.state.mirrorInboundMedia,
                     },
                   ],
                   error: null,
                 }),
+            }),
+          }
+        case 'whatsapp_connections':
+          // The official number the credentials belong to (phase 6):
+          // loadConnection / the status webhook's scope check,
+          // select().eq().maybeSingle().
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: () =>
+                  Promise.resolve({
+                    data: {
+                      id: 'num-1',
+                      account_id: 'acc-1',
+                      provider: 'meta',
+                      scope: 'business',
+                      owner_user_id: null,
+                      label: null,
+                      status: 'connected',
+                      phone: null,
+                      connected_at: null,
+                      // The number's media setting (was whatsapp_config's, #466).
+                      mirror_inbound_media: h.state.mirrorInboundMedia,
+                      created_by: 'user-1',
+                      removed_at: null,
+                      created_at: '2026-01-01T00:00:00Z',
+                    },
+                    error: null,
+                  }),
+              }),
             }),
           }
         case 'conversations':
@@ -96,17 +126,19 @@ vi.mock('@supabase/supabase-js', () => ({
           }
         case 'broadcast_recipients':
           // Two chains land here:
-          //   flagBroadcastReplyIfAny: select().eq().eq().in().order().limit()
+          //   flagBroadcastReplyIfAny: select().eq().eq().eq().in().order().limit()
           //   handleStatusUpdate:      select().eq().maybeSingle(), then
           //                            update().eq()
           return {
             select: () => ({
               eq: () => ({
                 eq: () => ({
-                  in: () => ({
-                    order: () => ({
-                      limit: () =>
-                        Promise.resolve({ data: [], error: null }),
+                  eq: () => ({
+                    in: () => ({
+                      order: () => ({
+                        limit: () =>
+                          Promise.resolve({ data: [], error: null }),
+                      }),
                     }),
                   }),
                 }),

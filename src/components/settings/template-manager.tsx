@@ -140,17 +140,19 @@ export function TemplateManager() {
     t.has(`categoryLabels.${category}`) ? t(`categoryLabels.${category}`) : category;
   const supabase = createClient();
   const { user, accountId, loading: authLoading } = useAuth();
-  // QR-code connection (migration 047): Meta approval doesn't exist —
-  // templates are local, ready to use, and never submitted or synced.
+  // No official number (phase 6: only QR numbers): Meta approval doesn't
+  // exist — templates are local, ready to use, and never submitted or
+  // synced. With an official number they go to Meta, and its approved
+  // templates also go out from the QR numbers (rendered as text).
   const [localMode, setLocalMode] = useState(false);
   useEffect(() => {
     if (!accountId) return;
     supabase
       .from('whatsapp_config')
-      .select('provider')
+      .select('id')
       .eq('account_id', accountId)
       .maybeSingle()
-      .then(({ data }) => setLocalMode(data?.provider === 'openwa'));
+      .then(({ data }) => setLocalMode(!data));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 

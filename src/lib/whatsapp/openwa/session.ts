@@ -1,17 +1,19 @@
 // ============================================================
-// OpenWA session lifecycle for one account.
+// OpenWA session lifecycle for one QR number.
 //
-// wacrm owns exactly one OpenWA session per account: it creates it,
-// registers a per-account webhook on it (random secret, encrypted at
-// rest), starts it, and mirrors its state into
-// `whatsapp_openwa_config`. All functions here assume the caller has
-// already checked the user is an admin of `accountId`; every query is
-// filtered by it.
+// wacrm owns exactly one OpenWA session per QR number (phase 6: an
+// account may have several): it creates it, registers a per-session
+// webhook on it (random secret, encrypted at rest), starts it, and
+// mirrors its state into `whatsapp_openwa_config`, whose status the
+// number (`whatsapp_connections.status`) follows in the same transaction
+// (migration 072). All functions here assume the caller has already
+// checked the user may manage the number; every query is filtered by it.
 // ============================================================
 
 import crypto from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import type { WaConnection } from '@/lib/whatsapp/connections'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import {
@@ -43,8 +45,8 @@ export function generateWebhookSecret(): string {
   return crypto.randomBytes(32).toString('hex')
 }
 
-function sessionName(accountId: string): string {
-  return `wacrm-${accountId.slice(0, 8)}-${crypto.randomBytes(3).toString('hex')}`
+function sessionName(connectionId: string): string {
+  return `wacrm-${connectionId.slice(0, 8)}-${crypto.randomBytes(3).toString('hex')}`
 }
 
 /**
@@ -70,13 +72,13 @@ export function sessionPatch(session: OpenWaSession, row: OpenWaConnectionRow | 
 
 async function updateRow(
   admin: SupabaseClient,
-  accountId: string,
+  connectionId: string,
   patch: Record<string, unknown>,
 ): Promise<OpenWaConnectionRow> {
-  // Through the per-account connection lock (migration 061): a session
-  // change and a switch to QR mode never interleave (K6).
+  // Through the per-number lock (migrations 061/072), newest-wins with
+  // the session events.
   const { data, error } = await admin.rpc('apply_openwa_session_state', {
-    p_account_id: accountId,
+    p_connection_id: connectionId,
     p_patch: patch,
     p_session_id: null,
     p_event_at: null,
@@ -86,34 +88,21 @@ async function updateRow(
   return row as OpenWaConnectionRow
 }
 
-/** The account's session row, created on its first "Conectar". */
-async function createRow(admin: SupabaseClient, accountId: string, userId: string): Promise<OpenWaConnectionRow> {
+/** The number's session row, created on its first "Conectar". */
+async function createRow(admin: SupabaseClient, connection: WaConnection, userId: string): Promise<OpenWaConnectionRow> {
   const { data, error } = await admin
     .from('whatsapp_openwa_config')
-    .upsert({ account_id: accountId, user_id: userId }, { onConflict: 'account_id', ignoreDuplicates: true })
+    .upsert(
+      { account_id: connection.accountId, connection_id: connection.id, user_id: userId },
+      { onConflict: 'connection_id', ignoreDuplicates: true },
+    )
     .select('*')
     .maybeSingle()
   if (error) throw new Error(`Failed to create the QR-code connection: ${error.message}`)
   // A concurrent "Conectar" created it first (ignoreDuplicates returns nothing).
-  const row = (data as OpenWaConnectionRow | null) ?? (await loadOpenWaRow(admin, accountId))
+  const row = (data as OpenWaConnectionRow | null) ?? (await loadOpenWaRow(admin, connection.id))
   if (!row) throw new Error('Failed to create the QR-code connection')
   return row
-}
-
-/**
- * Make QR mode the account's active connection. Creates the config row
- * for an account that never had one (Meta columns stay null — allowed in
- * OpenWA mode by migration 047's CHECK). The status is derived from the
- * session row by the database (058), under the same per-account
- * connection lock as every session change (061, K6).
- */
-export async function activateOpenWaProvider(
-  admin: SupabaseClient,
-  accountId: string,
-  userId: string,
-): Promise<void> {
-  const { error } = await admin.rpc('set_openwa_active', { p_account_id: accountId, p_user_id: userId })
-  if (error) throw new Error(`Failed to activate QR-code mode: ${error.message}`)
 }
 
 /** The session row on OpenWA, or null when it no longer exists there. */
@@ -158,26 +147,28 @@ async function ensureWebhook(
 }
 
 /**
- * "Conectar": create the session if needed, (re)register the webhook,
- * start it (OpenWA answers once the engine is up — usually `qr_ready`)
- * and make QR mode the active connection.
+ * "Conectar": create the session if needed, (re)register the webhook and
+ * start it (OpenWA answers once the engine is up — usually `qr_ready`).
  */
 export async function connectOpenWa(
   admin: SupabaseClient,
-  accountId: string,
+  connection: WaConnection,
   userId: string,
 ): Promise<PublicOpenWaState> {
+  if (connection.provider !== 'openwa') throw new OpenWaError('Not a QR-code number', 400, 'not_qr')
+  if (connection.removedAt) throw new OpenWaError('This number was removed', 400, 'removed')
+  const connectionId = connection.id
   // The gateway is the deployment's own: nothing to configure first.
   const creds = requireOpenWaGateway()
   // Fails fast (503) when the gateway is down or refuses the server key.
   const info = await validateOpenWaKey(creds)
   const engine = info?.engineType === 'baileys' || info?.engineType === 'whatsapp-web.js' ? info.engineType : null
-  let row = (await loadOpenWaRow(admin, accountId)) ?? (await createRow(admin, accountId, userId))
+  let row = (await loadOpenWaRow(admin, connectionId)) ?? (await createRow(admin, connection, userId))
 
   let session = await fetchSession(creds, row.session_id)
   if (!session) {
-    session = await createOpenWaSession(creds, sessionName(accountId))
-    row = await updateRow(admin, accountId, {
+    session = await createOpenWaSession(creds, sessionName(connectionId))
+    row = await updateRow(admin, connectionId, {
       session_id: session.id,
       session_name: session.name,
       webhook_id: null,
@@ -188,7 +179,7 @@ export async function connectOpenWa(
 
   const webhookUrl = `${openWaWebhookBaseUrl()}${OPENWA_WEBHOOK_PATH}`
   const hook = await ensureWebhook(creds, row, session.id, webhookUrl)
-  row = await updateRow(admin, accountId, {
+  row = await updateRow(admin, connectionId, {
     engine,
     webhook_id: hook.webhookId,
     ...(hook.secret ? { webhook_secret: encrypt(hook.secret) } : {}),
@@ -197,17 +188,16 @@ export async function connectOpenWa(
   if (['created', 'disconnected', 'failed'].includes(session.status)) {
     session = await startOpenWaSession(creds, session.id)
   }
-  row = await updateRow(admin, accountId, sessionPatch(session, row))
-  await activateOpenWaProvider(admin, accountId, userId)
+  row = await updateRow(admin, connectionId, sessionPatch(session, row))
   return toPublicOpenWaState(row)
 }
 
 /** "Reiniciar sessão": stop, then start (OpenWA has no restart route). */
 export async function restartOpenWa(
   admin: SupabaseClient,
-  accountId: string,
+  connectionId: string,
 ): Promise<PublicOpenWaState> {
-  const row = await loadOpenWaRow(admin, accountId)
+  const row = await loadOpenWaRow(admin, connectionId)
   if (!row?.session_id) throw new OpenWaError('No OpenWA session to restart', 400, 'no_session')
   const creds = requireOpenWaGateway()
   await stopOpenWaSession(creds, row.session_id).catch((err) => {
@@ -215,17 +205,17 @@ export async function restartOpenWa(
     console.warn('[openwa] stop before restart failed:', err instanceof Error ? err.message : err)
   })
   const session = await startOpenWaSession(creds, row.session_id)
-  // whatsapp_config.status follows the session row (migration 058).
-  const updated = await updateRow(admin, accountId, sessionPatch(session, row))
+  // The number's status follows the session row (migration 072).
+  const updated = await updateRow(admin, connectionId, sessionPatch(session, row))
   return toPublicOpenWaState(updated)
 }
 
 /** "Desconectar": log the device out (unlinks it on the phone). */
 export async function logoutOpenWa(
   admin: SupabaseClient,
-  accountId: string,
+  connectionId: string,
 ): Promise<PublicOpenWaState> {
-  const row = await loadOpenWaRow(admin, accountId)
+  const row = await loadOpenWaRow(admin, connectionId)
   if (!row?.session_id) throw new OpenWaError('No OpenWA session to disconnect', 400, 'no_session')
   const creds = requireOpenWaGateway()
   let session: OpenWaSession
@@ -239,7 +229,7 @@ export async function logoutOpenWa(
       throw err
     }
   }
-  const updated = await updateRow(admin, accountId, {
+  const updated = await updateRow(admin, connectionId, {
     ...sessionPatch(session, row),
     phone: null,
     push_name: null,
@@ -251,19 +241,19 @@ export async function logoutOpenWa(
 /** Pull the live session state from OpenWA (webhooks may lag or be blocked). */
 export async function refreshOpenWa(
   admin: SupabaseClient,
-  accountId: string,
+  connectionId: string,
 ): Promise<PublicOpenWaState> {
-  const row = await loadOpenWaRow(admin, accountId)
+  const row = await loadOpenWaRow(admin, connectionId)
   if (!row?.session_id) return toPublicOpenWaState(row)
   const session = await fetchSession(requireOpenWaGateway(), row.session_id)
   if (!session) {
-    const updated = await updateRow(admin, accountId, {
+    const updated = await updateRow(admin, connectionId, {
       status: 'disconnected',
       status_updated_at: new Date().toISOString(),
       connected_at: null,
     })
     return toPublicOpenWaState(updated)
   }
-  const updated = await updateRow(admin, accountId, sessionPatch(session, row))
+  const updated = await updateRow(admin, connectionId, sessionPatch(session, row))
   return toPublicOpenWaState(updated)
 }

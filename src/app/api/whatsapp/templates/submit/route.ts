@@ -16,7 +16,7 @@ import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import { getT } from '@/lib/i18n/translate'
-import { loadAccountProvider } from '@/lib/whatsapp/transport'
+import { hasOfficialNumber } from '@/lib/whatsapp/connections'
 
 const t = getT('Api')
 
@@ -134,10 +134,12 @@ export async function POST(request: Request) {
       )
     }
 
-    // QR-code connection (OpenWA): Meta approval doesn't exist there.
-    // The template is saved locally, ready to use at once — sends render
-    // it and deliver it as text (transport/openwa.ts).
-    if ((await loadAccountProvider(supabase, accountId)) === 'openwa') {
+    // A local template (for the QR numbers, where Meta approval doesn't
+    // exist): asked for (`origin: 'local'`), or the account has no
+    // official number to submit it to. Saved ready to use at once — sends
+    // render it and deliver it as text (transport/openwa.ts).
+    const wantsLocal = (payload as { origin?: unknown }).origin === 'local'
+    if (wantsLocal || !(await hasOfficialNumber(supabase, accountId))) {
       const { data: row, error: upsertErr } = await upsertTemplateRow(
         supabase,
         buildUpsertRow(accountId, userId, payload, {

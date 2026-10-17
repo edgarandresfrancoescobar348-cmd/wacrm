@@ -121,7 +121,7 @@ export async function dispatchInboundToAiReply(
     // nothing to undo on the handoff / no-text path. Strictly
     // best-effort: a failed indicator must never cost us the reply.
     if (inboundMessageId) {
-      await showTypingIndicator(accountId, contactId, inboundMessageId)
+      await showTypingIndicator(accountId, conversationId, contactId, inboundMessageId)
     }
 
     // Ground the reply in the account's knowledge base (best-effort).
@@ -231,11 +231,12 @@ export async function dispatchInboundToAiReply(
  */
 async function showTypingIndicator(
   accountId: string,
+  conversationId: string,
   contactId: string,
   inboundMessageId: string,
 ): Promise<void> {
   try {
-    await engineSendTyping({ accountId, contactId, inboundMessageId })
+    await engineSendTyping({ accountId, conversationId, contactId, inboundMessageId })
   } catch (err) {
     console.warn('[ai auto-reply] typing indicator failed (continuing):', err)
   }

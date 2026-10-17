@@ -2,10 +2,9 @@
 
 import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { useWhatsAppStatus } from "@/hooks/use-whatsapp-status";
+import { useWhatsAppConnections } from "@/hooks/use-whatsapp-connections";
 import { previewForMessage } from "@/lib/whatsapp/message-content";
 import { mergeMessages } from "@/lib/inbox/thread-pages";
 import { mergeFetchedConversation } from "@/lib/inbox/conversation-merge";
@@ -20,8 +19,6 @@ import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { EmptyPane } from "@/components/inbox/empty-pane";
 import { WaListLayout } from "@/components/layout/wa-panel";
-import Link from "next/link";
-import { WifiOff } from "lucide-react";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -39,7 +36,6 @@ export default function InboxPage() {
 }
 
 function InboxPageInner() {
-  const t = useTranslations("Inbox.page");
   const router = useRouter();
   const searchParams = useSearchParams();
   /**
@@ -54,14 +50,18 @@ function InboxPageInner() {
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  // The active connection, kept current while the inbox is open (a page
-  // opened before the QR code was scanned no longer shows a stale state).
-  const { accountId } = useAuth();
-  const whatsapp = useWhatsAppStatus(accountId);
-  const whatsappConnected = whatsapp.connected;
-  // Meta's 24h window applies unless the account is on a QR-code
-  // (OpenWA) connection.
-  const serviceWindow = whatsapp.provider !== "openwa";
+  // The account's WhatsApp numbers (phase 6), kept current while the
+  // inbox is open (a page opened before a QR code was scanned no longer
+  // shows a stale state).
+  useAuth();
+  const whatsapp = useWhatsAppConnections();
+  const numbers = whatsapp.connections;
+  const activeNumber = activeConversation
+    ? numbers?.find((n) => n.id === activeConversation.connection_id)
+    : undefined;
+  // Meta's 24h window applies on the official number, not on a QR one.
+  const serviceWindow = activeNumber ? activeNumber.provider !== "openwa" : true;
+  const hasQrNumber = Boolean(numbers?.some((n) => n.visible && n.provider === "openwa" && !n.removed_at));
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -568,26 +568,6 @@ function InboxPageInner() {
   // before, unchanged.
   const hasActiveConv = !!activeConversation;
 
-  // WhatsApp-style notice card under the list filters (WA shows its
-  // "notifications are off" banner in the same spot).
-  const connectionBanner =
-    whatsappConnected === false ? (
-      <Link
-        href="/settings?tab=whatsapp"
-        className="flex items-start gap-3 rounded-xl bg-chip-active px-4 py-3 text-chip-active-foreground transition-opacity hover:opacity-90"
-      >
-        <WifiOff className="mt-0.5 size-5 shrink-0" />
-        <span className="min-w-0 text-sm leading-5">
-          {whatsapp.kind === "qr_disconnected"
-            ? t("whatsappQrDisconnected")
-            : t("whatsappNotConnected")}
-          <span className="mt-0.5 block font-medium text-primary-text">
-            {t("connectNow")}
-          </span>
-        </span>
-      </Link>
-    ) : null;
-
   // List + detail like WhatsApp Web. On mobile (<lg) only one pane shows —
   // selecting a conversation swaps the thread in; its back button pops it
   // back to the list. The contact-info drawer is desktop only and follows
@@ -602,8 +582,9 @@ function InboxPageInner() {
           conversations={conversations}
           onConversationsLoaded={handleConversationsLoaded}
           resyncToken={resyncToken}
-          banner={connectionBanner}
-          qrMode={whatsapp.provider === "openwa"}
+          numbers={numbers}
+          notice={whatsapp.notice}
+          qrMode={hasQrNumber}
         />
       }
     >
@@ -628,9 +609,13 @@ function InboxPageInner() {
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
             serviceWindow={serviceWindow}
+            number={activeNumber}
+            severalInScope={
+              (numbers ?? []).filter((n) => n.visible && !n.removed_at && n.scope === activeNumber?.scope).length > 1
+            }
           />
         ) : (
-          <EmptyPane whatsappConnected={whatsappConnected} provider={whatsapp.provider} />
+          <EmptyPane noticeKind={whatsapp.notice.kind} />
         )}
 
         {contactPanelOpen && activeContact && (

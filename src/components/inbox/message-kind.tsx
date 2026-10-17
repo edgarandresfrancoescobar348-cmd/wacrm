@@ -30,6 +30,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { mapsUrl, type ContentMeta, type SharedContact } from "@/lib/whatsapp/message-content";
 import { normalizePhone } from "@/lib/whatsapp/phone-utils";
+import { sharePersonalContact } from "@/lib/contacts/dedupe";
 import type { Message } from "@/types";
 
 const TEXT = "flow-root whitespace-pre-wrap break-words text-[14.2px] leading-[19px]";
@@ -238,6 +239,7 @@ function SharedContactCard({
         data: { session },
       } = await supabase.auth.getSession();
       if (!session?.user) return;
+      await sharePersonalContact(supabase, accountId, phone);
       const { error } = await supabase.from("contacts").insert({
         user_id: session.user.id,
         account_id: accountId,

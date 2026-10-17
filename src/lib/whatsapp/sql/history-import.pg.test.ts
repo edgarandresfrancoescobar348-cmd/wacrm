@@ -9,7 +9,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
-import { WA_MIGRATIONS, WA_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
+import { WA_FULL_MIGRATIONS, WA_FULL_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
 import { PgSupabase } from '@/test/pg-supabase'
 import { startFakeOpenWa, type FakeOpenWa } from '@/lib/whatsapp/openwa/testing/fake-openwa-server'
 
@@ -32,6 +32,10 @@ const { ingestInboundMessage } = await import('@/lib/whatsapp/inbound/ingest')
 const ACCT = '00000000-0000-0000-0000-0000000000a1'
 const USER = '00000000-0000-0000-0000-0000000000f1'
 const SESSION = 'sess-hist'
+/** The QR number being imported (phase 6: one job per number). */
+const NUM = '00000000-0000-0000-0000-0000000000b1'
+const NUMBER = { id: NUM, accountId: ACCT }
+const TARGET = { id: NUM, accountId: ACCT, scope: 'business' as const, userId: USER }
 const T0 = Math.floor(Date.now() / 1000) - 3600 // an hour ago
 
 const CHATS = [
@@ -69,24 +73,17 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   let historyHook: ((chatId: string) => [number, unknown, number, Record<string, string>] | undefined) | null = null
 
   const count = (sql: string) => pg.sql(sql).then(Number)
-  const run = () => runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 30_000, pauseMs: 0, callIntervalMs: 0 })
+  const run = () => runHistoryImport(db.asClient(), { connectionId: NUM, deadline: Date.now() + 30_000, pauseMs: 0, callIntervalMs: 0 })
 
   beforeAll(async () => {
     pg = await startPg()
-    await pg.sql(WA_SCHEMA)
-    await pg.sql(`
-      INSERT INTO public.accounts VALUES ('${ACCT}');
-      ALTER TABLE public.contacts ADD COLUMN user_id uuid, ADD COLUMN name text, ADD COLUMN wa_user_id text,
-        ADD COLUMN wa_parent_user_id text, ADD COLUMN wa_username text, ADD COLUMN avatar_url text,
-        ADD COLUMN updated_at timestamptz, ADD COLUMN created_at timestamptz DEFAULT now();
-      ALTER TABLE public.conversations ADD COLUMN user_id uuid, ADD COLUMN created_at timestamptz DEFAULT now(),
-        ALTER COLUMN id SET DEFAULT gen_random_uuid();
-      ALTER TABLE public.messages ADD COLUMN content_type text, ADD COLUMN media_url text, ADD COLUMN media_type text,
-        ADD COLUMN reply_to_message_id uuid, ADD COLUMN interactive_reply_id text, ADD COLUMN revoked_at timestamptz,
-        ADD CONSTRAINT messages_conv_msg UNIQUE (conversation_id, message_id);
-      CREATE TABLE public.profiles(user_id uuid, account_id uuid);
-      CREATE SCHEMA IF NOT EXISTS auth; CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULL::uuid $$;`)
-    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql', '067_whatsapp_parity.sql', '069_whatsapp_chat_order.sql']) await pg.migrate(m)
+    await pg.sql(WA_FULL_SCHEMA)
+    await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}'); INSERT INTO auth.users VALUES ('${USER}');
+      INSERT INTO public.profiles(user_id, account_id, account_role) VALUES ('${USER}', '${ACCT}', 'owner');`)
+    for (const m of WA_FULL_MIGRATIONS) await pg.migrate(m)
+    // The account's business QR number (phase 6).
+    await pg.sql(`INSERT INTO public.whatsapp_connections(id, account_id, provider, scope, created_by)
+      VALUES ('${NUM}', '${ACCT}', 'openwa', 'business', '${USER}');`)
     db = new PgSupabase(pg)
     h.db = db.asClient()
     gw = await startFakeOpenWa()
@@ -131,14 +128,12 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     await pg.sql(`
       DELETE FROM public.inbound_fanout_tasks; DELETE FROM public.messages; DELETE FROM public.conversations; DELETE FROM public.contacts;
       DELETE FROM public.whatsapp_history_import_chats; DELETE FROM public.whatsapp_history_imports; DELETE FROM public.whatsapp_openwa_config;
-      INSERT INTO public.whatsapp_openwa_config(account_id, session_id, status, broadcast_delay_ms)
-        VALUES ('${ACCT}', '${SESSION}', 'ready', 8000);`)
-    // user_id for the row (the importer creates rows as the config owner)
-    await pg.sql(`ALTER TABLE public.whatsapp_openwa_config ADD COLUMN IF NOT EXISTS user_id uuid; UPDATE public.whatsapp_openwa_config SET user_id = '${USER}'`)
+      INSERT INTO public.whatsapp_openwa_config(account_id, connection_id, user_id, session_id, status, broadcast_delay_ms)
+        VALUES ('${ACCT}', '${NUM}', '${USER}', '${SESSION}', 'ready', 8000);`)
   })
 
   it('imports the individual chats with their history, mapped like live messages, no bots, no unread', async () => {
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const job = await run()
     expect(job?.status).toBe('done')
     // Ana + Bruno (@lid → phone) + the group (phase 5f: every listed chat); status skipped
@@ -178,9 +173,9 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   })
 
   it('is idempotent: a re-run imports nothing twice', async () => {
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const again = await run()
     expect(again?.status).toBe('done')
     expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
@@ -188,7 +183,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   })
 
   it('a webhook delivering an imported message adds nothing (no duplicate, no bot, no unread)', async () => {
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
     const before = await pg.sql(`SELECT unread_count FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id WHERE ct.phone = '5511911110001'`)
     await ingestInboundMessage(
@@ -198,7 +193,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
         text: 'Oi, tudo bem?',
         resolveContent: async () => ({ contentText: 'Oi, tudo bem?', mediaUrl: null, mediaType: null, interactiveReplyId: null }),
       },
-      ACCT, USER, { throwOnFailure: true },
+      TARGET, { throwOnFailure: true },
     )
     expect(await count(`SELECT count(*) FROM public.messages WHERE message_id = 'h-ana-1'`)).toBe(1)
     expect(await pg.sql(`SELECT unread_count FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id WHERE ct.phone = '5511911110001'`)).toBe(before)
@@ -213,9 +208,9 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
         text: 'Oi, tudo bem?',
         resolveContent: async () => ({ contentText: 'Oi, tudo bem?', mediaUrl: null, mediaType: null, interactiveReplyId: null }),
       },
-      ACCT, USER, { throwOnFailure: true },
+      TARGET, { throwOnFailure: true },
     )
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
     expect(await count(`SELECT count(*) FROM public.messages WHERE message_id = 'h-ana-1'`)).toBe(1)
     expect(await count(`SELECT count(*) FROM public.messages`)).toBe(9)
@@ -223,7 +218,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
 
   it('Baileys (history 501): imports the gateway-stored messages and flags the limit', async () => {
     historyStatus = 501
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const job = await run()
     expect(job?.status).toBe('done')
     expect(await pg.sql(`SELECT limited_history FROM public.whatsapp_history_imports`)).toBe('t')
@@ -232,7 +227,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
 
   it('a disconnected session pauses the job (waiting_session), resumable', async () => {
     historyStatus = 409
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const job = await run()
     expect(job?.status).toBe('waiting_session')
     historyStatus = 200
@@ -245,9 +240,9 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   // Phase 5b: right after pairing the first /chats can take 90 s+.
   it('a chat list that times out leaves the job waiting with its reason and next attempt, then completes', async () => {
     chatsDelayMs = 600
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const before = Date.now()
-    const job = await runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 30_000, pauseMs: 0, callIntervalMs: 0, listTimeoutMs: 200 })
+    const job = await runHistoryImport(db.asClient(), { connectionId: NUM, deadline: Date.now() + 30_000, pauseMs: 0, callIntervalMs: 0, listTimeoutMs: 200 })
     expect(job?.status).toBe('waiting_session')
     const [status, lastError, nextIn, leased] = (
       await pg.sql(`SELECT status || '|' || last_error || '|' || extract(epoch FROM next_run_at - now())::int || '|' || (lease_until IS NOT NULL) FROM public.whatsapp_history_imports`)
@@ -270,7 +265,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   })
 
   it('a run whose lease expired (its process died) is reclaimed by the next tick; a live lease is not', async () => {
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     // A run that claimed it and died mid-listing, lease still held.
     await pg.sql(`UPDATE public.whatsapp_history_imports SET status = 'listing', lease_until = now() + interval '5 minutes', next_run_at = now() - interval '10 minutes'`)
     expect(await run()).toBeNull()
@@ -283,11 +278,11 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
 
   it('with too little of the run deadline left, the list call is not started; the next tick does it', async () => {
     chatsDelayMs = 5_000
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const listCalls = () => gw.requests.filter((r) => /\/chats\?/.test(r.path)).length
     const callsBefore = listCalls()
     const before = Date.now()
-    const job = await runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 7_000, pauseMs: 0, callIntervalMs: 0 })
+    const job = await runHistoryImport(db.asClient(), { connectionId: NUM, deadline: Date.now() + 7_000, pauseMs: 0, callIntervalMs: 0 })
     expect(job?.status).toBe('listing')
     expect(Date.now() - before).toBeLessThan(2_000)
     expect(listCalls()).toBe(callsBefore)
@@ -300,7 +295,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   it('a 429 waits what Retry-After says and retries — every chat imported, no error', async () => {
     let throttled = 0
     historyHook = () => (throttled++ < 2 ? [...THROTTLED, 0, { 'Retry-After-short': '1' }] : undefined)
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const before = Date.now()
     const job = await run()
     expect(job?.status).toBe('done')
@@ -312,7 +307,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
 
   it('a gateway that keeps answering 429 pauses the run until its Retry-After; the chat stays queued, not failed', async () => {
     historyHook = () => [...THROTTLED, 0, { 'Retry-After-long': '3600' }]
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const job = await run()
     expect(job?.status).toBe('importing')
     const [errors, nextIn, leased, lastError] = (
@@ -332,7 +327,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
   })
 
   it('chats an earlier run failed on 429/timeout go back to the queue and are imported', async () => {
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     expect((await run())?.status).toBe('done')
     // As the real account had them: failed with the throttler's error, counted as errors.
     await pg.sql(`
@@ -348,7 +343,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
 
   it('a chat the gateway cannot serve right now (5xx) goes back to the queue, not to failed', async () => {
     historyHook = (chatId) => (chatId === CHATS[0].id ? [503, { message: 'Service Unavailable' }, 0, {}] : undefined)
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     const job = await run()
     expect(job?.status).toBe('importing') // not done: one chat is waiting
     expect(await pg.sql(`SELECT errors || '|' || (next_run_at > now()) FROM public.whatsapp_history_imports`)).toBe('0|true')
@@ -374,7 +369,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
       chatId === ANA_ID
         ? [200, [msg(ANA_ID, 'ph-1', { type: 'unknown', body: '' }), msg(ANA_ID, 'ph-2', { type: 'unknown', body: '', timestamp: T0 + 5 })], 0, {}]
         : undefined
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     expect((await run())?.status).toBe('done')
     expect(await count(`SELECT count(*) FROM public.conversations`)).toBe(3)
     const ana = await pg.sql(`SELECT c.id FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id WHERE ct.phone = '5511911110001'`)
@@ -388,7 +383,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
       chatId === ANA_ID
         ? [200, [msg(ANA_ID, 'ph-1', { body: 'Chegou: bom dia!' }), msg(ANA_ID, 'ph-2', { type: 'unknown', body: '', timestamp: T0 + 5 })], 0, {}]
         : undefined
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     expect((await run())?.status).toBe('done')
     expect(await pg.sql(`SELECT string_agg(message_id || ':' || coalesce(content_meta->>'kind', content_text), ',' ORDER BY message_id) FROM public.messages WHERE conversation_id = '${ana}'`)).toBe('ph-1:Chegou: bom dia!,ph-2:waiting')
     // the first real message takes the empty preview; the chat keeps its place
@@ -403,7 +398,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
         text: 'E esta também',
         resolveContent: async () => ({ contentText: 'E esta também', mediaUrl: null, mediaType: null, interactiveReplyId: null }),
       },
-      ACCT, USER, { throwOnFailure: true },
+      TARGET, { throwOnFailure: true },
     )
     expect(await pg.sql(`SELECT coalesce(content_meta->>'kind', content_text) FROM public.messages WHERE message_id = 'ph-2'`)).toBe('E esta também')
     expect(await count(`SELECT count(*) FROM public.messages WHERE conversation_id = '${ana}'`)).toBe(2)
@@ -429,13 +424,13 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
             {},
           ]
         : undefined
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
     expect(await pg.sql(`SELECT status FROM public.messages WHERE message_id = 'r-1'`)).toBe('sent')
     // Edited here meanwhile: the text must stay.
     await pg.sql(`UPDATE public.messages SET content_text = 'enviada (editada)' WHERE message_id = 'r-1'`)
     ack = 3
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
     expect(await pg.sql(`SELECT status || '|' || content_text FROM public.messages WHERE message_id = 'r-1'`)).toBe('read|enviada (editada)')
     expect(await pg.sql(`SELECT is_forwarded || '|' || forwarding_score || '|' || (media_meta->>'durationSeconds') FROM public.messages WHERE message_id = 'r-2'`)).toBe('true|4|9')
@@ -444,7 +439,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'r-%'`)).toBe(2)
     // never down
     ack = 2
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
     expect(await pg.sql(`SELECT status FROM public.messages WHERE message_id = 'r-1'`)).toBe('read')
   })
@@ -478,12 +473,12 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
           ]
         : undefined
     const jobState = () => pg.sql(`SELECT status || '|' || errors || '|' || coalesce(last_error, '') FROM public.whatsapp_history_imports WHERE account_id = '${ACCT}'`)
-    const runLong = () => runHistoryImport(db.asClient(), { accountId: ACCT, deadline: Date.now() + 240_000, pauseMs: 0, callIntervalMs: 0 })
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    const runLong = () => runHistoryImport(db.asClient(), { connectionId: NUM, deadline: Date.now() + 240_000, pauseMs: 0, callIntervalMs: 0 })
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await runLong()
     expect(await jobState()).toBe('done|0|')
     readEvery = 100
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await runLong()
     expect(await jobState()).toBe('done|0|')
     expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'true_${ANA_ID}_%'`)).toBe(N)
@@ -499,7 +494,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     CHATS.push(EMPTY)
     try {
       const at = (id: string) => pg.sql(`SELECT coalesce(last_message_at::text, 'null') || '|' || coalesce(wa_sort_at::text, 'null') || '|' || coalesce(last_message_text, 'null') FROM public.conversations WHERE wa_chat_id = '${id}'`)
-      await startHistoryImport(db.asClient(), ACCT, SESSION)
+      await startHistoryImport(db.asClient(), NUMBER, SESSION)
       await run()
       expect(await at(EMPTY.id)).toBe('null|null|')
       // Every chat with activity has a time; the inbox orders by it (order.ts).
@@ -507,7 +502,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
 
       // Imported before the fix: the import's time. A re-import takes it back…
       await pg.sql(`UPDATE public.conversations SET last_message_at = now() WHERE wa_chat_id = '${EMPTY.id}'`)
-      await startHistoryImport(db.asClient(), ACCT, SESSION)
+      await startHistoryImport(db.asClient(), NUMBER, SESSION)
       await run()
       expect(await at(EMPTY.id)).toBe('null|null|')
 
@@ -541,14 +536,14 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
         : undefined
     // Stored by the earlier rule: the business name as a verified title.
     await pg.sql(`INSERT INTO public.contacts(account_id, phone, name, name_source) VALUES ('${ACCT}', '5511911110001', 'Sara Ferreira', 'verified')`)
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
     expect(await pg.sql(`SELECT name || '|' || name_source || '|' || coalesce(push_name, '-') FROM public.contacts WHERE phone = '5511911110001'`)).toBe(
       'Sara Ferreira|push|Sara Ferreira',
     )
     // A name typed in the CRM is never touched.
     await pg.sql(`UPDATE public.contacts SET name = 'Sara (fornecedora)', name_source = 'manual' WHERE phone = '5511911110001'`)
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
     expect(await pg.sql(`SELECT name || '|' || name_source FROM public.contacts WHERE phone = '5511911110001'`)).toBe('Sara (fornecedora)|manual')
   })
@@ -560,13 +555,13 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     let calls = 0
     // Fails twice (a non-transient 400), then works: not an error in the end.
     historyHook = (chatId) => (chatId === ANA_ID && calls++ < 2 ? [400, { message: 'Bad chat state' }, 0, {}] : undefined)
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     expect((await run())?.status).toBe('done')
     expect(await pg.sql(`SELECT chats_done || '|' || errors || '|' || coalesce(last_error, 'null') FROM public.whatsapp_history_imports`)).toBe('3|0|null')
 
     // One that fails for good: errors = 1 (not 3 attempts), its reason kept.
     historyHook = (chatId) => (chatId === ANA_ID ? [400, { message: 'Bad chat state' }, 0, {}] : undefined)
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     expect((await run())?.status).toBe('done')
     expect(await pg.sql(`SELECT errors || '|' || last_error FROM public.whatsapp_history_imports`)).toBe('1|Bad chat state')
     expect(await pg.sql(`SELECT status || ':' || attempts FROM public.whatsapp_history_import_chats WHERE chat_id = '${ANA_ID}'`)).toBe('failed:3')
@@ -589,7 +584,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
           ]
         : undefined
     const contactsBefore = 0
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     expect((await run())?.status).toBe('done')
     const [isGroup, contactId, name, unread, preview, sender, chatId] = (
       await pg.sql(`SELECT is_group || '|' || coalesce(contact_id::text, 'NULL') || '|' || group_name || '|' || unread_count || '|' || last_message_text || '|' || coalesce(last_message_sender, 'NULL') || '|' || wa_chat_id FROM public.conversations WHERE is_group`)
@@ -639,7 +634,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
       if (/profile-picture/.test(p)) return [200, { url: null }]
       return undefined
     })
-    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await startHistoryImport(db.asClient(), NUMBER, SESSION)
     expect((await run())?.status).toBe('done')
     expect(await pg.sql(`SELECT string_agg(message_id || ':' || status || ':' || is_forwarded || ':' || coalesce(media_meta::text, '-'), ' | ' ORDER BY message_id) FROM public.messages WHERE message_id LIKE 'p-%'`)).toBe(
       [
@@ -652,5 +647,30 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     expect(await pg.sql(`SELECT string_agg(ct.phone || ':' || c.archived || ':' || (c.pinned_at IS NOT NULL) || ':' || c.wa_chat_id, ',' ORDER BY ct.phone) FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id`)).toBe(
       `5511911110001:true:false:${CHATS[0].id},5511922220002:false:true:${CHATS[1].id}`,
     )
+  })
+
+  // Phase 6: a personal number's history is its owner's — the contacts it
+  // brings in are personal-only and the phone's address-book names stay on
+  // the conversations (never on the shared CRM contact); nothing runs.
+  it('a personal number: personal-only contacts, saved names on the conversations, no bots', async () => {
+    const NUMP = '00000000-0000-0000-0000-0000000000b2'
+    const SESSION_P = 'sess-personal'
+    await pg.sql(`INSERT INTO public.whatsapp_connections(id, account_id, provider, scope, owner_user_id, created_by)
+        VALUES ('${NUMP}', '${ACCT}', 'openwa', 'personal', '${USER}', '${USER}') ON CONFLICT DO NOTHING;
+      UPDATE public.whatsapp_openwa_config SET connection_id = '${NUMP}', session_id = '${SESSION_P}';`)
+    await startHistoryImport(db.asClient(), { id: NUMP, accountId: ACCT }, SESSION_P)
+    gw.override((req) => {
+      const p = req.path
+      if (/\/chats\?/.test(p)) return [200, [CHATS[0]]]
+      const hist = p.match(/\/messages\/([^/]+)\/history/)
+      if (hist) return [200, HISTORY[decodeURIComponent(hist[1])] ?? []]
+      if (/profile-picture/.test(p)) return [200, { url: null }]
+      return undefined
+    })
+    const job = await runHistoryImport(db.asClient(), { connectionId: NUMP, deadline: Date.now() + 30_000, pauseMs: 0, callIntervalMs: 0 })
+    expect(job?.status).toBe('done')
+    expect(await pg.sql(`SELECT ct.personal_only || '|' || ct.name || '|' || coalesce(c.saved_name, '-') || '|' || (c.connection_id = '${NUMP}')
+      FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id`)).toBe('true|5511911110001|Ana Cliente|true')
+    expect(h.flows + h.ai + h.autos + h.hooks).toBe(0)
   })
 })

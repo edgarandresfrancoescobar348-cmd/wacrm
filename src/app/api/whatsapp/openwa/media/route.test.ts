@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   mirroredUrl: 'https://storage/chat-media/account-acct-1/inbound/1-image.jpg' as string | null,
   updates: [] as { table: string; value: Record<string, unknown> }[],
   after: [] as (() => Promise<void>)[],
+  scope: 'business' as 'business' | 'personal',
+  mirrorArgs: [] as Record<string, unknown>[],
 }))
 
 vi.mock('next/server', async (importOriginal) => ({
@@ -19,15 +21,13 @@ vi.mock('next/server', async (importOriginal) => ({
   after: (cb: () => Promise<void>) => h.after.push(cb),
 }))
 vi.mock('@/lib/whatsapp/mirror-inbound-media', () => ({
-  mirrorInboundMedia: async () => h.mirroredUrl,
+  mirrorInboundMedia: async (args: Record<string, unknown>) => (h.mirrorArgs.push(args), h.mirroredUrl),
 }))
 
-vi.mock('@/lib/auth/account', () => ({
-  requireRole: async () => ({ accountId: 'acct-1' }),
-  toErrorResponse: () => new Response('', { status: 500 }),
-}))
-vi.mock('@/lib/flows/admin-client', () => ({
-  supabaseAdmin: () => ({
+// One fake for both clients: the caller's own (the message lookup, RLS in
+// real life) and the service role (writes).
+function fakeDb() {
+  return {
     storage: {},
     from: (table: string) => {
       const q: Record<string, unknown> = {}
@@ -39,15 +39,24 @@ vi.mock('@/lib/flows/admin-client', () => ({
           h.updates.push({ table, value })
           return q
         },
-        maybeSingle: async () =>
-          table === 'whatsapp_config'
-            ? { data: { mirror_inbound_media: h.mirror }, error: null }
-            : { data: { id: 'owned-media', media_type: h.stored }, error: null },
+        maybeSingle: async () => ({
+          data: { id: 'owned-media', media_type: h.stored, conversations: { account_id: 'acct-1', connection_id: 'num-1' } },
+          error: null,
+        }),
         then: (resolve: (v: unknown) => void) => resolve({ error: null }),
       })
       return q
     },
-  }),
+  }
+}
+vi.mock('@/lib/auth/account', () => ({
+  requireRole: async () => ({ accountId: 'acct-1', supabase: fakeDb() }),
+  toErrorResponse: () => new Response('', { status: 500 }),
+}))
+vi.mock('@/lib/flows/admin-client', () => ({ supabaseAdmin: () => fakeDb() }))
+// The message's number (phase 6): its media setting and scope.
+vi.mock('@/lib/whatsapp/connections', () => ({
+  loadConnection: async () => ({ id: 'num-1', scope: h.scope, mirrorInboundMedia: h.mirror }),
 }))
 vi.mock('@/lib/whatsapp/openwa/connection', () => ({ loadOpenWaRow: async () => ({ session_id: 'sess-1' }) }))
 vi.mock('@/lib/whatsapp/openwa/events', () => ({
@@ -76,6 +85,8 @@ const req = () => new Request('http://app/api/whatsapp/openwa/media?chat=5511999
 beforeEach(() => {
   h.upstreamError = null
   h.mirror = true
+  h.scope = 'business'
+  h.mirrorArgs.length = 0
   h.updates.length = 0
   h.after.length = 0
   h.stored = 'text/html'
@@ -134,7 +145,16 @@ describe('OpenWA media proxy — history media', () => {
     expect(h.updates).toEqual([{ table: 'messages', value: { media_url: h.mirroredUrl } }])
   })
 
-  it('no copy when the account turned the media mirror off', async () => {
+  it('a personal number’s copy goes to the private bucket (phase 6)', async () => {
+    h.scope = 'personal'
+    h.stored = 'image/jpeg'
+    h.upstream = { bytes: Buffer.from('JPG'), mimeType: 'image/jpeg' }
+    await GET(req())
+    for (const task of h.after) await task()
+    expect(h.mirrorArgs[0].privateTo).toEqual({ connectionId: 'num-1' })
+  })
+
+  it('no copy when the number turned the media mirror off', async () => {
     h.mirror = false
     h.stored = 'image/jpeg'
     h.upstream = { bytes: Buffer.from('JPG'), mimeType: 'image/jpeg' }

@@ -53,7 +53,7 @@ describe.skipIf(!pgAvailable())('send evidence (fourth review K1, K2, K7)', () =
 
   function plan(transport: WhatsAppTransport, broadcastId = BC1, recipient = R1): BroadcastPlan {
     return {
-      accountId: ACCT, broadcastId, templateName: 'pedido', templateLanguage: 'pt_BR',
+      accountId: ACCT, connectionId: 'num-1', broadcastId, templateName: 'pedido', templateLanguage: 'pt_BR',
       templateRow: TEMPLATE, rejected: 0, transport,
       planned: [{ recipientRowId: recipient, phone: PHONE, params: ['Ana'] }],
     }

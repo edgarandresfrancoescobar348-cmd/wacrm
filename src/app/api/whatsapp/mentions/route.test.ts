@@ -9,12 +9,10 @@ const h = vi.hoisted(() => ({
   gatewayDown: false,
 }))
 
-vi.mock('@/lib/auth/account', () => ({
-  requireRole: async () => ({ accountId: 'acct-1' }),
-  toErrorResponse: () => new Response('', { status: 500 }),
-}))
-vi.mock('@/lib/flows/admin-client', () => ({
-  supabaseAdmin: () => ({
+// The caller's own client reads the contacts (phase 6: RLS hides a
+// personal number's private ones); one fake serves both clients.
+function contactsDb() {
+  return {
     from: () => {
       let phones: string[] = []
       const q: Record<string, unknown> = {}
@@ -30,7 +28,17 @@ vi.mock('@/lib/flows/admin-client', () => ({
       })
       return q
     },
-  }),
+  }
+}
+vi.mock('@/lib/auth/account', () => ({
+  requireRole: async () => ({ accountId: 'acct-1', userId: 'u-1', supabase: contactsDb() }),
+  toErrorResponse: () => new Response('', { status: 500 }),
+}))
+vi.mock('@/lib/flows/admin-client', () => ({ supabaseAdmin: () => contactsDb() }))
+// A connected business QR number the caller sees: the LID lookups go through it.
+vi.mock('@/lib/whatsapp/connections', () => ({
+  canSeeConnection: () => true,
+  loadAccountConnections: async () => [{ id: 'num-1', provider: 'openwa', scope: 'business', status: 'connected', ownerUserId: null }],
 }))
 vi.mock('@/lib/whatsapp/openwa/connection', () => ({ loadOpenWaRow: async () => ({ session_id: 'sess-1' }) }))
 vi.mock('@/lib/whatsapp/openwa/gateway', () => ({ openWaGateway: () => ({ baseUrl: 'http://gw', apiKey: 'k' }) }))

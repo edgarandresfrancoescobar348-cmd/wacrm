@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import {
-  loadAccountTransport,
+  loadConnectionTransport,
   providerErrorLabel,
   TransportNotConfiguredError,
   type WhatsAppTransport,
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, account_id, contact:contacts(phone, wa_user_id)')
+      .select('id, account_id, connection_id, contact:contacts(phone, wa_user_id)')
       .eq('id', targetMessage.conversation_id)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -98,10 +98,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // The account's active WhatsApp connection. Account-scoped.
+    // The conversation's own number (read under the caller's RLS above).
     let transport: WhatsAppTransport;
     try {
-      transport = await loadAccountTransport(supabase, accountId);
+      transport = (await loadConnectionTransport(conversation.connection_id as string)).transport;
     } catch (err) {
       if (!(err instanceof TransportNotConfiguredError)) throw err;
       return NextResponse.json(

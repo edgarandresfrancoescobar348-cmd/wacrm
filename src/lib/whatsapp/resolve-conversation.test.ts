@@ -46,7 +46,22 @@ function makeDb(script: Script): SupabaseClient {
       return builder;
     },
     eq: () => builder,
-    order: () => builder,
+    is: () => builder,
+    order: () => {
+      // The account's numbers (phase 6): a business one exists when the
+      // script has a config (the official number's credentials).
+      if (table === 'whatsapp_connections') {
+        return Promise.resolve({
+          data: script.config
+            ? [{ id: 'num-1', account_id: 'acct', provider: 'meta', scope: 'business', owner_user_id: null,
+                 label: null, status: 'connected', phone: null, connected_at: null, mirror_inbound_media: true,
+                 created_by: script.config.user_id, removed_at: null, created_at: '2026-01-01T00:00:00Z' }]
+            : [],
+          error: null,
+        });
+      }
+      return builder;
+    },
     limit: () => {
       // Only the conversation lookup terminates on `.limit(1)`.
       if (table === 'conversations' && mode === 'select') {
@@ -139,7 +154,7 @@ describe('resolveConversationByPhone', () => {
     ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
   });
 
-  it('fails with whatsapp_not_configured when no config owner exists', async () => {
+  it('fails with whatsapp_not_configured when the account has no business number', async () => {
     const db = makeDb({ config: null });
     await resolveConversationByPhone(db, 'acct', '+14155550123').catch(
       (e: SendMessageError) => {
@@ -166,6 +181,8 @@ describe('resolveConversationByPhone', () => {
     expect(res).toEqual({
       conversationId: 'cv1',
       contactId: 'c1',
+      // The business number it is on (phase 6).
+      connectionId: 'num-1',
       contactCreated: false,
     });
   });
@@ -187,6 +204,8 @@ describe('resolveConversationByPhone', () => {
     expect(res).toEqual({
       conversationId: 'cv2',
       contactId: 'c2',
+      // The business number it is on (phase 6).
+      connectionId: 'num-1',
       contactCreated: true,
     });
   });
@@ -222,6 +241,8 @@ describe('resolveConversationByPhone', () => {
     expect(res).toEqual({
       conversationId: 'cv-raced',
       contactId: 'c1',
+      // The business number it is on (phase 6).
+      connectionId: 'num-1',
       contactCreated: false,
     });
   });

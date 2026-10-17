@@ -184,6 +184,7 @@ export function WaPanelHeader({
 export function WaListPanel({
   title,
   actions,
+  scopes,
   search,
   filters,
   banner,
@@ -194,6 +195,8 @@ export function WaListPanel({
   title: ReactNode;
   /** Header actions, typically a kebab `WaIconButton` + `WaPrimaryAction`. */
   actions?: ReactNode;
+  /** Above the search: the inbox's WhatsApp numbers notice and chips. */
+  scopes?: ReactNode;
   /** A `<WaSearchPill>`. */
   search?: ReactNode;
   /** A `<WaChipRow>`. */
@@ -207,8 +210,9 @@ export function WaListPanel({
   return (
     <div className={cn("flex h-full w-full min-w-0 flex-col bg-background", className)}>
       <WaPanelHeader title={title} actions={actions} large />
-      {(search || filters) && (
+      {(scopes || search || filters) && (
         <div className="shrink-0 space-y-3 px-5 pb-3">
+          {scopes}
           {search}
           {filters}
         </div>

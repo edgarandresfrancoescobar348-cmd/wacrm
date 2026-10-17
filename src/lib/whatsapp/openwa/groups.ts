@@ -30,15 +30,18 @@ function isUniqueViolation(err: { code?: string } | null | undefined): boolean {
 }
 
 /**
- * The account's conversation for a group, created on first sight (name
- * and photo from the gateway when not given). Keyed on (account,
- * wa_chat_id) — migration 067's unique index; a concurrent creator wins
+ * The number's conversation for a group, created on first sight (name
+ * and photo from the gateway when not given). Keyed on (number,
+ * wa_chat_id) — migration 072's unique index (the same group on two of
+ * the account's numbers is two conversations); a concurrent creator wins
  * and its row is returned.
  */
 export async function findOrCreateGroupConversation(
   admin: SupabaseClient,
   args: {
     accountId: string
+    /** The QR number (whatsapp_connections.id). */
+    connectionId: string
     userId: string
     chatId: string
     name?: string | null
@@ -50,7 +53,7 @@ export async function findOrCreateGroupConversation(
     admin
       .from('conversations')
       .select('id, group_name, last_message_at')
-      .eq('account_id', args.accountId)
+      .eq('connection_id', args.connectionId)
       .eq('wa_chat_id', args.chatId)
       .maybeSingle()
   const { data: existing, error } = await select()
@@ -72,6 +75,7 @@ export async function findOrCreateGroupConversation(
     .from('conversations')
     .insert({
       account_id: args.accountId,
+      connection_id: args.connectionId,
       user_id: args.userId,
       contact_id: null,
       is_group: true,
@@ -136,6 +140,7 @@ export async function ingestGroupMessage(
   admin: SupabaseClient,
   args: {
     accountId: string
+    connectionId: string
     userId: string
     chatId: string
     data: OpenWaMessageData

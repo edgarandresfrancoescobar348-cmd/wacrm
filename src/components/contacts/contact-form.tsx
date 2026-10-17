@@ -10,6 +10,7 @@ import {
   findExistingContact,
   isExactMatch,
   isUniqueViolation,
+  sharePersonalContact,
   type ExistingContact,
 } from '@/lib/contacts/dedupe';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
@@ -174,6 +175,9 @@ export function ContactForm({
           .eq('id', contactId);
         if (error) throw error;
       } else {
+        // A contact only a personal number knew becomes the team's; the
+        // duplicate path below then points at it.
+        await sharePersonalContact(supabase, accountId, phone.trim());
         const { data, error } = await supabase
           .from('contacts')
           .insert({

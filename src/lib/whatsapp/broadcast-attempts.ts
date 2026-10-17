@@ -357,11 +357,20 @@ export async function reconcileAttempt(
 /** OpenWA `message.sent`: does this echo prove an open attempt? */
 export async function reconcileAttemptFromEcho(
   db: SupabaseClient,
-  args: { accountId: string; toPhone: string; body: string | null; messageId: string; sentAt: string },
+  args: {
+    accountId: string
+    /** The number the echo came from: only its broadcasts' sends (migration 074). */
+    connectionId: string
+    toPhone: string
+    body: string | null
+    messageId: string
+    sentAt: string
+  },
 ): Promise<string | null> {
   if (!args.body) return null
   const { data, error } = await db.rpc('broadcast_attempt_reconcile_echo', {
     p_account_id: args.accountId,
+    p_connection_id: args.connectionId,
     p_to_phone: args.toPhone,
     p_body: args.body,
     p_message_id: args.messageId,

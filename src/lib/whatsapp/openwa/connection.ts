@@ -1,5 +1,6 @@
 // ============================================================
-// The account's OpenWA connection row (`whatsapp_openwa_config`).
+// A QR number's OpenWA session row (`whatsapp_openwa_config`, one per
+// QR number — `connection_id`, phase 6).
 //
 // Service role only — the table has no client RLS policies. The webhook
 // secret is decrypted here and nowhere else; what goes to the browser is
@@ -21,6 +22,7 @@ import { requireOpenWaGateway } from './gateway'
 export interface OpenWaConnectionRow {
   id: string
   account_id: string
+  connection_id: string
   user_id: string
   engine: string | null
   session_id: string | null
@@ -41,6 +43,8 @@ export interface OpenWaConnectionRow {
 
 export interface OpenWaConnection extends OpenWaCredentials {
   accountId: string
+  /** The QR number (whatsapp_connections.id). */
+  connectionId: string
   userId: string
   sessionId: string | null
   sessionName: string | null
@@ -54,14 +58,15 @@ export interface OpenWaConnection extends OpenWaCredentials {
   broadcastDelayMs: number
 }
 
+/** The session row of a QR number. */
 export async function loadOpenWaRow(
   admin: SupabaseClient,
-  accountId: string,
+  connectionId: string,
 ): Promise<OpenWaConnectionRow | null> {
   const { data, error } = await admin
     .from('whatsapp_openwa_config')
     .select('*')
-    .eq('account_id', accountId)
+    .eq('connection_id', connectionId)
     .maybeSingle()
   if (error) {
     console.error('[openwa] connection lookup failed:', error.message)
@@ -75,6 +80,7 @@ export function rowToConnection(row: OpenWaConnectionRow): OpenWaConnection {
   return {
     ...requireOpenWaGateway(),
     accountId: row.account_id,
+    connectionId: row.connection_id,
     userId: row.user_id,
     sessionId: row.session_id,
     sessionName: row.session_name,
@@ -90,15 +96,10 @@ export function rowToConnection(row: OpenWaConnectionRow): OpenWaConnection {
 
 export async function loadOpenWaConnection(
   admin: SupabaseClient,
-  accountId: string,
+  connectionId: string,
 ): Promise<OpenWaConnection | null> {
-  const row = await loadOpenWaRow(admin, accountId)
+  const row = await loadOpenWaRow(admin, connectionId)
   return row ? rowToConnection(row) : null
-}
-
-/** `whatsapp_config.status` for an OpenWA session status. */
-export function configStatusFor(status: OpenWaSessionStatus): 'connected' | 'disconnected' {
-  return status === 'ready' ? 'connected' : 'disconnected'
 }
 
 /** What the settings UI may see. No key, no secret. */

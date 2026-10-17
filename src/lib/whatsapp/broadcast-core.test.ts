@@ -6,6 +6,12 @@ import {
   BroadcastError,
 } from './broadcast-core';
 
+// Phase 6: the broadcast goes out from the account's official number.
+vi.mock('@/lib/whatsapp/connections', async (orig) =>
+  (await import('@/test/business-number')).connectionsMock(await orig()));
+vi.mock('@/lib/whatsapp/transport', async (orig) =>
+  (await import('@/test/business-number')).transportMock(await orig()));
+
 // Contact resolution and token decryption are exercised elsewhere — stub
 // them so these tests focus on the persistence boundary.
 vi.mock('@/lib/whatsapp/encryption', () => ({
@@ -81,7 +87,21 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
         };
         return chain;
       }
-      if (table === 'broadcasts' || table === 'broadcast_recipients') {
+      if (table === 'broadcasts') {
+        // The number it goes out from, recorded after the atomic create.
+        const update = {
+          eq: () => update,
+          then: (resolve: (r: unknown) => unknown) => resolve({ error: null }),
+        };
+        return {
+          update: () => update,
+          insert: () => {
+            calls.usedDirectInsert++;
+            return { select: () => ({ single: () => Promise.resolve({ data: { id: 'orphan' }, error: null }) }) };
+          },
+        };
+      }
+      if (table === 'broadcast_recipients') {
         calls.usedDirectInsert++;
         return {
           insert: () => ({
