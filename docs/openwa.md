@@ -287,11 +287,15 @@ gateway stored are imported, and the page says the history is limited.
 
 The QR-code inbox follows the linked phone (migration 067):
 
-- **Names** like the phone: the saved address-book name, else the business's
-  verified name, else the number formatted (`+55 62 99842-3737`) — the
-  sender's own profile name is not a title: it shows as a detail, `~Sara
+- **Names** like the phone: the saved address-book name, else the name of
+  an official business account (`verifiedLevel` 2 or enterprise, e.g.
+  PicPay), else the number formatted (`+55 62 99842-3737`) — the sender's
+  own profile name is not a title, and neither is the business name every
+  other WhatsApp Business account sends: it shows as a detail, `~Sara
   Ferreira`, under the number (header, contact panel) and as a group
-  sender. `contacts.name_source` says
+  sender. A business name stored as the title by an earlier version goes
+  back to a profile name on the contact's next message or a re-import.
+  `contacts.name_source` says
   where the name came from; a name a wacrm user typed (`manual`, set by a
   trigger for every edit from the app) is never overwritten by WhatsApp.
 - **Ticks** from WhatsApp's `ack`, in the import and live (sent ✓, delivered
