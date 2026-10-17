@@ -152,6 +152,20 @@ export function MessageComposer({
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Enter-to-send only on devices with a mouse/keyboard (fine pointer).
+  // On touch devices (phones) Enter inserts a newline and the Send button
+  // is the only way to send — there's no practical Shift+Enter on a phone,
+  // so intercepting Enter there blocks multi-line messages.
+  const [enterSends, setEnterSends] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(pointer: fine)");
+    const apply = () => setEnterSends(mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
   // Interactive-message builder dialog + quick-reply picker.
   const [interactiveOpen, setInteractiveOpen] = useState(false);
   const [interactivePayload, setInteractivePayload] =
@@ -242,12 +256,12 @@ export function MessageComposer({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && enterSends) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend]
+    [handleSend, enterSends]
   );
 
   const handleChange = useCallback(

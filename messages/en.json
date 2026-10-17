@@ -71,24 +71,6 @@
     "retry": "Retry"
   },
   "Dashboard": {
-    "page": {
-      "title": "Dashboard",
-      "description": "Live analytics across conversations, contacts, deals, broadcasts, and automations.",
-      "activeConversations": "Active Conversations",
-      "newContactsToday": "New Contacts Today",
-      "openDealsValue": "Open Deals Value",
-      "messagesSentToday": "Messages Sent Today",
-      "newTodayVsYesterday": "new today vs yesterday",
-      "vsYesterday": "vs yesterday",
-      "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
-      "noChange": "No change {suffix}"
-    },
-    "quickActions": {
-      "newContact": "New Contact",
-      "newDeal": "New Deal",
-      "newBroadcast": "New Broadcast",
-      "newAutomation": "New Automation"
-    },
     "activityFeed": {
       "title": "Recent Activity",
       "viewAll": "View all →",
@@ -102,6 +84,7 @@
       "timeD": "{day}d ago",
       "items": {
         "newMessage": "New message from {who}",
+        "newMessages": "{who} sent {count} messages",
         "newContact": "New contact: {name}",
         "dealInStage": "Deal \"{title}\" in {stage}",
         "dealUpdated": "Deal \"{title}\" updated",
@@ -121,39 +104,228 @@
         "automationFallback": "Automation"
       }
     },
-    "conversationsChart": {
-      "title": "Conversations Over Time",
-      "description": "Daily message volume by direction",
-      "days": "{count} days",
-      "noActivity": "No message activity in this range",
-      "noActivityHint": "Send or receive messages to start populating this chart.",
-      "incoming": "Incoming",
-      "outgoing": "Outgoing",
-      "tooltipIncoming": "{count} incoming",
-      "tooltipOutgoing": "{count} outgoing",
-      "ariaLabel": "Conversations per day"
-    },
-    "pipelineDonut": {
-      "title": "Pipeline Value",
-      "description": "Open deals by stage",
-      "noOpenDeals": "No open deals yet",
-      "noOpenDealsHint": "Create deals in Pipelines to see stage breakdowns here.",
-      "dealCount": "{count} {count, plural, =1 {deal} other {deals}}",
-      "total": "Total",
-      "ariaLabel": "Pipeline value by stage"
-    },
-    "responseTimeChart": {
-      "title": "Average First Response Time",
-      "description": "Minutes to reply to a customer's first unreplied message, by weekday",
-      "target": "target {minutes}m",
-      "thisWeek": "This week:",
-      "lastWeek": "Last week:",
-      "noReplies": "No replies recorded yet",
-      "noRepliesHint": "This chart fills in as you reply to customer messages.",
-      "avgMinutes": "Avg minutes"
-    },
     "emptyState": {
       "title": "Not enough data yet"
+    },
+    "overview": {
+      "loadFailed": "Couldn't load the dashboard.",
+      "retry": "Try again",
+      "header": {
+        "greeting": {
+          "morning": "Good morning, {name}",
+          "afternoon": "Good afternoon, {name}",
+          "evening": "Good evening, {name}"
+        },
+        "greetingNoName": {
+          "morning": "Good morning",
+          "afternoon": "Good afternoon",
+          "evening": "Good evening"
+        },
+        "contextWaiting": "{count, plural, =1 {1 customer is waiting for a reply,} other {# customers are waiting for a reply,}} the oldest for {wait}.",
+        "contextClear": "Nobody is waiting for a reply right now.",
+        "contextSetup": "Finish setup to start receiving WhatsApp messages here.",
+        "rangeLabel": "Date range",
+        "range": {
+          "1": "Today",
+          "7": "7 days",
+          "30": "30 days",
+          "90": "90 days"
+        },
+        "new": "New",
+        "newContact": "New contact",
+        "newDeal": "New deal",
+        "newBroadcast": "New broadcast",
+        "newAutomation": "New automation"
+      },
+      "health": {
+        "title": "WhatsApp number health",
+        "quality": {
+          "GREEN": "Quality: high",
+          "YELLOW": "Quality: medium",
+          "RED": "Quality: low",
+          "UNKNOWN": "Quality: not rated"
+        },
+        "perDay": "{count}/day",
+        "unlimited": "No daily limit",
+        "disconnected": "WhatsApp not connected",
+        "unavailable": "Couldn't check your number"
+      },
+      "attention": {
+        "waiting": "Waiting for a reply",
+        "waitingMeta": "Oldest {wait} · {count} over target",
+        "waitingNone": "Everyone has a reply",
+        "unassigned": "Unassigned",
+        "onlineNow": "{count, plural, =0 {No teammates online} =1 {1 teammate online} other {# teammates online}}",
+        "closing": "Reply windows closing",
+        "closingMeta": "Free replies end within 2 hours",
+        "failed": "Failed messages",
+        "failedMeta": "Last 24 hours · see why"
+      },
+      "failedDialog": {
+        "title": "Failed messages",
+        "description": "Messages WhatsApp didn't deliver in the last 24 hours.",
+        "empty": "No failed messages in the last 24 hours.",
+        "unknownContact": "Unknown contact",
+        "unknownReason": "WhatsApp didn't give a reason.",
+        "reasonWithCode": "{reason} (error {code})",
+        "showingLatest": "Showing the latest {shown} of {total}."
+      },
+      "kpi": {
+        "newConversations": "New conversations",
+        "newConversationsInfo": "Conversations started in this period.",
+        "medianReply": "Median first reply",
+        "medianReplyInfo": "Typical time from a customer's first unanswered message to a reply from a teammate. AI and automation replies aren't counted.",
+        "resolved": "Resolved",
+        "resolvedInfo": "Conversations closed in this period.",
+        "dealsWon": "Deals won",
+        "dealsWonInfo": "Deals moved to won in this period, and their total value.",
+        "readRate": "Broadcast read rate",
+        "readRateInfo": "Read messages divided by delivered messages, for broadcasts sent in this period.",
+        "readOfDelivered": "{read} read of {delivered} delivered",
+        "noBroadcasts": "No broadcasts in this period",
+        "none": "—",
+        "vsPrevious": {
+          "1": "vs yesterday",
+          "7": "vs previous 7 days",
+          "30": "vs previous 30 days",
+          "90": "vs previous 90 days"
+        },
+        "noComparison": "No change",
+        "new": "New",
+        "better": "Better than before",
+        "worse": "Worse than before",
+        "unchanged": "Unchanged",
+        "target": "Target {minutes} min",
+        "targetMax": "{minutes} min"
+      },
+      "volume": {
+        "title": "Message volume",
+        "description": "Incoming and outgoing messages",
+        "hoursDescription": "Average incoming messages by hour of day",
+        "byDay": "By day",
+        "byHour": "By hour",
+        "busiestHours": "Busiest hours",
+        "incoming": "Incoming",
+        "outgoing": "Outgoing",
+        "averageIncoming": "Average incoming",
+        "perDay": "Incoming per day",
+        "perHour": "Incoming per hour",
+        "busiestDay": "Busiest day",
+        "busiestHour": "Busiest hour",
+        "peakHour": "Busiest hour",
+        "secondPeak": "Second busiest",
+        "none": "—",
+        "empty": "No messages in this period",
+        "emptyHint": "Messages show up here as customers write to you."
+      },
+      "queue": {
+        "title": "Reply queue",
+        "description": "Longest wait first",
+        "openInbox": "Open inbox",
+        "empty": "You're all caught up",
+        "emptyHint": "No customer is waiting for a reply.",
+        "unknownContact": "Unknown contact",
+        "noPreview": "No preview",
+        "windowLeft": "{time} left to reply for free",
+        "handedOff": "Handed over by AI",
+        "assigned": "Assigned",
+        "unassigned": "Unassigned"
+      },
+      "pipeline": {
+        "title": "Pipeline",
+        "description": "Open deals by stage",
+        "link": "Pipelines",
+        "choosePipeline": "Choose a pipeline",
+        "deals": "{count, plural, =1 {1 deal} other {# deals}}",
+        "open": "Open",
+        "winRate": "Win rate",
+        "avgToWin": "Average time to win",
+        "days": "{count, plural, =1 {1 day} other {# days}}",
+        "none": "—",
+        "idle": "{count, plural, =1 {1 open deal has} other {# open deals have}} had no activity for 7+ days",
+        "empty": "No open deals",
+        "emptyHint": "Create deals in Pipelines to see them here."
+      },
+      "team": {
+        "title": "Team",
+        "description": "Replies in this period",
+        "link": "Members",
+        "member": "Member",
+        "open": "Open",
+        "replies": "Replies",
+        "median": "Median reply",
+        "teammate": "Teammate",
+        "ai": "AI agent",
+        "none": "—",
+        "presence": {
+          "online": "Online",
+          "away": "Away",
+          "offline": "Offline"
+        }
+      },
+      "campaigns": {
+        "title": "Campaigns and automations",
+        "description": "In this period",
+        "link": "Broadcasts",
+        "sentAt": "{date} · {count, plural, =1 {1 recipient} other {# recipients}}",
+        "delivered": "Delivered",
+        "read": "Read",
+        "replied": "Replied",
+        "failed": "Failed",
+        "noBroadcast": "No broadcasts sent yet.",
+        "automations": "{count, plural, =1 {Automations · 1 run} other {Automations · # runs}}",
+        "noRuns": "No runs",
+        "succeeded": "{percent} succeeded",
+        "flows": "Flows",
+        "flowNamed": "Flow “{name}”",
+        "flowFailed": "{count, plural, =1 {1 failed run} other {# failed runs}}",
+        "flowsOk": "No failed runs",
+        "aiReplies": "{count, plural, =1 {AI replies · 1} other {AI replies · #}}",
+        "aiMedian": "Median {time}",
+        "templates": "{count, plural, =1 {Templates · 1 approved} other {Templates · # approved}}",
+        "templatesRejected": "{count, plural, =1 {1 rejected} other {# rejected}}",
+        "templatesOk": "None rejected",
+        "none": "—"
+      },
+      "setup": {
+        "title": "Get set up",
+        "progress": "{done} of {total} done",
+        "doneLabel": "(done)",
+        "todoLabel": "(to do)",
+        "steps": {
+          "whatsapp": {
+            "title": "Connect your WhatsApp number",
+            "description": "Link the number your customers message.",
+            "action": "Connect"
+          },
+          "contacts": {
+            "title": "Add your contacts",
+            "description": "Import a CSV, or contacts are added as people message you.",
+            "action": "Add contacts"
+          },
+          "template": {
+            "title": "Get a message template approved",
+            "description": "You need one to message people who haven't written to you in the last 24 hours.",
+            "action": "Create template"
+          },
+          "teammate": {
+            "title": "Invite a teammate",
+            "description": "Share the inbox and assign conversations.",
+            "action": "Invite"
+          }
+        },
+        "previewTitle": "Your numbers will show up here",
+        "previewHint": "Once customers start messaging you, this page shows who is waiting, how fast your team replies, and how your deals and campaigns are doing.",
+        "previewAction": "Open inbox"
+      },
+      "duration": {
+        "seconds": "{value} s",
+        "minutes": "{value} min",
+        "hours": "{value} h {remainder} min",
+        "hoursOnly": "{value} h",
+        "days": "{value} d {remainder} h",
+        "daysOnly": "{value} d"
+      }
     }
   },
   "Inbox": {
@@ -165,6 +337,9 @@
       "searchPlaceholder": "Search conversations...",
       "filterAll": "All",
       "filterUnread": "Unread",
+      "filterWaiting": "Waiting for reply",
+      "filterUnassigned": "Unassigned",
+      "filterExpiring": "Reply window closing",
       "filterOpen": "Open",
       "filterPending": "Pending",
       "filterClosed": "Closed",
@@ -190,6 +365,9 @@
       "hideContact": "Hide contact",
       "showContact": "Show contact",
       "refresh": "Refresh",
+      "loadOlder": "Load older messages",
+      "loadingOlder": "Loading…",
+      "loadOlderFailed": "Could not load older messages.",
       "refreshConversation": "Refresh conversation",
       "status": "Status",
       "statusOpen": "Open",
@@ -1194,6 +1372,7 @@
         },
         "operandLabel": "Operand",
         "placeholderTime": "HH:mm-HH:mm",
+        "timezoneLabel": "Time zone",
         "placeholderContact": "name / email / company",
         "placeholderTag": "tag id",
         "urlLabel": "URL",
@@ -1297,6 +1476,7 @@
       "statusHandedOff": "Handed off",
       "statusTimedOut": "Timed out",
       "statusPaused": "Paused by agent",
+      "statusCancelled": "Cancelled",
       "statusFailed": "Failed"
     },
     "builder": {
@@ -1858,6 +2038,7 @@
       "quick-replies": "Quick replies",
       "fields": "Fields & tags",
       "deals": "Deals & currency",
+      "inbox": "Inbox",
       "members": "Team members",
       "api": "API keys"
     },
@@ -2042,6 +2223,21 @@
       "saveFailed": "Failed to save default currency",
       "saveSuccess": "Default currency updated"
     },
+    "inbox": {
+      "title": "Inbox",
+      "description": "How the dashboard measures your team's reply times.",
+      "replyTarget": "Reply time target",
+      "replyTargetDesc": "The dashboard flags conversations that wait longer than this for a first reply, and compares your median reply time with it.",
+      "minutesLabel": "Minutes",
+      "hint": "A whole number from 1 to 1440 (24 hours).",
+      "invalid": "Enter a whole number from 1 to 1440.",
+      "adminOnlyHint": "Only account admins can change the reply time target.",
+      "save": "Save",
+      "saving": "Saving...",
+      "saveFailed": "Couldn't save the reply time target",
+      "saveSuccess": "Reply time target updated",
+      "loadFailed": "Couldn't load the reply time target"
+    },
     "aiConfig": {
       "title": "Agent setup",
       "description": "Bring your own OpenAI, Anthropic, or OpenAI-compatible API key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
@@ -2097,6 +2293,8 @@
       "removeFailed": "Failed to remove.",
       "reindexSuccess": "Reindexed {count} document(s).",
       "reindexFailed": "Reindex failed.",
+      "reindexWithFailures": "Reindexed {reindexed} of {total} document(s). {failedCount} failed: {titles}. Use Reindex to retry.",
+      "reindexKeywordOnly": "Reindexed {count} document(s), but {keywordOnlyCount} are searchable by keyword only (semantic indexing failed). Use Reindex to retry.",
       "title": "Knowledge base",
       "description": "Add FAQs, policies, or product details. The assistant retrieves the relevant pieces when drafting and auto-replying, so it can answer instead of handing off.{searchType}",
       "semanticSearchOn": " Semantic search is on (embeddings key set).",
@@ -2467,7 +2665,9 @@
       "contactNotFound": "Contact not found",
       "tagNotFound": "Tag not found",
       "addFailed": "Failed to add contact tag: {message}",
-      "removeFailed": "Failed to remove contact tag: {message}"
+      "removeFailed": "Failed to remove contact tag: {message}",
+      "invalidContactId": "Contact id must be a UUID",
+      "invalidTagId": "Tag id must be a UUID"
     },
     "auth": {
       "unauthorized": "Unauthorized",
@@ -2503,6 +2703,9 @@
       "pausedWhileWaitingForReply": "automation paused while waiting for reply",
       "noReplyWithin24h": "no reply within 24h",
       "parkForReplyFailed": "could not park for reply: {message}",
+      "pausedWhileWaiting": "automation paused while waiting",
+      "stepRemovedWhileWaiting": "the step this run was waiting at was removed or moved out of its branch",
+      "scheduleWaitFailed": "could not schedule the wait: {message}",
       "destinationNotAllowed": "send_webhook: destination not allowed",
       "webhookStatus": "webhook returned {status}",
       "conversationNotInAccount": "conversation does not belong to this account",
@@ -2519,6 +2722,7 @@
       "entryMissing": "Entry node \"{id}\" doesn't exist.",
       "duplicateNodeKey": "Duplicate node_key \"{key}\".",
       "unreachable": "Node \"{key}\" is unreachable from the entry node.",
+      "autoAdvanceCycle": "Nodes {keys} loop back to each other without waiting for the customer, so the flow would keep sending messages. Add a buttons, list or question step to the loop, or break it.",
       "keywordsRequired": "Keyword triggers need at least one keyword.",
       "blankKeywords": "{count} {count, plural, =1 {keyword is} other {keywords are}} blank — they won't match anything.",
       "startNeedsNext": "Start node must point to a next node.",
@@ -2583,6 +2787,8 @@
       "waitUnitInvalid": "wait unit must be minutes, hours, or days",
       "conditionSubjectRequired": "condition subject is required",
       "conditionOperandRequired": "condition operand is required",
+      "conditionValueRequired": "condition value is required",
+      "conditionTimezoneInvalid": "condition time zone is not a valid IANA time zone",
       "webhookUrlRequired": "webhook URL is required",
       "webhookUrlScheme": "webhook URL must use http or https",
       "webhookUrlInvalid": "webhook URL is not a valid URL",
@@ -2747,15 +2953,16 @@
         "updateDocFailed": "Failed to update document",
         "indexingFailed": "indexing failed",
         "updatedIndexFailed": "Updated, but semantic indexing failed ({message}). Lexical search still works; use Reindex to retry.",
+        "updatedNotIndexed": "Updated, but indexing failed ({message}). The document is not searchable yet; use Reindex to retry.",
         "updatedKeywordOnly": "Updated with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).",
         "deleteDocFailed": "Failed to delete document",
         "loadDocsFailed": "Failed to load documents",
         "reindexKeyCorrupt": "Your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key in Settings → AI Assistant). Nothing was reindexed.",
-        "reindexPartial": "Reindexed {reindexed}, then hit an error: {message}",
         "loadKbFailed": "Failed to load knowledge base",
         "titleContentRequired": "title and content are required",
         "saveDocFailed": "Failed to save document",
         "savedIndexFailed": "Saved, but semantic indexing failed ({message}). Lexical search still works; use Reindex to retry.",
+        "savedNotIndexed": "Saved, but indexing failed ({message}). The document is not searchable yet; use Reindex to retry.",
         "savedKeywordOnly": "Saved with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key)."
       }
     },
@@ -2772,6 +2979,7 @@
     "flows": {
       "statusInvalid": "status must be one of 'draft' | 'active' | 'archived'",
       "cannotActivate": "Cannot activate flow — fix the issues below first.",
+      "cannotSaveActive": "This flow is live, so it can't be saved with these issues. Fix them or pause the flow first.",
       "nameEmpty": "name cannot be empty",
       "unknownTemplate": "Unknown template_slug \"{slug}\"",
       "insertFailed": "flow insert failed",

@@ -125,6 +125,7 @@ export default function ResetPasswordPage() {
           size="lg"
           className="w-full"
           onClick={() => {
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- deliberate full reload so the auth cookies reach the middleware
             window.location.href = "/dashboard";
           }}
         >

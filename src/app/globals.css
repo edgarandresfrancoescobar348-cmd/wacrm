@@ -68,6 +68,10 @@
   --color-read-ticks: var(--read-ticks);
   --color-bubble-quote: var(--bubble-quote);
   --color-doodle: var(--doodle);
+  --color-status-good: var(--status-good);
+  --color-status-warning: var(--status-warning);
+  --color-status-serious: var(--status-serious);
+  --color-status-critical: var(--status-critical);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -150,6 +154,10 @@ html[data-mode="dark"] {
   --read-ticks: #53bdeb;
   --bubble-quote: rgb(0 0 0 / 0.2);
   --doodle: rgb(255 255 255 / 0.06);
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #e05252;
 }
 
 html[data-mode="light"] {
@@ -191,6 +199,10 @@ html[data-mode="light"] {
   --read-ticks: #53bdeb;
   --bubble-quote: rgb(11 20 26 / 0.05);
   --doodle: rgb(84 64 40 / 0.07);
+  --status-good: #0b7f0b;
+  --status-warning: #946100;
+  --status-serious: #c2532a;
+  --status-critical: #c43232;
 }
 
 /* ---- ACCENT: primary color ---- */
@@ -296,6 +308,9 @@ html[data-theme="rose"] {
   }
   body {
     @apply bg-background text-foreground;
+  }
+  .recharts-cartesian-axis-tick-value {
+    fill: var(--muted-foreground);
   }
   html {
     @apply font-sans;

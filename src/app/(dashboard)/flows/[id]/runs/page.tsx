@@ -10,6 +10,7 @@ import {
   Clock,
   UserPlus,
   PlayCircle,
+  CircleSlash,
   PauseCircle,
   ChevronDown,
 } from "lucide-react";
@@ -43,6 +44,7 @@ interface RunRow {
     | "handed_off"
     | "timed_out"
     | "paused_by_agent"
+    | "cancelled"
     | "failed";
   current_node_key: string | null;
   started_at: string;
@@ -71,6 +73,7 @@ const STATUS_META: Record<
   handed_off: { tone: "warning", icon: UserPlus },
   timed_out: { tone: "neutral", icon: Clock },
   paused_by_agent: { tone: "neutral", icon: PauseCircle },
+  cancelled: { tone: "neutral", icon: CircleSlash },
   failed: { tone: "danger", icon: CircleAlert },
 };
 
@@ -243,6 +246,8 @@ function RunCard({
                   ? "statusTimedOut"
                   : run.status === "paused_by_agent"
                   ? "statusPaused"
+                  : run.status === "cancelled"
+                  ? "statusCancelled"
                   : "statusFailed"
               )}
             </WaStatusPill>

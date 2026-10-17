@@ -25,6 +25,7 @@
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 import { getT } from "@/lib/i18n/translate";
+import { AUTO_ADVANCING_NODE_TYPES } from "./types";
 
 const t = getT("Validation.flows");
 
@@ -135,7 +136,67 @@ export function validateFlowForActivation(
     }
   }
 
+  for (const cycle of findAutoAdvancingCycles(nodes)) {
+    issues.push({
+      severity: "error",
+      scope: "node",
+      node_key: cycle[0],
+      message: t("autoAdvanceCycle", { keys: cycle.join(", ") }),
+    });
+  }
+
   return issues;
+}
+
+export function findAutoAdvancingCycles(nodes: NodeInput[]): string[][] {
+  const autoNodes = new Map<string, NodeInput>();
+  for (const n of nodes) {
+    if (AUTO_ADVANCING_NODE_TYPES.has(n.node_type) && !autoNodes.has(n.node_key)) {
+      autoNodes.set(n.node_key, n);
+    }
+  }
+  const successors = (key: string): string[] =>
+    outgoingEdges(autoNodes.get(key)!).filter((next) => autoNodes.has(next));
+
+  const index = new Map<string, number>();
+  const lowLink = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const cycles: string[][] = [];
+  let counter = 0;
+
+  const visit = (key: string): void => {
+    index.set(key, counter);
+    lowLink.set(key, counter);
+    counter += 1;
+    stack.push(key);
+    onStack.add(key);
+    for (const next of successors(key)) {
+      if (!index.has(next)) {
+        visit(next);
+        lowLink.set(key, Math.min(lowLink.get(key)!, lowLink.get(next)!));
+      } else if (onStack.has(next)) {
+        lowLink.set(key, Math.min(lowLink.get(key)!, index.get(next)!));
+      }
+    }
+    if (lowLink.get(key) !== index.get(key)) return;
+    const component: string[] = [];
+    let member: string;
+    do {
+      member = stack.pop()!;
+      onStack.delete(member);
+      component.push(member);
+    } while (member !== key);
+    if (component.length > 1 || successors(key).includes(key)) {
+      const inNodeOrder = [...autoNodes.keys()].filter((k) => component.includes(k));
+      cycles.push(inNodeOrder);
+    }
+  };
+
+  for (const key of autoNodes.keys()) {
+    if (!index.has(key)) visit(key);
+  }
+  return cycles;
 }
 
 // ============================================================

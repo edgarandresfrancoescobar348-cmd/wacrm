@@ -177,6 +177,9 @@ export interface Conversation {
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
+  last_inbound_at?: string | null;
+  last_reply_at?: string | null;
+  closed_at?: string | null;
   created_at: string;
   updated_at: string;
   contact?: Contact;
@@ -612,6 +615,7 @@ export interface ConditionStepConfig {
   operand?: string;
   /** For contact_field equals / message_content contains — comparison value */
   value?: string;
+  timezone?: string;
 }
 
 export interface SendWebhookStepConfig {

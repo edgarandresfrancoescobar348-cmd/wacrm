@@ -181,6 +181,13 @@ export async function dispatchInboundToAiReply(
       return
     }
 
+    if (
+      inboundMessageId &&
+      (await hasNewerInbound(db, conversationId, inboundMessageId))
+    ) {
+      return
+    }
+
     // Atomically claim a reply slot: the cap check + increment happen in
     // one UPDATE, so concurrent inbounds can never overshoot the cap. If
     // another inbound just took the last slot, `claimed` is false and we
@@ -201,7 +208,7 @@ export async function dispatchInboundToAiReply(
       console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
       return
     }
-    if (claimed !== true) return // lost the per-conversation cap race
+    if (claimed !== true) return
 
     await engineSendText({
       accountId,
@@ -214,6 +221,22 @@ export async function dispatchInboundToAiReply(
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
+}
+
+async function hasNewerInbound(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+  inboundMessageId: string,
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('messages')
+    .select('message_id')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error || !data || data.length === 0) return false
+  return data[0].message_id !== inboundMessageId
 }
 
 /**
