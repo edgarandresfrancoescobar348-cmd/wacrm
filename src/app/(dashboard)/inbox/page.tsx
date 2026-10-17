@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useWhatsAppStatus } from "@/hooks/use-whatsapp-status";
 import { previewForMessage } from "@/lib/whatsapp/message-content";
+import { mergeMessages } from "@/lib/inbox/thread-pages";
 import { mergeFetchedConversation } from "@/lib/inbox/conversation-merge";
 import {
   CONVERSATION_SELECT,
@@ -218,7 +219,8 @@ function InboxPageInner() {
             const withoutOptimistic = prev.filter(
               (m) => !m.id.startsWith("temp-")
             );
-            return [...withoutOptimistic, newMsg];
+            // In time order: an imported (older) message lands where it belongs.
+            return mergeMessages(withoutOptimistic, [newMsg]);
           });
         }
 
@@ -505,8 +507,10 @@ function InboxPageInner() {
   }, [router]);
 
 
-  const handleMessagesLoaded = useCallback((loaded: Message[]) => {
-    setMessages(loaded);
+  // A conversation opening replaces the list with its newest page; older
+  // pages and a resync merge into what is loaded (thread-pages.ts).
+  const handleMessagesLoaded = useCallback((loaded: Message[], opts?: { merge?: boolean }) => {
+    setMessages((prev) => (opts?.merge ? mergeMessages(prev, loaded) : loaded));
   }, []);
 
   const handleNewMessage = useCallback((msg: Message) => {

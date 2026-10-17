@@ -76,6 +76,9 @@ function selectList(table: string, cols: string): string {
     .join(', ')
 }
 
+/** PostgREST's max_rows on Supabase: the most rows one select returns (phase 5f/5g). */
+export const MAX_ROWS = 1000
+
 /** The request line Kong accepts in front of PostgREST, minus the path and other params. */
 const URI_LIMIT = 7800
 
@@ -200,8 +203,9 @@ class Builder implements PromiseLike<Result> {
     this.where.push(`(${terms.join(' OR ')})`)
     return this
   }
-  order(c: string, opts: { ascending?: boolean } = {}) {
-    this.orders.push(`t.${ident(c)} ${opts.ascending === false ? 'DESC' : 'ASC'}`)
+  order(c: string, opts: { ascending?: boolean; nullsFirst?: boolean } = {}) {
+    const nulls = opts.nullsFirst === undefined ? '' : opts.nullsFirst ? ' NULLS FIRST' : ' NULLS LAST'
+    this.orders.push(`t.${ident(c)} ${opts.ascending === false ? 'DESC' : 'ASC'}${nulls}`)
     return this
   }
   limit(n: number) {
@@ -227,7 +231,9 @@ class Builder implements PromiseLike<Result> {
     const w = this.where.length ? ` WHERE ${this.where.join(' AND ')}` : ''
     if (this.op === 'select') {
       const order = this.orders.length ? ` ORDER BY ${this.orders.join(', ')}` : ''
-      const page = `${this.lim !== null ? ` LIMIT ${this.lim}` : ''}${this.off ? ` OFFSET ${this.off}` : ''}`
+      // PostgREST's max_rows (1000 on Supabase): a select never returns more, whatever it asks.
+      const lim = Math.min(this.lim ?? MAX_ROWS, MAX_ROWS)
+      const page = ` LIMIT ${lim}${this.off ? ` OFFSET ${this.off}` : ''}`
       const rows = `SELECT ${selectList(this.table, this.cols)} FROM ${tbl} t${w}${order}${page}`
       const count = this.countMode ? `(SELECT count(*) FROM ${tbl} t${w})` : 'NULL'
       return `SELECT json_build_object('data', ${this.headOnly ? 'NULL' : `COALESCE((SELECT json_agg(r) FROM (${rows}) r), '[]'::json)`}, 'count', ${count})`

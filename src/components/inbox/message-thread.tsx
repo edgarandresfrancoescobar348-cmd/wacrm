@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { fetchLatestMessages, fetchOlderMessages } from "@/lib/inbox/thread-pages";
+import { fetchAllPages } from "@/lib/supabase/paged-query";
+import { isAtBottom, scrollAction, threadShape, type ThreadShape } from "@/lib/inbox/thread-scroll";
 import { useAuth } from "@/hooks/use-auth";
 import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
@@ -77,7 +80,8 @@ interface MessageThreadProps {
   conversation: Conversation | null;
   contact: Contact | null;
   messages: Message[];
-  onMessagesLoaded: (messages: Message[]) => void;
+  /** `merge`: an older page or a resync, merged into what is loaded; else the newest page replaces it. */
+  onMessagesLoaded: (messages: Message[], opts?: { merge?: boolean }) => void;
   onNewMessage: (message: Message) => void;
   onUpdateMessage: (id: string, updates: Partial<Message>) => void;
   onStatusChange: (conversationId: string, status: ConversationStatus) => void;
@@ -327,33 +331,35 @@ export function MessageThread({
     [conversationId],
   );
 
-  // Fetch messages whenever the selected conversation changes. Kept
-  // separate from the unread-reset effect so that incoming messages
-  // arriving while the thread is open don't trigger a full refetch —
-  // they only flip hasUnread, which only the reset effect listens to.
+  // The newest page when a conversation opens; the older ones as the user
+  // scrolls up (thread-pages.ts) — one select was cut at PostgREST's 1000
+  // rows and a long chat ended weeks early (phase 5g). A resync merges the
+  // newest page into what is loaded, so the older pages stay.
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadedConversationRef = useRef<string | null>(null);
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  });
   useEffect(() => {
     if (!conversationId) return;
 
     const supabase = createClient();
     let cancelled = false;
+    const resync = loadedConversationRef.current === conversationId;
 
     (async () => {
-      setLoading(true);
-
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
-
-      if (cancelled) return;
-
-      if (error) {
-        console.error("Failed to fetch messages:", error);
-      } else {
-        onMessagesLoadedRef.current(data ?? []);
+      if (!resync) setLoading(true);
+      try {
+        const page = await fetchLatestMessages(supabase, conversationId);
+        if (cancelled) return;
+        loadedConversationRef.current = conversationId;
+        onMessagesLoadedRef.current(page.messages, { merge: resync });
+        if (!resync) setHasOlder(page.hasMore);
+      } catch (error) {
+        if (!cancelled) console.error("Failed to fetch messages:", error);
       }
-
       if (!cancelled) setLoading(false);
     })();
 
@@ -365,6 +371,105 @@ export function MessageThread({
     // realtime is best-effort and any message events sent while the WS
     // was disconnected or throttled are otherwise lost.
   }, [conversationId, resyncToken]);
+
+  // ---- Scrolling, like WhatsApp (thread-scroll.ts) -------------------
+  const atBottomRef = useRef(true);
+  const prevShapeRef = useRef<ThreadShape | null>(null);
+  /** The message at the top of the view before older ones are prepended, and its offset. */
+  const anchorRef = useRef<{ id: string; offset: number } | null>(null);
+  const [unseen, setUnseen] = useState(0);
+
+  const offsetOf = (container: HTMLElement, id: string): number | null => {
+    const node = container.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`);
+    return node ? node.getBoundingClientRect().top - container.getBoundingClientRect().top : null;
+  };
+
+  const loadOlder = useCallback(async () => {
+    const el = scrollRef.current;
+    if (!conversationId || !el || loadingOlder || !hasOlder) return;
+    const loaded = messagesRef.current;
+    const first = loaded.find((m) => !m.id.startsWith("temp-"));
+    if (!first) return;
+    setLoadingOlder(true);
+    try {
+      const page = await fetchOlderMessages(createClient(), conversationId, loaded);
+      if (loadedConversationRef.current !== conversationId) return;
+      const offset = offsetOf(el, first.id);
+      anchorRef.current = offset === null ? null : { id: first.id, offset };
+      setHasOlder(page.hasMore);
+      if (page.messages.length) onMessagesLoadedRef.current(page.messages, { merge: true });
+    } catch (error) {
+      console.error("Failed to fetch older messages:", error);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [conversationId, hasOlder, loadingOlder]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    atBottomRef.current = isAtBottom(el);
+    if (atBottomRef.current) setUnseen(0);
+    if (el.scrollTop < 400) void loadOlder();
+  }, [loadOlder]);
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    atBottomRef.current = true;
+    setUnseen(0);
+  }, []);
+
+  // Decide from the thread's shape before and after each change: open →
+  // bottom; older prepended → keep the reading position; new at the end →
+  // follow only at the bottom or after your own send, else "↓ N"; ticks,
+  // media details, reactions → don't move. Before, any change scrolled to
+  // the end, so the thread kept jumping back down.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || loading) return;
+    const prev = prevShapeRef.current;
+    const next = threadShape(conversationId ?? null, messages);
+    // Your own send shows first as its optimistic row ("temp-…").
+    const ownSend = Boolean(next.lastId?.startsWith("temp-"));
+    const action = scrollAction(prev, next, { atBottom: atBottomRef.current, ownSend });
+    prevShapeRef.current = next;
+    if (action === "bottom") {
+      el.scrollTop = el.scrollHeight;
+      atBottomRef.current = true;
+      requestAnimationFrame(() => setUnseen(0));
+    } else if (action === "preserve") {
+      const anchor = anchorRef.current;
+      anchorRef.current = null;
+      const now = anchor ? offsetOf(el, anchor.id) : null;
+      if (anchor && now !== null) el.scrollTop += now - anchor.offset;
+    } else if (action === "indicator" && prev) {
+      const added = next.count - prev.count;
+      requestAnimationFrame(() => setUnseen((n) => n + added));
+    }
+  }, [messages, conversationId, loading]);
+
+  // Media loading at the end (a photo, a document preview) grows the
+  // thread: stay at the bottom if the user was there.
+  const hasMessages = messages.length > 0;
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = el?.firstElementChild;
+    if (!el || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [conversationId, loading, hasMessages]);
+
+  // A first page shorter than the view has no scrollbar to reach the top with.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || loading || loadingOlder || !hasOlder) return;
+    if (el.scrollHeight <= el.clientHeight) void loadOlder();
+  }, [loading, loadingOlder, hasOlder, loadOlder, messages.length]);
 
   // Reactions fetch — pulls the current state from the DB. Kept separate
   // from the channel subscription below so a `resyncToken` bump just
@@ -379,16 +484,23 @@ export function MessageThread({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("message_reactions")
-        .select("*")
-        .eq("conversation_id", conversationId);
-      if (cancelled) return;
-      if (error) {
-        console.error("Failed to fetch reactions:", error);
+      // Every page: a long chat can have more than PostgREST's max_rows (1000).
+      let data: MessageReaction[];
+      try {
+        data = await fetchAllPages<MessageReaction>((from, to) =>
+          supabase
+            .from("message_reactions")
+            .select("*")
+            .eq("conversation_id", conversationId)
+            .order("id")
+            .range(from, to),
+        );
+      } catch (error) {
+        if (!cancelled) console.error("Failed to fetch reactions:", error);
         return;
       }
-      setReactions((data as MessageReaction[]) ?? []);
+      if (cancelled) return;
+      setReactions(data);
     })();
 
     return () => {
@@ -503,13 +615,6 @@ export function MessageThread({
     }).catch(() => undefined);
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [messages]);
 
   const handleSend = useCallback(
     async (text: string, replyToId?: string) => {
@@ -931,6 +1036,10 @@ export function MessageThread({
   const messageGroups = groupMessagesByDate(messages);
   // A voice note's photo: the contact (or the group member), or — yours —
   // the agent who sent it, else you.
+  // Any voice note or audio — also an imported one stored without a
+  // media type, which got no avatar and showed "?" (phase 5g).
+  const isAudioMessage = (msg: Message) =>
+    msg.content_type === "audio" || msg.content_meta?.kind === "voice" || Boolean(msg.media_type?.startsWith("audio"));
   const voiceAvatarFor = (msg: Message): { name: string; src?: string | null } => {
     if (isOutgoing(msg)) {
       const p = profiles.find((x) => x.user_id === (msg.sender_id ?? user?.id));
@@ -1149,7 +1258,8 @@ export function MessageThread({
       />
 
       {/* Messages Area — over the chat wallpaper. */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-[5%] lg:px-[7%]">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-[5%] lg:px-[7%]" data-testid="thread-scroll">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -1165,6 +1275,12 @@ export function MessageThread({
           </div>
         ) : (
           <div className="pb-2">
+            {/* Older messages load as the top comes into view (thread-pages.ts). */}
+            {hasOlder || loadingOlder ? (
+              <div className="flex justify-center py-2" data-testid="thread-loading-older">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              </div>
+            ) : null}
             {messageGroups.map((group) => (
               <div key={group.date}>
                 {/* Date separator — WA's centred pill. */}
@@ -1210,7 +1326,7 @@ export function MessageThread({
                       void postReaction(msg.id, next);
                     };
                     return (
-                      <div key={msg.id}>
+                      <div key={msg.id} data-message-id={msg.id}>
                       {msg.id === dividerBeforeId ? (
                         <div className="my-3 flex justify-center" data-testid="unread-divider">
                           <span className="rounded-lg bg-surface/90 px-3 py-1 text-[12.5px] font-medium text-foreground/80 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
@@ -1234,7 +1350,7 @@ export function MessageThread({
                           <MessageBubble
                             message={msg}
                             senderLabel={isGroup && firstOfRun ? msg.sender_name : null}
-                            voiceAvatar={msg.media_type?.startsWith("audio") ? voiceAvatarFor(msg) : null}
+                            voiceAvatar={isAudioMessage(msg) ? voiceAvatarFor(msg) : null}
                             reply={reply}
                             reactions={msgReactions}
                             currentUserId={user?.id}
@@ -1252,6 +1368,23 @@ export function MessageThread({
             ))}
           </div>
         )}
+      </div>
+      {/* New messages below while reading above: WhatsApp's "↓" with the count. */}
+      {unseen > 0 ? (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          aria-label={t("newMessagesBelow", { count: unseen })}
+          title={t("newMessagesBelow", { count: unseen })}
+          data-testid="new-messages-indicator"
+          className="absolute right-4 bottom-3 flex size-10 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-[0_1px_3px_rgba(11,20,26,0.25)] hover:text-foreground"
+        >
+          <ChevronDown className="size-6" />
+          <span className="absolute -top-1.5 -right-1 min-w-5 rounded-full bg-primary px-1.5 text-center text-[11px] leading-5 font-semibold text-primary-foreground">
+            {unseen}
+          </span>
+        </button>
+      ) : null}
       </div>
 
       {/* AI auto-reply banner — take over an active bot, or resume it

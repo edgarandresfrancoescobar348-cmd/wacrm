@@ -225,7 +225,8 @@
       "group": "그룹",
       "unreadDivider": "읽지 않은 메시지 {count}개",
       "unheardDivider": "듣지 않은 메시지 {count}개",
-      "selfSuffix": "(나)"
+      "selfSuffix": "(나)",
+      "newMessagesBelow": "아래에 새 메시지 {count}개"
     },
     "sessionTimer": {
       "expired": "만료됨",

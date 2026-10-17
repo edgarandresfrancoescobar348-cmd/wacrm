@@ -225,7 +225,8 @@
       "group": "Group",
       "unreadDivider": "{count, plural, one {# unread message} other {# unread messages}}",
       "unheardDivider": "{count, plural, one {# unheard message} other {# unheard messages}}",
-      "selfSuffix": "(You)"
+      "selfSuffix": "(You)",
+      "newMessagesBelow": "{count, plural, one {# new message} other {# new messages}} below"
     },
     "sessionTimer": {
       "expired": "Expired",
