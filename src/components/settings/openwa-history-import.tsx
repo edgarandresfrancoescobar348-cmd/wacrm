@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle2, Clock, History, Loader2, RotateCcw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { formatNumber } from '@/lib/locale-format';
 
 interface ImportState {
   status: 'queued' | 'listing' | 'importing' | 'waiting_session' | 'done' | 'failed';
@@ -24,6 +25,9 @@ interface ImportState {
   chats_done: number;
   chats_skipped: number;
   messages_imported: number;
+  /** Already stored when read (a re-import) and, of those, changed (migration 075). */
+  messages_seen?: number;
+  messages_updated?: number;
   errors: number;
   last_error: string | null;
   updated_at: string;
@@ -170,7 +174,16 @@ export function OpenWaHistoryImport({
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">{t('messages')}</dt>
-              <dd className="tabular-nums">{job.messages_imported}</dd>
+              {/* Every message of the imported chats now here; a re-import
+                  mostly finds them stored, so say what it did with them. */}
+              <dd className="tabular-nums" data-testid="history-import-messages">
+                {formatNumber(job.messages_imported + (job.messages_seen ?? 0), locale)}
+              </dd>
+              {job.messages_seen ? (
+                <dd className="text-xs text-muted-foreground" data-testid="history-import-messages-detail">
+                  {t('messagesDetail', { added: job.messages_imported, updated: job.messages_updated ?? 0 })}
+                </dd>
+              ) : null}
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">{t('skipped')}</dt>

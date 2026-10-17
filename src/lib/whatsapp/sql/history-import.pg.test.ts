@@ -437,11 +437,17 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     // the preview follows the refreshed newest message
     expect(await pg.sql(`SELECT c.last_message_text FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id WHERE ct.phone = '5511911110001'`)).toBe('[voice:0:09]')
     expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'r-%'`)).toBe(2)
+    // What the card shows (075): nothing new, everything found stored, the two refreshed.
+    const counts = () =>
+      pg.sql(`SELECT messages_imported || '|' || messages_seen || '|' || messages_updated FROM public.whatsapp_history_imports`)
+    const stored = await count(`SELECT count(*) FROM public.messages`)
+    expect(await counts()).toBe(`0|${stored}|2`)
     // never down
     ack = 2
     await startHistoryImport(db.asClient(), NUMBER, SESSION)
     await run()
     expect(await pg.sql(`SELECT status FROM public.messages WHERE message_id = 'r-1'`)).toBe('read')
+    expect(await counts()).toBe(`0|${stored}|0`)
   })
 
   // Phase 5f (real account, Mac): "Importar de novo" stuck at 1/1402 —

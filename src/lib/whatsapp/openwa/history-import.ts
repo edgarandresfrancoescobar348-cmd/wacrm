@@ -149,6 +149,9 @@ export interface HistoryImportJob {
   chats_done: number
   chats_skipped: number
   messages_imported: number
+  /** Already stored when the import read them (a re-import), and how many of those it changed (075). */
+  messages_seen: number
+  messages_updated: number
   errors: number
 }
 
@@ -290,6 +293,8 @@ export async function startHistoryImport(
       chats_done: 0,
       chats_skipped: 0,
       messages_imported: 0,
+      messages_seen: 0,
+      messages_updated: 0,
       errors: 0,
       last_error: null,
       updated_at: new Date().toISOString(),
@@ -467,7 +472,7 @@ async function importChat(
   creds: OpenWaCredentials,
   chat: ChatRow,
   ctx: RunCtx,
-): Promise<number | { skipped: string }> {
+): Promise<ChatImportCounts | { skipped: string }> {
   // A group (phase 5e): listed like on the phone, but not a CRM contact.
   const isGroup = Boolean(chat.is_group) || chat.chat_id.endsWith('@g.us')
   const phone = isGroup
@@ -620,6 +625,8 @@ async function importChat(
   }
 
   let inserted = 0
+  let seen = 0
+  let updated = 0
   for (let i = 0; i < rows.length; i += INSERT_BATCH) {
     const batch = rows.slice(i, i + INSERT_BATCH)
     const { data, error } = await admin
@@ -631,7 +638,8 @@ async function importChat(
     // Already stored (a re-import): WhatsApp's newer view of them.
     const fresh = new Set((data ?? []).map((r: { message_id: string }) => r.message_id))
     const stale = batch.filter((r) => !fresh.has(r.message_id))
-    if (stale.length) await refreshStoredMessages(admin, conversationId, stale)
+    seen += stale.length
+    if (stale.length) updated += await refreshStoredMessages(admin, conversationId, stale)
   }
 
   // Quotes: link replies to the quoted message when it is in the chat.
@@ -736,7 +744,17 @@ async function importChat(
     .eq('connection_id', job.connection_id)
     .eq('chat_id', chat.chat_id)
   if (chatErr) throw new HistoryStoreError('chat checkpoint', chatErr)
-  return inserted
+  return { inserted, seen, updated }
+}
+
+/** What one chat's import did with its messages. */
+interface ChatImportCounts {
+  /** New here. */
+  inserted: number
+  /** Already stored (a re-import). */
+  seen: number
+  /** Of those, changed by WhatsApp's newer view (ticks, details, placeholders). */
+  updated: number
 }
 
 /**
@@ -748,7 +766,7 @@ async function refreshStoredMessages(
   admin: SupabaseClient,
   conversationId: string,
   rows: (IncomingMessageRow & { message_id: string })[],
-): Promise<void> {
+): Promise<number> {
   // Sliced by URL length: the ids go in the query string, and a batch of
   // WhatsApp ids (50–100 characters each) overflows it — "URI too long".
   const byId = new Map<string, StoredMessageState & { message_id: string }>()
@@ -761,13 +779,16 @@ async function refreshStoredMessages(
     if (error) throw new HistoryStoreError('messages (refresh lookup)', error)
     for (const m of (data ?? []) as (StoredMessageState & { message_id: string })[]) byId.set(m.message_id, m)
   }
+  let changed = 0
   for (const row of rows) {
     const existing = byId.get(row.message_id)
     const patch = existing ? refreshPatch(existing, row) : null
     if (!patch) continue
     const { error: upErr } = await admin.from('messages').update(patch).eq('id', existing!.id)
     if (upErr) throw new HistoryStoreError('messages (refresh)', upErr)
+    changed++
   }
+  return changed
 }
 
 type MessageRow = {
@@ -959,20 +980,22 @@ export async function runHistoryImport(
         })
         log(
           job.connection_id,
-          `done: ${job.chats_done} chats, ${job.messages_imported} messages, ${job.chats_skipped} skipped, ${job.errors} errors`,
+          `done: ${job.chats_done} chats, ${job.messages_imported} new messages (${job.messages_seen ?? 0} already stored, ${job.messages_updated ?? 0} updated), ${job.chats_skipped} skipped, ${job.errors} errors`,
         )
         return { ...job, status: 'done' }
       }
       try {
         const n = await importChat(admin, job, target, creds, chat, ctx)
-        if (typeof n !== 'number') {
+        if ('skipped' in n) {
           job.chats_skipped++
           await admin.from('whatsapp_history_import_chats')
             .update({ status: 'skipped', error: n.skipped, updated_at: new Date().toISOString() })
             .eq('connection_id', job.connection_id).eq('chat_id', chat.chat_id)
         } else {
           job.chats_done++
-          job.messages_imported += n
+          job.messages_imported += n.inserted
+          job.messages_seen = (job.messages_seen ?? 0) + n.seen
+          job.messages_updated = (job.messages_updated ?? 0) + n.updated
         }
       } catch (err) {
         if (sessionNotReady(err)) throw err
@@ -1006,6 +1029,8 @@ export async function runHistoryImport(
         chats_done: job.chats_done,
         chats_skipped: job.chats_skipped,
         messages_imported: job.messages_imported,
+        messages_seen: job.messages_seen ?? 0,
+        messages_updated: job.messages_updated ?? 0,
       })
       await sleepMs(opts.pauseMs ?? CHAT_PAUSE_MS)
     }

@@ -318,4 +318,5 @@ export const WA_FULL_MIGRATIONS = [
   '071_voice_preview_duration.sql',
   ...CONNECTIONS_MIGRATIONS,
   '074_broadcast_number_evidence.sql',
+  '075_history_import_message_counts.sql',
 ]

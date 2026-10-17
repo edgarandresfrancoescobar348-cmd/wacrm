@@ -2013,7 +2013,7 @@
         "howTemplates": "Templates are local: no Meta approval, sent as text.",
         "howMenus": "Buttons and lists become a numbered menu; the contact's reply (number or title) triggers the same option.",
         "howWindow": "There's no 24 h window: you can reply at any time.",
-        "howGroups": "Group and status messages are ignored.",
+        "howGroups": "Groups show up like on the phone; status updates and channels stay out.",
         "cancelConnect": "Cancel connection",
         "history": {
           "title": "Chat history",
@@ -2042,7 +2042,8 @@
             "waiting_session": "Waiting for the session to reconnect",
             "done": "Done",
             "failed": "Stopped"
-          }
+          },
+          "messagesDetail": "{added, plural, one {# new} other {# new}} · {updated, plural, one {# updated} other {# updated}}"
         }
       },
       "numbers": {

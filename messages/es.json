@@ -2013,7 +2013,7 @@
         "howTemplates": "Las plantillas son locales: sin aprobación de Meta, se envían como texto.",
         "howMenus": "Los botones y las listas se convierten en un menú numerado; la respuesta del contacto (número o título) activa la misma opción.",
         "howWindow": "No hay ventana de 24 h: puedes responder en cualquier momento.",
-        "howGroups": "Los mensajes de grupos y de estados se ignoran.",
+        "howGroups": "Los grupos aparecen como en el teléfono; los estados y los canales quedan fuera.",
         "cancelConnect": "Cancelar conexión",
         "history": {
           "title": "Historial de chats",
@@ -2042,7 +2042,8 @@
             "waiting_session": "Esperando que la sesión se reconecte",
             "done": "Completada",
             "failed": "Detenida"
-          }
+          },
+          "messagesDetail": "{added, plural, one {# nueva} other {# nuevas}} · {updated, plural, one {# actualizada} other {# actualizadas}}"
         }
       },
       "numbers": {

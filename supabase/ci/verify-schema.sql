@@ -214,10 +214,12 @@ BEGIN
     RAISE EXCEPTION 'inbound fan-out outbox is missing — migration 057 did not apply';
   END IF;
 
-  -- 058: the active-connection flag is derived from the OpenWA session.
+  -- 058, per number since 072: each number's status is derived from its
+  -- OpenWA session / Meta credentials (the account-wide flag is gone).
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mirror_openwa_session_status' AND NOT tgisinternal)
-     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'derive_openwa_config_status' AND NOT tgisinternal) THEN
-    RAISE EXCEPTION 'OpenWA status mirror triggers are missing — migration 058 did not apply';
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mirror_meta_config_status' AND NOT tgisinternal)
+     OR EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'derive_openwa_config_status' AND NOT tgisinternal) THEN
+    RAISE EXCEPTION 'number status mirror triggers are wrong — migration 058/072 did not apply';
   END IF;
 
   -- 059: send evidence (fourth review K1, K2, quarantine).
@@ -300,6 +302,14 @@ BEGIN
                        AND qual LIKE '%personal_only%')
      OR NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'chat-media-private' AND NOT public) THEN
     RAISE EXCEPTION 'personal-number visibility is missing — migration 073 did not apply';
+  END IF;
+
+  -- 075: what a history re-import did.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'whatsapp_history_imports'
+                    AND column_name IN ('messages_seen', 'messages_updated')
+                 HAVING count(*) = 2) THEN
+    RAISE EXCEPTION 'history import message counts are missing — migration 075 did not apply';
   END IF;
 
   RAISE NOTICE 'schema verification passed';
