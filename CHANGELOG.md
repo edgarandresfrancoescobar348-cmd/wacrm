@@ -45,6 +45,22 @@ now ships inside wacrm, next to the official Meta Cloud API.
 
 ### Added
 
+- **Several WhatsApp numbers per account — Pessoal and Empresa** (apply
+  `072_whatsapp_connections.sql`, `073_whatsapp_connection_visibility.sql`
+  and `074_broadcast_number_evidence.sql`, together with this version — the
+  single "active mode" is gone). One official number (Meta) plus any number
+  linked by QR code, each **Empresa** (the team sees it; bots, automations,
+  flows, AI and broadcasts run on it) or **Pessoal** (one member's: only
+  they see its chats — not even admins, enforced by RLS — and nothing
+  automated runs on it). Settings → WhatsApp lists the numbers and adds
+  them ("Adicionar número"); the inbox has "Pessoal / Empresa / Todos"
+  chips, a green/yellow seal on every avatar and a notice that says what
+  is down and what keeps working. The same person on two numbers is two
+  conversations and one contact; a reply goes out from the conversation's
+  number, anything the business starts from a business number (the
+  official one by default; `connection_id` in the public API). Existing
+  connections become business numbers — nobody's view changes.
+- The chat wallpaper is WhatsApp's own doodle tile, in light and dark.
 - **The QR-code inbox looks like the phone's WhatsApp** (apply
   `067_whatsapp_parity.sql`): names like the phone (saved > verified >
   `~push name` > formatted number; names you edit are never overwritten),
