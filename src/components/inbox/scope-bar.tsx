@@ -95,7 +95,7 @@ export function InboxScopeBar({
     const label = picked ? labels.name(picked) : labels.scope(scope);
     const content = (
       <>
-        <ScopeBadge scope={scope} label={labels.scope(scope)} size={18} className="ring-0" />
+        <ScopeBadge scope={scope} label={labels.scope(scope)} size={18} className="ring-0" decorative />
         <span className="max-w-32 truncate">{label}</span>
         {down ? <TriangleAlert className="text-amber-500" aria-label={t("disconnected")} /> : null}
       </>
@@ -134,7 +134,7 @@ export function InboxScopeBar({
               onClick={() => onChange({ scope, connectionId: n.id })}
               className={cn(value.scope === scope && value.connectionId === n.id && "text-primary-text")}
             >
-              <ScopeBadge scope={n.scope} label={labels.badge(n, true)} size={16} className="ring-0" />
+              <ScopeBadge scope={n.scope} label={labels.badge(n, true)} size={16} className="ring-0" decorative />
               <span className="min-w-0 flex-1 truncate">{labels.name(n)}</span>
               {n.status !== "connected" ? (
                 <TriangleAlert className="size-4 text-amber-500" aria-label={t("disconnected")} />

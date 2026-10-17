@@ -92,6 +92,7 @@ export function OpenWaPanel({
   const locale = useLocale();
   const canEditSettings = connection.can_operate;
   const connectionId = connection.id;
+  const personal = connection.scope === 'personal';
 
   // This number's session state (+ a gateway probe).
   const [state, setState] = useState<OpenWaApiState | null>(null);
@@ -377,7 +378,8 @@ export function OpenWaPanel({
           <OpenWaHistoryImport connectionId={connectionId} connected={status === 'ready'} canEdit={canEditSettings} />
         ) : null}
 
-        {/* Broadcast pacing */}
+        {/* Broadcast pacing — a personal number never broadcasts (phase 6) */}
+        {!personal && (
         <section aria-labelledby="openwa-pacing" className="space-y-4 rounded-xl bg-surface p-4 sm:p-6">
           <h3 id="openwa-pacing" className="text-[15px] font-medium text-foreground">{t('pacingTitle')}</h3>
           <div className="space-y-2">
@@ -403,6 +405,7 @@ export function OpenWaPanel({
             <p className="text-xs text-muted-foreground">{t('delayHint')}</p>
           </div>
         </section>
+        )}
 
         {/* Engine — deployment-wide on the gateway */}
         <section aria-labelledby="openwa-engine" className="rounded-xl bg-surface p-4 sm:p-6">
@@ -467,9 +470,10 @@ export function OpenWaPanel({
             {t('banTitle')}
           </p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
-            <li>{t('banDedicated')}</li>
-            <li>{t('banNoCold')}</li>
-            <li>{t('banPacing')}</li>
+            {/* A personal number is someone's own phone, and nothing is broadcast from it. */}
+            {!personal && <li>{t('banDedicated')}</li>}
+            {!personal && <li>{t('banNoCold')}</li>}
+            {!personal && <li>{t('banPacing')}</li>}
             <li>{t('banUnofficial')}</li>
           </ul>
         </div>

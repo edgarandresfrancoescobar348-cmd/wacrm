@@ -2062,7 +2062,7 @@
         "removeConfirm": "{name}을(를) 삭제할까요? 휴대폰 연결이 해제되고 대화는 기록으로 남습니다.",
         "removed": "번호가 삭제되었습니다",
         "removeFailed": "번호를 삭제할 수 없습니다",
-        "othersPersonal": "팀원의 개인 번호입니다. 대화는 본인만 보고 관리합니다. 팀을 떠날 때 등에는 삭제할 수 있습니다.",
+        "othersPersonal": "팀원의 개인 번호입니다. 대화는 본인만 보고 관리합니다.",
         "addTitle": "WhatsApp 번호 추가",
         "addDesc": "연결 방식과 대화를 볼 수 있는 사람을 선택하세요. 나중에 변경할 수 없습니다.",
         "addOfficial": "공식 API (Meta)",
@@ -2078,7 +2078,8 @@
         "continue": "계속",
         "addConfirm": "추가하고 QR 보기",
         "added": "번호가 추가되었습니다 — 아래에서 연결하세요",
-        "addFailed": "번호를 추가할 수 없습니다"
+        "addFailed": "번호를 추가할 수 없습니다",
+        "othersPersonalRemovable": "팀원의 개인 번호입니다. 대화는 본인만 보고 관리합니다. 팀을 떠날 때 등에는 삭제할 수 있습니다."
       }
     },
     "sections": {

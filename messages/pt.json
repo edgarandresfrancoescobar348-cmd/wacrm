@@ -2062,7 +2062,7 @@
         "removeConfirm": "Remover {name}? O celular é desvinculado; as conversas ficam como histórico.",
         "removed": "Número removido",
         "removeFailed": "Não foi possível remover o número",
-        "othersPersonal": "Este é o número pessoal de um colega: só ele vê e gerencia as conversas. Você pode removê-lo (por exemplo, quando ele sair da equipe).",
+        "othersPersonal": "Este é o número pessoal de um colega: só ele vê e gerencia as conversas.",
         "addTitle": "Adicionar número de WhatsApp",
         "addDesc": "Escolha como ele conecta e quem vê as conversas. Isso não muda depois.",
         "addOfficial": "API oficial (Meta)",
@@ -2078,7 +2078,8 @@
         "continue": "Continuar",
         "addConfirm": "Adicionar e mostrar o QR",
         "added": "Número adicionado — conecte abaixo",
-        "addFailed": "Não foi possível adicionar o número"
+        "addFailed": "Não foi possível adicionar o número",
+        "othersPersonalRemovable": "Este é o número pessoal de um colega: só ele vê e gerencia as conversas. Você pode removê-lo (por exemplo, quando ele sair da equipe)."
       }
     },
     "sections": {

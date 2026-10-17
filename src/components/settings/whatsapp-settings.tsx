@@ -165,7 +165,7 @@ export function WhatsAppSettings() {
                     aria-current={shownId === n.id ? 'true' : undefined}
                     data-testid="number-row"
                   >
-                    <ScopeBadge scope={n.scope} label={labels.badge(n, true)} size={32} className="ring-0" />
+                    <ScopeBadge scope={n.scope} label={labels.badge(n, true)} size={32} className="ring-0" decorative />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
                         <span className="truncate text-[15px] text-foreground">{labels.name(n)}</span>
@@ -208,7 +208,7 @@ export function WhatsAppSettings() {
           })}
           {selected === NEW_OFFICIAL ? (
             <li className="flex items-center gap-3 bg-hover-surface px-4 py-3">
-              <ScopeBadge scope="business" label={labels.scope('business')} size={32} className="ring-0" />
+              <ScopeBadge scope="business" label={labels.scope('business')} size={32} className="ring-0" decorative />
               <span className="text-[15px] text-foreground">{t('addOfficial')}</span>
             </li>
           ) : null}
@@ -223,7 +223,9 @@ export function WhatsAppSettings() {
         ) : shown.visible || shown.can_operate ? (
           <OpenWaPanel key={shown.id} connection={shown} onChanged={reload} />
         ) : (
-          <p className="rounded-xl bg-surface p-4 text-sm text-muted-foreground">{t('othersPersonal')}</p>
+          <p className="rounded-xl bg-surface p-4 text-sm text-muted-foreground">
+            {shown.can_disconnect ? t('othersPersonalRemovable') : t('othersPersonal')}
+          </p>
         )
       ) : null}
 
@@ -247,7 +249,7 @@ export function WhatsAppSettings() {
                   choice === c.value && 'ring-2 ring-primary',
                 )}
               >
-                <ScopeBadge scope={c.scope} label={labels.scope(c.scope)} size={28} className="mt-0.5 ring-0" />
+                <ScopeBadge scope={c.scope} label={labels.scope(c.scope)} size={28} className="mt-0.5 ring-0" decorative />
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] text-foreground">{c.title}</span>
                   <span className="block text-xs leading-relaxed text-muted-foreground">{c.desc}</span>

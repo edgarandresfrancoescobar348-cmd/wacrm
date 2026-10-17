@@ -38,17 +38,18 @@ export function ScopeBadge({
   label,
   size = 18,
   className,
+  decorative = false,
 }: {
   scope: "personal" | "business";
   label: string;
   size?: number;
   className?: string;
+  /** Next to text that already names the scope (a chip, a settings row): hidden from assistive tech. */
+  decorative?: boolean;
 }) {
   return (
     <span
-      role="img"
-      aria-label={label}
-      title={label}
+      {...(decorative ? { "aria-hidden": true } : { role: "img", "aria-label": label, title: label })}
       data-testid="scope-badge"
       data-scope={scope}
       style={{ width: size, height: size }}

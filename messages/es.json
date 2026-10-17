@@ -2062,7 +2062,7 @@
         "removeConfirm": "¿Eliminar {name}? El teléfono se desvincula; sus chats quedan como historial.",
         "removed": "Número eliminado",
         "removeFailed": "No se pudo eliminar el número",
-        "othersPersonal": "Es el número personal de un compañero: solo él ve y gestiona sus chats. Puedes eliminarlo (por ejemplo, si deja el equipo).",
+        "othersPersonal": "Es el número personal de un compañero: solo él ve y gestiona sus chats.",
         "addTitle": "Agregar número de WhatsApp",
         "addDesc": "Elige cómo se conecta y quién ve sus chats. No se puede cambiar después.",
         "addOfficial": "API oficial (Meta)",
@@ -2078,7 +2078,8 @@
         "continue": "Continuar",
         "addConfirm": "Agregar y mostrar el QR",
         "added": "Número agregado — conéctalo abajo",
-        "addFailed": "No se pudo agregar el número"
+        "addFailed": "No se pudo agregar el número",
+        "othersPersonalRemovable": "Es el número personal de un compañero: solo él ve y gestiona sus chats. Puedes eliminarlo (por ejemplo, si deja el equipo)."
       }
     },
     "sections": {

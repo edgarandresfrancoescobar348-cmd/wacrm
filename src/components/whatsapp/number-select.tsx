@@ -44,7 +44,7 @@ export function NumberSelect({
       <WaChipRow>
         {pool.map((n) => (
           <WaChip key={n.id} active={value === n.id} onClick={() => onChange(n.id)}>
-            <ScopeBadge scope={n.scope} label={labels.badge(n, true)} size={18} className="ring-0" />
+            <ScopeBadge scope={n.scope} label={labels.badge(n, true)} size={18} className="ring-0" decorative />
             <span className="max-w-40 truncate">{labels.name(n)}</span>
             {n.status !== "connected" ? <TriangleAlert className="text-amber-500" aria-label={t("disconnected")} /> : null}
           </WaChip>

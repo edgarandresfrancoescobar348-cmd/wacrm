@@ -2062,7 +2062,7 @@
         "removeConfirm": "Remove {name}? The phone is unlinked; its conversations stay as history.",
         "removed": "Number removed",
         "removeFailed": "Could not remove the number",
-        "othersPersonal": "This is a teammate's personal number: only they see and manage its chats. You can remove it (for example when they leave the team).",
+        "othersPersonal": "This is a teammate's personal number: only they see and manage its chats.",
         "addTitle": "Add a WhatsApp number",
         "addDesc": "Choose how it connects and who sees its conversations. This can't be changed later.",
         "addOfficial": "Official API (Meta)",
@@ -2078,7 +2078,8 @@
         "continue": "Continue",
         "addConfirm": "Add and show the QR",
         "added": "Number added — connect it below",
-        "addFailed": "Could not add the number"
+        "addFailed": "Could not add the number",
+        "othersPersonalRemovable": "This is a teammate's personal number: only they see and manage its chats. You can remove it (for example when they leave the team)."
       }
     },
     "sections": {
