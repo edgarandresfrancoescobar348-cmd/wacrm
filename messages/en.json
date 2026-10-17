@@ -2345,6 +2345,7 @@
       "whatsapp": "WhatsApp Cloud API connection",
       "templates": "Message templates approved by Meta",
       "quick-replies": "Shortcuts for frequent answers",
+      "inbox": "Reply-time target",
       "fields": "Tags and custom fields",
       "deals": "Default deal currency",
       "members": "Invites, roles and access",
