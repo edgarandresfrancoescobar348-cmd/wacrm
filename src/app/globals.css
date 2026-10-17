@@ -56,7 +56,7 @@
    *   row / search pill / inputs), bg-bubble-in, bg-bubble-out,
    *   bg-chip-active + text-chip-active-foreground, text-read-ticks,
  *   bg-bubble-quote (quoted reply / doc card inside a bubble),
-   *   bg-doodle (wallpaper pattern ink, used through a mask). */
+   *   doodle (faint ink: the flow canvas grid dots). */
   --color-rail: var(--rail);
   --color-wallpaper: var(--wallpaper);
   --color-surface: var(--surface);
@@ -152,6 +152,8 @@ html[data-mode="dark"] {
   --link: #53bdeb;
   --bubble-quote: rgb(0 0 0 / 0.2);
   --doodle: rgb(255 255 255 / 0.06);
+  --wallpaper-tile-opacity: 0.12;
+  --wallpaper-tile-filter: none;
 }
 
 html[data-mode="light"] {
@@ -194,6 +196,8 @@ html[data-mode="light"] {
   --link: #027eb5;
   --bubble-quote: rgb(11 20 26 / 0.05);
   --doodle: rgb(84 64 40 / 0.07);
+  --wallpaper-tile-opacity: 0.06;
+  --wallpaper-tile-filter: invert(1);
 }
 
 /* ---- ACCENT: primary color ---- */
@@ -328,11 +332,13 @@ html[data-theme="rose"] {
  * documented in .tmp/briefs/whatsapp-design-spec.md).
  * ============================================================ */
 
-/* Chat wallpaper: the mode's base colour plus the original doodle tile
- * (public/wa-doodle.svg) painted through a mask in --doodle ink, so the
- * pattern follows the mode without shipping two SVGs. Put it on a
+/* Chat wallpaper, like WhatsApp: the mode's base colour plus WhatsApp's
+ * doodle tile (public/bg-chat-tile-dark.png — light ink on transparent,
+ * as open-bsp ships it) repeated at its own size on a ::before. Dark mode
+ * shows it as is; light mode inverts it to dark ink, fainter. Put it on a
  * positioned container; content must sit above (relative z-[1] or later
- * in the stacking order — the pattern is a ::before at z-index 0). */
+ * in the stacking order — the pattern is a ::before at z-index -1 inside
+ * an isolated stacking context). */
 @utility wa-wallpaper {
   position: relative;
   isolation: isolate;
@@ -343,10 +349,10 @@ html[data-theme="rose"] {
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background-color: var(--doodle);
-    mask-image: url("/wa-doodle.svg");
-    mask-repeat: repeat;
-    mask-size: 400px 400px;
+    background-image: url("/bg-chat-tile-dark.png");
+    background-repeat: repeat;
+    opacity: var(--wallpaper-tile-opacity);
+    filter: var(--wallpaper-tile-filter);
   }
 }
 
