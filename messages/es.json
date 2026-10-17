@@ -2080,7 +2080,31 @@
         "addConfirm": "Agregar y mostrar el QR",
         "added": "Número agregado — conéctalo abajo",
         "addFailed": "No se pudo agregar el número",
-        "othersPersonalRemovable": "Es el número personal de un compañero: solo él ve y gestiona sus chats. Puedes eliminarlo (por ejemplo, si deja el equipo)."
+        "othersPersonalRemovable": "Es el número personal de un compañero: solo él ve y gestiona sus chats. Puedes eliminarlo (por ejemplo, si deja el equipo).",
+        "scopeChange": {
+          "title": "Quién ve las conversaciones de este número",
+          "personal": "Personal (solo yo lo veo)",
+          "business": "Empresa (el equipo lo ve)",
+          "officialAlwaysBusiness": "El número oficial siempre es de la Empresa.",
+          "onlyOwnerMakesBusiness": "Solo {name} puede hacer este número de la Empresa.",
+          "itsOwner": "su dueño",
+          "onlyAdminMakesPersonal": "Solo un admin puede hacer personal un número de la Empresa.",
+          "confirmPersonalTitle": "¿Hacer este número Personal?",
+          "confirmBusinessTitle": "¿Hacer este número de la Empresa?",
+          "confirmPersonal": "{count, plural, one {# conversación deja} other {# conversaciones dejan}} de aparecer para el equipo. Bots, automatizaciones, IA y difusiones se detienen en este número. Se quitan las asignaciones a otros miembros.",
+          "confirmBusiness": "{count, plural, one {# conversación pasa} other {# conversaciones pasan}} a aparecer para todo el equipo, y bots, automatizaciones y difusiones pueden usar este número.",
+          "savedNames": "Los nombres de tu agenda ({count, plural, one {# conversación} other {# conversaciones}}) quedan visibles para el equipo en el título de la conversación. El contacto del CRM no cambia.",
+          "ownerLabel": "Dueño del número",
+          "me": "{name} (yo)",
+          "ownerOtherHint": "Después del cambio solo esa persona ve las conversaciones: ni tú ni los admins.",
+          "counting": "Contando las conversaciones…",
+          "cancel": "Cancelar",
+          "confirmPersonalButton": "Hacer Personal",
+          "confirmBusinessButton": "Hacer de la Empresa",
+          "donePersonal": "El número ahora es Personal.",
+          "doneBusiness": "El número ahora es de la Empresa.",
+          "failed": "No se pudo cambiar."
+        }
       }
     },
     "sections": {

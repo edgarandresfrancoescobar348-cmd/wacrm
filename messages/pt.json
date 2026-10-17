@@ -2080,7 +2080,31 @@
         "addConfirm": "Adicionar e mostrar o QR",
         "added": "Número adicionado — conecte abaixo",
         "addFailed": "Não foi possível adicionar o número",
-        "othersPersonalRemovable": "Este é o número pessoal de um colega: só ele vê e gerencia as conversas. Você pode removê-lo (por exemplo, quando ele sair da equipe)."
+        "othersPersonalRemovable": "Este é o número pessoal de um colega: só ele vê e gerencia as conversas. Você pode removê-lo (por exemplo, quando ele sair da equipe).",
+        "scopeChange": {
+          "title": "Quem vê as conversas deste número",
+          "personal": "Pessoal (só eu vejo)",
+          "business": "Empresa (a equipe vê)",
+          "officialAlwaysBusiness": "O número oficial é sempre da Empresa.",
+          "onlyOwnerMakesBusiness": "Só {name} pode tornar este número da Empresa.",
+          "itsOwner": "o dono",
+          "onlyAdminMakesPersonal": "Só um admin pode tornar um número da Empresa pessoal.",
+          "confirmPersonalTitle": "Tornar este número Pessoal?",
+          "confirmBusinessTitle": "Tornar este número da Empresa?",
+          "confirmPersonal": "{count, plural, one {# conversa deixa} other {# conversas deixam}} de aparecer para a equipe. Bots, automações, IA e disparos param neste número. Atribuições a outros membros são removidas.",
+          "confirmBusiness": "{count, plural, one {# conversa passa} other {# conversas passam}} a aparecer para toda a equipe, e bots, automações e disparos podem usar este número.",
+          "savedNames": "Os nomes da sua agenda ({count, plural, one {# conversa} other {# conversas}}) ficam visíveis para a equipe no título da conversa. O contato do CRM não muda.",
+          "ownerLabel": "Dono do número",
+          "me": "{name} (eu)",
+          "ownerOtherHint": "Depois da troca, só essa pessoa vê as conversas — nem você nem os admins.",
+          "counting": "Contando as conversas…",
+          "cancel": "Cancelar",
+          "confirmPersonalButton": "Tornar Pessoal",
+          "confirmBusinessButton": "Tornar da Empresa",
+          "donePersonal": "O número agora é Pessoal.",
+          "doneBusiness": "O número agora é da Empresa.",
+          "failed": "Não foi possível trocar."
+        }
       }
     },
     "sections": {

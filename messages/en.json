@@ -2080,7 +2080,31 @@
         "addConfirm": "Add and show the QR",
         "added": "Number added — connect it below",
         "addFailed": "Could not add the number",
-        "othersPersonalRemovable": "This is a teammate's personal number: only they see and manage its chats. You can remove it (for example when they leave the team)."
+        "othersPersonalRemovable": "This is a teammate's personal number: only they see and manage its chats. You can remove it (for example when they leave the team).",
+        "scopeChange": {
+          "title": "Who sees this number's conversations",
+          "personal": "Personal (only I see it)",
+          "business": "Business (the team sees it)",
+          "officialAlwaysBusiness": "The official number is always Business.",
+          "onlyOwnerMakesBusiness": "Only {name} can make this number Business.",
+          "itsOwner": "its owner",
+          "onlyAdminMakesPersonal": "Only an admin can make a Business number personal.",
+          "confirmPersonalTitle": "Make this number Personal?",
+          "confirmBusinessTitle": "Make this number Business?",
+          "confirmPersonal": "{count, plural, one {# conversation stops} other {# conversations stop}} showing for the team. Bots, automations, AI and broadcasts stop on this number. Assignments to other members are removed.",
+          "confirmBusiness": "{count, plural, one {# conversation starts} other {# conversations start}} showing for the whole team, and bots, automations and broadcasts can use this number.",
+          "savedNames": "The names from your address book ({count, plural, one {# conversation} other {# conversations}}) become visible to the team in the conversation title. The CRM contact doesn't change.",
+          "ownerLabel": "Number owner",
+          "me": "{name} (me)",
+          "ownerOtherHint": "After the change only this person sees the conversations — not you, not the admins.",
+          "counting": "Counting the conversations…",
+          "cancel": "Cancel",
+          "confirmPersonalButton": "Make Personal",
+          "confirmBusinessButton": "Make Business",
+          "donePersonal": "The number is now Personal.",
+          "doneBusiness": "The number is now Business.",
+          "failed": "Couldn't change it."
+        }
       }
     },
     "sections": {

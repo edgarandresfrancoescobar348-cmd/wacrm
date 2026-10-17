@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { SettingsPanelHead } from './settings-panel-head';
 import { WhatsAppConfig } from './whatsapp-config';
 import { OpenWaPanel } from './openwa-panel';
+import { NumberScopeControl } from './number-scope-control';
 
 /** The official number being set up before it exists (its credentials create it). */
 const NEW_OFFICIAL = 'new-official';
@@ -217,7 +218,11 @@ export function WhatsAppSettings() {
 
       {selected === NEW_OFFICIAL ? (
         <WhatsAppConfig embedded onSaved={() => void reload().then(() => setSelected(null))} />
-      ) : shown ? (
+      ) : null}
+      {selected !== NEW_OFFICIAL && shown ? (
+        <NumberScopeControl key={`scope-${shown.id}`} connection={shown} onChanged={reload} />
+      ) : null}
+      {selected === NEW_OFFICIAL ? null : shown ? (
         shown.provider === 'meta' ? (
           <WhatsAppConfig key={shown.id} embedded connection={shown} onSaved={() => void reload()} />
         ) : shown.visible || shown.can_operate ? (

@@ -10,7 +10,7 @@
 //   * a contact joins the team when a business conversation opens with it
 //     or a member creates it by hand;
 //   * a number's identity (scope, owner…) and a conversation's number
-//     never change.
+//     never change (scope and owner: only through set_connection_scope, 076).
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -261,9 +261,10 @@ describe.skipIf(!pgAvailable())('WhatsApp numbers: migration, visibility, identi
   })
 
   describe('identity never changes', () => {
-    it('a number keeps its scope, owner, provider and account', async () => {
+    // Scope and owner change only through set_connection_scope (076, connection-scope.pg.test.ts).
+    it('a number keeps its provider and account; scope and owner only through the RPC', async () => {
       await expect(pg.sql(`UPDATE public.whatsapp_connections SET scope = 'business', owner_user_id = NULL WHERE id = '${personal}'`))
-        .rejects.toThrow(/never change/)
+        .rejects.toThrow(/only through set_connection_scope/)
       await expect(pg.sql(`UPDATE public.whatsapp_connections SET provider = 'meta' WHERE id = '${qrA}'`)).rejects.toThrow(/never change/)
     })
 

@@ -60,6 +60,16 @@ now ships inside wacrm, next to the official Meta Cloud API.
   number, anything the business starts from a business number (the
   official one by default; `connection_id` in the public API). Existing
   connections become business numbers — nobody's view changes.
+- **A number can move between Pessoal and Empresa** (apply
+  `076_whatsapp_connection_scope_change.sql`). Settings → WhatsApp shows
+  "Pessoal (só eu vejo) / Empresa (a equipe vê)" on each number: an admin
+  makes a business QR number someone's personal one (theirs by default),
+  and only that number's owner makes it the team's again; the official
+  number is always Empresa. A confirmation says how many conversations
+  change sides and what stops (bots, automations, AI, broadcasts,
+  assignments to others) or what the team will see (names from the phone's
+  address book). Its media leaves the public bucket, contacts follow the
+  Pessoal rule, open screens update at once, and every change is audited.
 - The chat wallpaper is WhatsApp's own doodle tile, in light and dark.
 - **The QR-code inbox looks like the phone's WhatsApp** (apply
   `067_whatsapp_parity.sql`): names like the phone (saved > verified >
@@ -174,6 +184,13 @@ now ships inside wacrm, next to the official Meta Cloud API.
 
 ### Fixed
 
+- Settings → WhatsApp → QR Code: "Como funciona" no longer says group
+  messages are ignored (groups show up like on the phone; status updates
+  and channels stay out), and the history card counts what a re-import
+  did — every message of the imported chats, "N novas · M atualizadas"
+  (apply `075_history_import_message_counts.sql`).
+- AI Agents: the tabs and their content sit in the same centred column
+  as Settings, in all three tabs.
 - Inbox: long conversations show every message — the thread opens on the
   newest and loads older pages as you scroll up, keeping your place (a single
   read stopped at 1000 messages). It scrolls by itself only when you are at

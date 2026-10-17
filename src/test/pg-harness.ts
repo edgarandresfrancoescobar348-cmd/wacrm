@@ -199,9 +199,13 @@ CREATE TABLE public.contact_notes(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid, account_id uuid NOT NULL, note_text text);
 CREATE TABLE public.deals(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid NOT NULL, contact_id uuid, conversation_id uuid, title text);
 CREATE TABLE public.notifications(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id uuid);
-CREATE TABLE public.flow_runs(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id uuid);
+CREATE TABLE public.flow_runs(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id uuid, contact_id uuid, account_id uuid,
+  status text, ended_at timestamptz, end_reason text);
+CREATE TABLE public.automation_pending_executions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid, contact_id uuid,
+  context jsonb NOT NULL DEFAULT '{}', status text NOT NULL DEFAULT 'pending');
 CREATE TABLE public.ai_usage_log(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id uuid);
-CREATE TABLE public.broadcasts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid NOT NULL);
+CREATE TABLE public.broadcasts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid NOT NULL,
+  status text DEFAULT 'sending', updated_at timestamptz);
 CREATE TABLE public.automations(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid NOT NULL);
 CREATE TABLE public.flows(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid NOT NULL);
 CREATE TABLE public.whatsapp_config(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL,
@@ -252,7 +256,11 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 `
 
 /** Phase 6: several numbers per account, and who sees a personal one. */
-export const CONNECTIONS_MIGRATIONS = ['072_whatsapp_connections.sql', '073_whatsapp_connection_visibility.sql']
+export const CONNECTIONS_MIGRATIONS = [
+  '072_whatsapp_connections.sql',
+  '073_whatsapp_connection_visibility.sql',
+  '076_whatsapp_connection_scope_change.sql',
+]
 
 /**
  * The whole WhatsApp schema as of phase 6, for tests that run app code
@@ -270,9 +278,9 @@ CREATE UNIQUE INDEX messages_conversation_message ON public.messages(conversatio
 ALTER TABLE public.contacts ADD COLUMN wa_user_id text, ADD COLUMN wa_parent_user_id text, ADD COLUMN wa_username text,
   ADD COLUMN avatar_url text, ADD COLUMN email text, ADD COLUMN company text;
 ALTER TABLE public.conversations ADD COLUMN ai_autoreply_disabled boolean NOT NULL DEFAULT false, ADD COLUMN ai_reply_count int NOT NULL DEFAULT 0;
-ALTER TABLE public.broadcasts ADD COLUMN user_id uuid, ADD COLUMN name text, ADD COLUMN status text DEFAULT 'sending',
+ALTER TABLE public.broadcasts ADD COLUMN user_id uuid, ADD COLUMN name text,
   ADD COLUMN template_name text, ADD COLUMN template_language text, ADD COLUMN delivery_locked_at timestamptz,
-  ADD COLUMN updated_at timestamptz, ADD COLUMN created_at timestamptz DEFAULT now(), ADD COLUMN total_recipients int DEFAULT 0,
+  ADD COLUMN created_at timestamptz DEFAULT now(), ADD COLUMN total_recipients int DEFAULT 0,
   ADD COLUMN sent_count int DEFAULT 0, ADD COLUMN delivered_count int DEFAULT 0, ADD COLUMN read_count int DEFAULT 0,
   ADD COLUMN replied_count int DEFAULT 0, ADD COLUMN failed_count int DEFAULT 0;
 CREATE TABLE public.broadcast_recipients(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), broadcast_id uuid NOT NULL REFERENCES public.broadcasts,
@@ -290,10 +298,8 @@ ALTER TABLE public.whatsapp_history_import_chats ADD COLUMN name text, ADD COLUM
 CREATE TABLE public.openwa_webhook_deliveries(idempotency_key text NOT NULL, account_id uuid NOT NULL, event text NOT NULL,
   received_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (account_id, idempotency_key));
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
-CREATE TABLE public.automation_pending_executions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid, contact_id uuid);
 CREATE TABLE public.automation_logs(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid, contact_id uuid);
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
-ALTER TABLE public.flow_runs ADD COLUMN contact_id uuid, ADD COLUMN account_id uuid, ADD COLUMN status text;
 ALTER TABLE public.notifications ADD COLUMN contact_id uuid;
 `
 

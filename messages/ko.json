@@ -2080,7 +2080,31 @@
         "addConfirm": "추가하고 QR 보기",
         "added": "번호가 추가되었습니다 — 아래에서 연결하세요",
         "addFailed": "번호를 추가할 수 없습니다",
-        "othersPersonalRemovable": "팀원의 개인 번호입니다. 대화는 본인만 보고 관리합니다. 팀을 떠날 때 등에는 삭제할 수 있습니다."
+        "othersPersonalRemovable": "팀원의 개인 번호입니다. 대화는 본인만 보고 관리합니다. 팀을 떠날 때 등에는 삭제할 수 있습니다.",
+        "scopeChange": {
+          "title": "이 번호의 대화를 볼 수 있는 사람",
+          "personal": "개인 (나만 봄)",
+          "business": "비즈니스 (팀이 봄)",
+          "officialAlwaysBusiness": "공식 번호는 항상 비즈니스입니다.",
+          "onlyOwnerMakesBusiness": "{name}만 이 번호를 비즈니스로 바꿀 수 있습니다.",
+          "itsOwner": "소유자",
+          "onlyAdminMakesPersonal": "관리자만 비즈니스 번호를 개인으로 바꿀 수 있습니다.",
+          "confirmPersonalTitle": "이 번호를 개인으로 바꿀까요?",
+          "confirmBusinessTitle": "이 번호를 비즈니스로 바꿀까요?",
+          "confirmPersonal": "{count, plural, one {대화 #개가} other {대화 #개가}} 더 이상 팀에 표시되지 않습니다. 이 번호에서 봇, 자동화, AI, 브로드캐스트가 중지됩니다. 다른 멤버에 대한 배정이 제거됩니다.",
+          "confirmBusiness": "{count, plural, one {대화 #개가} other {대화 #개가}} 팀 전체에 표시되며, 봇, 자동화, 브로드캐스트가 이 번호를 사용할 수 있습니다.",
+          "savedNames": "주소록의 이름({count, plural, one {대화 #개} other {대화 #개}})이 대화 제목에서 팀에게 표시됩니다. CRM 연락처는 바뀌지 않습니다.",
+          "ownerLabel": "번호 소유자",
+          "me": "{name} (나)",
+          "ownerOtherHint": "변경 후에는 이 사람만 대화를 볼 수 있습니다. 나와 관리자도 볼 수 없습니다.",
+          "counting": "대화를 세는 중…",
+          "cancel": "취소",
+          "confirmPersonalButton": "개인으로 바꾸기",
+          "confirmBusinessButton": "비즈니스로 바꾸기",
+          "donePersonal": "이제 이 번호는 개인입니다.",
+          "doneBusiness": "이제 이 번호는 비즈니스입니다.",
+          "failed": "변경하지 못했습니다."
+        }
       }
     },
     "sections": {

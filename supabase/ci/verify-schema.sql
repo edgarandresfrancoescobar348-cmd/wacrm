@@ -312,6 +312,12 @@ BEGIN
     RAISE EXCEPTION 'history import message counts are missing — migration 075 did not apply';
   END IF;
 
+  -- 076: a number moves between Pessoal and Empresa only through the RPC.
+  IF to_regprocedure('public.set_connection_scope(uuid,text,uuid,uuid)') IS NULL
+     OR to_regclass('public.whatsapp_connection_events') IS NULL THEN
+    RAISE EXCEPTION 'number scope change is missing — migration 076 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

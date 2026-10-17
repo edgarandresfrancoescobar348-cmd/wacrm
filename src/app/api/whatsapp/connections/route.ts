@@ -14,14 +14,15 @@
 //          (/api/whatsapp/config).
 // ============================================================
 
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 
 import { ForbiddenError, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { hasMinRole } from '@/lib/auth/roles'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { createQrConnection } from '@/lib/whatsapp/connection-admin'
-import { mayOnConnection } from '@/lib/whatsapp/connection-access'
+import { mayOnConnection, scopeChoices } from '@/lib/whatsapp/connection-access'
+import { movePublicMediaPrivate } from '@/lib/whatsapp/connection-scope'
 import {
   defaultBusinessConnection,
   loadAccountConnections,
@@ -45,6 +46,23 @@ export async function GET() {
         if (p.full_name) names.set(p.user_id, p.full_name)
       }
     }
+    // A number made personal whose files didn't all leave the public
+    // bucket (connection-scope.ts): try again, after the answer.
+    const { data: pending } = await admin
+      .from('whatsapp_connections')
+      .select('id')
+      .eq('account_id', ctx.accountId)
+      .eq('scope', 'personal')
+      .eq('media_private_pending', true)
+    if (pending?.length) {
+      after(async () => {
+        for (const p of pending as { id: string }[]) {
+          await movePublicMediaPrivate(admin, p.id).catch((err) =>
+            console.warn('[numbers] media move retry failed:', err instanceof Error ? err.message : err),
+          )
+        }
+      })
+    }
     const isAdmin = hasMinRole(ctx.role, 'admin')
     const defaultId = defaultBusinessConnection(numbers)?.id ?? null
     return NextResponse.json({
@@ -55,6 +73,7 @@ export async function GET() {
         }),
         can_operate: mayOnConnection(n, ctx, 'operate'),
         can_disconnect: mayOnConnection(n, ctx, 'disconnect'),
+        ...scopeChoices(n, ctx),
       })),
       can_add: {
         official: isAdmin && !numbers.some((n) => n.provider === 'meta' && !n.removedAt),

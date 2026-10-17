@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useCallback, useEffect, useRef } from "react";
+import { Suspense, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -394,6 +394,29 @@ function InboxPageInner() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
+
+  /**
+   * A number the viewer no longer sees (it became someone's Pessoal, phase
+   * 6b): its conversations leave the list at once and an open one closes;
+   * the list is re-read too (RLS decides the rest). A number that became
+   * visible (it joined the Empresa) brings its conversations in on that
+   * re-read.
+   */
+  const visibleKey = useMemo(
+    () => (numbers ? numbers.map((n) => `${n.id}:${n.visible ? 1 : 0}`).sort().join(",") : null),
+    [numbers],
+  );
+  const lastVisibleKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!numbers || visibleKey === null) return;
+    const before = lastVisibleKeyRef.current;
+    lastVisibleKeyRef.current = visibleKey;
+    if (before === null || before === visibleKey) return;
+    const hidden = new Set(numbers.filter((n) => !n.visible).map((n) => n.id));
+    setConversations((prev) => prev.filter((c) => !hidden.has(c.connection_id)));
+    setActiveConversation((prev) => (prev && hidden.has(prev.connection_id) ? null : prev));
+    setResyncToken((n) => n + 1);
+  }, [numbers, visibleKey]);
 
   /**
    * Manual refresh trigger for the thread-header refresh button.

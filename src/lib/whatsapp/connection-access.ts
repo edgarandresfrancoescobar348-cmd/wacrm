@@ -49,3 +49,20 @@ export async function requireConnection(
   if (!mayOnConnection(connection, ctx, action)) throw new ForbiddenError()
   return { ctx, connection }
 }
+
+/**
+ * Who may move a number between Pessoal and Empresa (phase 6b; mirrors
+ * set_connection_scope, migration 076): an admin makes a business QR
+ * number personal; only its owner makes a personal one the team's. The
+ * official number is always business.
+ */
+export function scopeChoices(
+  c: Pick<WaConnection, 'provider' | 'scope' | 'ownerUserId' | 'removedAt'>,
+  viewer: Pick<AccountContext, 'userId' | 'role'>,
+): { can_make_personal: boolean; can_make_business: boolean } {
+  const live = !c.removedAt && c.provider === 'openwa'
+  return {
+    can_make_personal: live && c.scope === 'business' && hasMinRole(viewer.role, 'admin'),
+    can_make_business: live && c.scope === 'personal' && c.ownerUserId === viewer.userId,
+  }
+}
