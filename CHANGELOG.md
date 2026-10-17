@@ -23,7 +23,7 @@ now ships inside wacrm, next to the official Meta Cloud API.
 > `058_openwa_status_mirror.sql`, `059_send_evidence.sql`,
 > `060_fanout_outcomes.sql`, `061_connection_lock.sql`,
 > `062_message_content_meta.sql`, `063_whatsapp_history_import.sql` and
-> `064_openwa_embedded_gateway.sql`, `065_history_import_empty_conversations.sql`, `066_history_media.sql`, `067_whatsapp_parity.sql`, `068_whatsapp_list_parity.sql` and `069_whatsapp_chat_order.sql`, in order. All additive except 064 (drops the per-account gateway URL/key) and 065 (deletes empty conversations the history import created); existing rows
+> `064_openwa_embedded_gateway.sql`, `065_history_import_empty_conversations.sql`, `066_history_media.sql`, `067_whatsapp_parity.sql`, `068_whatsapp_list_parity.sql`, `069_whatsapp_chat_order.sql` and `070_whatsapp_untimed_chats.sql`, in order. All additive except 064 (drops the per-account gateway URL/key) and 065 (deletes empty conversations the history import created); existing rows
 > keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
@@ -158,6 +158,17 @@ now ships inside wacrm, next to the official Meta Cloud API.
 
 ### Fixed
 
+- QR Code: documents show their first-page preview on real accounts — the
+  gateway fetches and decrypts the copy WhatsApp uploads when no inline
+  preview exists ("Importar de novo" fills it on documents already imported).
+- QR Code: chats with no activity on the phone (timestamp 0, mostly groups)
+  sit at the end of the list instead of on top (migration
+  `070_whatsapp_untimed_chats.sql`).
+- Inbox: accounts with more than 1000 conversations load all of them, and
+  the "Não lidas" count includes every one.
+- Inbox: a message deleted for everyone shows only "Esta mensagem foi
+  apagada" / "Você apagou esta mensagem", never its stored content.
+- Inbox: a live voice note's list preview carries its length.
 - QR Code: "Importar de novo" no longer stalls on a long chat with
   `messages (refresh lookup) failed: URI too long` — the lookups of
   messages already stored (and of quoted messages) are sliced by URL length.
