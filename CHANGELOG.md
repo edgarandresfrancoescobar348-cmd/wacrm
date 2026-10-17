@@ -158,6 +158,18 @@ now ships inside wacrm, next to the official Meta Cloud API.
 
 ### Fixed
 
+- Inbox: long conversations show every message — the thread opens on the
+  newest and loads older pages as you scroll up, keeping your place (a single
+  read stopped at 1000 messages). It scrolls by itself only when you are at
+  the bottom or send; a new message while you read above shows "↓ N".
+- Inbox: URLs, e-mails and phone numbers in messages and captions are links.
+- Inbox: a photo or video with a caption is as wide as the photo (up to
+  330 px, proportions kept, a very tall one cropped at the centre), sized
+  before it loads; voice notes show the sender's photo or initials, never "?".
+- More than 1000 rows read in full: the QR-code chat-state sync, the
+  dashboard charts, a broadcast's recipients, a pipeline's deals, the deal
+  form's contacts, the contact import's duplicate check, the flows cron and
+  a thread's reactions.
 - QR Code: an unsaved WhatsApp Business contact that isn't an official
   account is titled with its number and shows its business name as
   `~Name`, like the phone (only official accounts, e.g. PicPay, are titled
