@@ -145,13 +145,8 @@ BEGIN
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.whatsapp_openwa_config'::regclass) THEN
     RAISE EXCEPTION 'whatsapp_openwa_config must have RLS enabled — migration 047';
   END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'whatsapp_config'
-      AND column_name = 'provider'
-  ) THEN
-    RAISE EXCEPTION 'whatsapp_config.provider is missing — migration 047 did not apply';
-  END IF;
+  -- (047's whatsapp_config.provider — the single "active mode" — is
+  -- gone since 072: each number is its own connection.)
 
   -- 048: the delivery ledger must track processing state, or a failed
   -- delivery is answered "duplicate" on redelivery and lost.
@@ -196,7 +191,7 @@ BEGIN
   -- 056: durable broadcast send attempts (third review H3–H7).
   IF to_regclass('public.broadcast_send_attempts') IS NULL
      OR to_regprocedure('public.broadcast_attempt_begin(uuid,uuid,timestamptz,text,text,interval)') IS NULL
-     OR to_regprocedure('public.broadcast_attempt_reconcile_echo(uuid,text,text,text,timestamptz)') IS NULL
+     OR to_regprocedure('public.broadcast_attempt_reconcile_echo(uuid,uuid,text,text,text,timestamptz)') IS NULL
      OR to_regprocedure('public.broadcast_attempt_decide(uuid,uuid,uuid[],text)') IS NULL THEN
     RAISE EXCEPTION 'broadcast send attempts are missing — migration 056 did not apply';
   END IF;
@@ -243,10 +238,10 @@ BEGIN
     RAISE EXCEPTION 'fan-out outcomes are missing — migration 060 did not apply';
   END IF;
 
-  -- 061: the per-account connection lock (K6).
-  IF to_regprocedure('public.set_openwa_active(uuid,uuid)') IS NULL
+  -- 061: the connection lock (K6), per number since 072.
+  IF to_regprocedure('public.lock_whatsapp_connection(uuid)') IS NULL
      OR to_regprocedure('public.apply_openwa_session_state(uuid,jsonb,text,timestamptz)') IS NULL THEN
-    RAISE EXCEPTION 'connection lock RPCs are missing — migration 061 did not apply';
+    RAISE EXCEPTION 'connection lock RPCs are missing — migration 061/072 did not apply';
   END IF;
   IF has_function_privilege('authenticated', 'public.apply_openwa_session_state(uuid,jsonb,text,timestamptz)', 'EXECUTE') THEN
     RAISE EXCEPTION 'apply_openwa_session_state is executable by authenticated — migration 061 grants are wrong';
@@ -278,6 +273,33 @@ BEGIN
   END IF;
   IF has_function_privilege('authenticated', 'public.apply_openwa_session_state(uuid,jsonb,text,timestamptz)', 'EXECUTE') THEN
     RAISE EXCEPTION 'apply_openwa_session_state is executable by authenticated — migration 064 grants are wrong';
+  END IF;
+
+  -- 072–073: several numbers per account; a personal number is its
+  -- owner's alone.
+  IF to_regclass('public.whatsapp_connections') IS NULL
+     OR to_regprocedure('public.set_openwa_active(uuid,uuid)') IS NOT NULL
+     OR EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'whatsapp_config' AND column_name = 'provider')
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_schema = 'public' AND table_name = 'conversations'
+                       AND column_name = 'connection_id' AND is_nullable = 'NO')
+     OR to_regclass('public.idx_conversations_connection_contact') IS NULL
+     OR to_regclass('public.idx_conversations_account_contact') IS NOT NULL THEN
+    RAISE EXCEPTION 'WhatsApp numbers schema is missing — migration 072 did not apply';
+  END IF;
+  IF has_table_privilege('authenticated', 'public.whatsapp_connections', 'SELECT') THEN
+    RAISE EXCEPTION 'whatsapp_connections is readable by authenticated — migration 072 grants are wrong';
+  END IF;
+  IF to_regprocedure('public.visible_connection_ids()') IS NULL
+     OR NOT EXISTS (SELECT 1 FROM pg_policies
+                     WHERE schemaname = 'public' AND tablename = 'conversations' AND policyname = 'conversations_select'
+                       AND qual LIKE '%visible_connection_ids%')
+     OR NOT EXISTS (SELECT 1 FROM pg_policies
+                     WHERE schemaname = 'public' AND tablename = 'contacts' AND policyname = 'contacts_select'
+                       AND qual LIKE '%personal_only%')
+     OR NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'chat-media-private' AND NOT public) THEN
+    RAISE EXCEPTION 'personal-number visibility is missing — migration 073 did not apply';
   END IF;
 
   RAISE NOTICE 'schema verification passed';
