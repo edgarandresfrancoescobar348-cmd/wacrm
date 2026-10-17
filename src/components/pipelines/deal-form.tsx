@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllPages } from "@/lib/supabase/paged-query";
 import { useAuth } from "@/hooks/use-auth";
 import { CURRENCIES } from "@/lib/currency";
 import type {
@@ -126,7 +127,10 @@ export function DealForm({
     let cancelled = false;
     (async () => {
       const [c, p] = await Promise.all([
-        supabase.from("contacts").select("*").order("name"),
+        // Every contact, not PostgREST's first 1000 (max_rows).
+        fetchAllPages((from, to) => supabase.from("contacts").select("*").order("name").order("id").range(from, to))
+          .then((data) => ({ data }))
+          .catch(() => ({ data: [] })),
         supabase.from("profiles").select("*").order("full_name"),
       ]);
       if (cancelled) return;

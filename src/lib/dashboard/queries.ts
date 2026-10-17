@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+import { fetchAllPages } from '@/lib/supabase/paged-query'
 import {
   daysAgoStart,
   DOW_SHORT_MON_FIRST,
@@ -110,12 +112,16 @@ export async function loadConversationsSeries(
   rangeDays: number,
 ): Promise<ConversationsSeriesPoint[]> {
   const start = daysAgoStart(rangeDays - 1).toISOString()
-  const { data, error } = await db
-    .from('messages')
-    .select('created_at, sender_type')
-    .gte('created_at', start)
-    .order('created_at', { ascending: true })
-  if (error) throw error
+  // Every page: a busy week is far more than PostgREST's max_rows (1000).
+  const data = await fetchAllPages((from, to) =>
+    db
+      .from('messages')
+      .select('created_at, sender_type')
+      .gte('created_at', start)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
 
   const keys = lastNDayKeys(rangeDays)
   const buckets = new Map<string, { incoming: number; outgoing: number }>()
@@ -137,7 +143,9 @@ export async function loadConversationsSeries(
 export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
   const [stagesRes, dealsRes] = await Promise.all([
     db.from('pipeline_stages').select('id, name, color, pipeline_id, position').order('position'),
-    db.from('deals').select('stage_id, value, status').eq('status', 'open'),
+    fetchAllPages((from, to) =>
+      db.from('deals').select('stage_id, value, status').eq('status', 'open').order('id').range(from, to),
+    ).then((data) => ({ data })),
   ])
 
   const stages =
@@ -180,13 +188,16 @@ export async function loadResponseTime(db: DB): Promise<ResponseTimeSummary> {
   // with enough overlap if the user opens the dashboard late on a
   // Monday.
   const fourteenDaysAgo = daysAgoStart(13).toISOString()
-  const { data, error } = await db
-    .from('messages')
-    .select('conversation_id, sender_type, created_at')
-    .gte('created_at', fourteenDaysAgo)
-    .order('conversation_id', { ascending: true })
-    .order('created_at', { ascending: true })
-  if (error) throw error
+  const data = await fetchAllPages((from, to) =>
+    db
+      .from('messages')
+      .select('conversation_id, sender_type, created_at')
+      .gte('created_at', fourteenDaysAgo)
+      .order('conversation_id', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
 
   const rows = (data ?? []) as {
     conversation_id: string

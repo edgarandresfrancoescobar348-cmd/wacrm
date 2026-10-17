@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { fetchAllPages } from '@/lib/supabase/paged-query';
 import { useAuth } from '@/hooks/use-auth';
 import {
   dedupeByPhone,
@@ -239,10 +240,16 @@ export function ImportModal({
 
       // 2) Skip numbers already in this account. One read of the
       //    generated `phone_normalized` column (migration 022) → Set.
-      const { data: existingRows } = await supabase
-        .from('contacts')
-        .select('phone_normalized')
-        .eq('account_id', accountId);
+      // Every page: past PostgREST's max_rows (1000) the rest would be
+      // imported again as duplicates.
+      const existingRows = await fetchAllPages((from, to) =>
+        supabase
+          .from('contacts')
+          .select('phone_normalized')
+          .eq('account_id', accountId)
+          .order('id')
+          .range(from, to),
+      );
       const existing = new Set(
         (existingRows ?? [])
           .map(

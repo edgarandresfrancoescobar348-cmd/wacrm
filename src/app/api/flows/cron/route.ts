@@ -3,6 +3,7 @@ import { cronSecret } from '@/lib/cron/secret'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { resolveFallbackPolicy } from '@/lib/flows/fallback'
+import { fetchAllPages } from '@/lib/supabase/paged-query'
 
 /**
  * Sweep abandoned active flow runs.
@@ -52,16 +53,23 @@ export async function GET(request: Request) {
   // Pull all currently-active runs along with their parent flow's
   // fallback_policy. Joined in one query — the small set of active
   // runs per tenant keeps this cheap.
-  const { data: runs, error } = await admin
-    .from('flow_runs')
-    .select(
-      'id, flow_id, user_id, contact_id, last_advanced_at, flows ( fallback_policy )',
+  // Every page: past PostgREST's max_rows (1000) the rest were never swept.
+  let runs: unknown[]
+  try {
+    runs = await fetchAllPages((from, to) =>
+      admin
+        .from('flow_runs')
+        .select(
+          'id, flow_id, user_id, contact_id, last_advanced_at, flows ( fallback_policy )',
+        )
+        .eq('status', 'active')
+        .order('id')
+        .range(from, to),
     )
-    .eq('status', 'active')
-
-  if (error) {
-    console.error('[flows-cron] active-run scan failed:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[flows-cron] active-run scan failed:', message)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
   if (!runs?.length) return NextResponse.json({ swept: 0 })
 

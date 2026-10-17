@@ -10,6 +10,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { fetchAllPages } from '@/lib/supabase/paged-query'
+
 import { contactNamePatch, nameFromWhatsApp } from '@/lib/whatsapp/contact-name'
 import { listOpenWaChats, type OpenWaChatSummary } from './client'
 import { openWaGateway } from './gateway'
@@ -69,16 +71,26 @@ export async function syncAccountChatState(
   }
   if (!chats.size) return 0
 
-  const { data, error } = await admin
-    .from('conversations')
-    .select('id, wa_chat_id, is_group, archived, pinned_at, unread_count, group_name, wa_sort_at, contact:contacts(id, name, name_source, push_name)')
-    .eq('account_id', args.accountId)
-    .not('wa_chat_id', 'is', null)
-  if (error) throw new Error(`chat state lookup failed: ${error.message}`)
+  // Every page: one select stops at PostgREST's max_rows (1000) — the
+  // real account has 1401 chats, and the rest never synced (phase 5g).
+  let data: unknown[]
+  try {
+    data = await fetchAllPages((from, to) =>
+      admin
+        .from('conversations')
+        .select('id, wa_chat_id, is_group, archived, pinned_at, unread_count, group_name, wa_sort_at, contact:contacts(id, name, name_source, push_name)')
+        .eq('account_id', args.accountId)
+        .not('wa_chat_id', 'is', null)
+        .order('id')
+        .range(from, to),
+    )
+  } catch (error) {
+    throw new Error(`chat state lookup failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
 
   const stamp = new Date(now()).toISOString()
   let changed = 0
-  for (const conv of (data ?? []) as unknown as ConversationState[]) {
+  for (const conv of data as unknown as ConversationState[]) {
     const chat = chats.get(conv.wa_chat_id)
     if (!chat) continue
     const patch = chatStatePatch(conv, chat, stamp)
