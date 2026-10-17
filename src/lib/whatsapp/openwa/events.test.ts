@@ -43,6 +43,7 @@ import {
   phoneFromChatId,
   toIngestType,
   type OpenWaEnvelope,
+  identityFromContact,
 } from './events'
 import type { OpenWaConnectionRow } from './connection'
 
@@ -105,6 +106,22 @@ beforeEach(() => {
   h.failSession = false
   h.staleSession = false
   h.failMirror = false
+})
+
+// Phase 5f, real account round 3: "Sara Ferreira" (a WhatsApp Business
+// name, verifiedLevel 0) became the title of a number WhatsApp lists as
+// "+55 62 99842-3737".
+describe('identityFromContact — business names', () => {
+  it('an unofficial business name is a profile name, flagged to undo a stored title', () => {
+    expect(identityFromContact('556298423737', { verifiedName: 'Sara Ferreira', verifiedLevel: 0 })).toMatchObject({
+      name: 'Sara Ferreira',
+      nameSource: 'push',
+      unofficialBusiness: true,
+    })
+    const official = identityFromContact('5511912345604', { verifiedName: 'PicPay', verifiedLevel: 2, pushName: 'PicPay' })
+    expect(official).toMatchObject({ name: 'PicPay', nameSource: 'verified' })
+    expect(official.unofficialBusiness).toBeUndefined()
+  })
 })
 
 describe('classification helpers', () => {

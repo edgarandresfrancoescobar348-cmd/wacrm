@@ -1083,6 +1083,7 @@ function contactIdentityPatch(
     existing,
     name ? { name, source: identity.name ? (identity.nameSource ?? 'push') : 'push' } : null,
     identity.pushName,
+    { unofficialBusiness: identity.unofficialBusiness },
   )
   if (namePatch) Object.assign(patch, namePatch)
 

@@ -67,6 +67,8 @@ export interface WaIdentity {
   nameSource?: import('./contact-name').NameSource
   /** The sender's own profile name, kept apart from `name` (QR mode). */
   pushName?: string | null
+  /** QR mode: WhatsApp sent a business name of an account that isn't official (contact-name.ts). */
+  unofficialBusiness?: boolean
 }
 
 /**

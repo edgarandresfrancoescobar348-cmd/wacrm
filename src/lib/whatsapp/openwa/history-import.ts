@@ -79,7 +79,7 @@ import { requireOpenWaGateway } from './gateway'
 import { findOrCreateGroupConversation, groupMessageRow } from './groups'
 import { forwardFlags, mediaMetaFor, statusFromAck } from './parity'
 import { isWaiting, refreshPatch, type IncomingMessageRow, type StoredMessageState } from './import-refresh'
-import { nameFromWhatsApp } from '@/lib/whatsapp/contact-name'
+import { contactNamePatch, isUnofficialBusinessName, nameFromWhatsApp } from '@/lib/whatsapp/contact-name'
 import type { ContentMeta } from '@/lib/whatsapp/message-content'
 import type { OpenWaConnectionRow } from './connection'
 
@@ -505,6 +505,8 @@ async function importChat(
       savedName: incoming?.name,
       isMyContact: incoming?.isMyContact,
       verifiedName: incoming?.verifiedName,
+      verifiedLevel: incoming?.verifiedLevel,
+      isEnterprise: incoming?.isEnterprise,
       pushName: incoming?.pushName,
     })
     const contactOutcome = await findOrCreateContact(job.account_id, row.user_id, {
@@ -517,6 +519,15 @@ async function importChat(
       waUsername: null,
     })
     if (!contactOutcome) throw new HistoryStoreError('contact')
+    // A business name an earlier import made the title, of an account that
+    // isn't official: back to the profile name it is (contact-name.ts).
+    if (!contactOutcome.wasCreated && incoming && isUnofficialBusinessName(incoming)) {
+      const demote = contactNamePatch(contactOutcome.contact, null, undefined, { unofficialBusiness: true })
+      if (demote) {
+        const { error } = await admin.from('contacts').update(demote).eq('id', contactOutcome.contact.id).eq('account_id', job.account_id)
+        if (error) throw new HistoryStoreError('contact name', error)
+      }
+    }
     if (contactOutcome.wasCreated) {
       try {
         await pace(ctx)

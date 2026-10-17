@@ -53,6 +53,8 @@ export function groupSenderName(contact: OpenWaMessageData['contact'], senderPho
     savedName: contact?.name,
     isMyContact: contact?.isMyContact,
     verifiedName: contact?.verifiedName,
+    verifiedLevel: contact?.verifiedLevel,
+    isEnterprise: contact?.isEnterprise,
     pushName: contact?.pushName,
   })
   if (best) return best.source === 'push' ? `~${best.name}` : best.name

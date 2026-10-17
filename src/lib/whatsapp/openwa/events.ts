@@ -10,7 +10,7 @@
 
 import { ingestGroupMessage } from './groups'
 import { forwardFlags, mediaMetaFor, statusFromAck } from './parity'
-import { nameFromWhatsApp } from '@/lib/whatsapp/contact-name'
+import { isUnofficialBusinessName, nameFromWhatsApp } from '@/lib/whatsapp/contact-name'
 import crypto from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -86,7 +86,7 @@ export interface OpenWaMessageData {
   isStatusBroadcast?: boolean
   senderPhone?: string | null
   /** With WEBHOOK_CONTACT_DETAILS on the gateway: the sender's full contact. */
-  contact?: { name?: string; pushName?: string; verifiedName?: string; isMyContact?: boolean }
+  contact?: { name?: string; pushName?: string; verifiedName?: string; verifiedLevel?: number; isEnterprise?: boolean; isMyContact?: boolean }
   media?: {
     mimetype?: string
     filename?: string
@@ -427,12 +427,15 @@ export function identityFromContact(phone: string, contact: OpenWaMessageData['c
     savedName: contact?.name,
     isMyContact: contact?.isMyContact,
     verifiedName: contact?.verifiedName,
+    verifiedLevel: contact?.verifiedLevel,
+    isEnterprise: contact?.isEnterprise,
     pushName: contact?.pushName,
   })
   return {
     ...identityFor(phone, best?.name ?? ''),
     ...(best ? { nameSource: best.source } : {}),
     pushName: contact?.pushName ?? null,
+    ...(contact && isUnofficialBusinessName(contact) ? { unofficialBusiness: true } : {}),
   }
 }
 

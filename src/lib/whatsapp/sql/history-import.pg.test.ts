@@ -7,7 +7,7 @@
 // no bots / no fan-out / no unread for imported messages, placeholders
 // and post-start messages skipped, Baileys fallback, waiting session.
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { WA_MIGRATIONS, WA_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
 import { PgSupabase } from '@/test/pg-supabase'
@@ -521,6 +521,36 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     } finally {
       CHATS.pop()
     }
+  })
+
+  // Phase 5f, real account round 3: "Sara Ferreira" was the title of
+  // 556298423737 (name_source 'verified'). Her business name isn't an
+  // official account's (verifiedLevel 0): WhatsApp lists the number and
+  // "~Sara Ferreira". A re-import makes it the profile name it is.
+  it('a business name of an account that is not official stops being the title on re-import', async () => {
+    const ANA_ID = CHATS[0].id
+    // Not saved in the phone: its chat title is the number.
+    const title = CHATS[0].name
+    CHATS[0].name = '+55 11 91111-0001'
+    onTestFinished(() => {
+      CHATS[0].name = title
+    })
+    historyHook = (chatId) =>
+      chatId === ANA_ID
+        ? [200, [msg(ANA_ID, 'sara-1', { body: 'À disposição', timestamp: T0 + 10, contact: { verifiedName: 'Sara Ferreira', verifiedLevel: 0, isEnterprise: false, isMyContact: false } })], 0, {}]
+        : undefined
+    // Stored by the earlier rule: the business name as a verified title.
+    await pg.sql(`INSERT INTO public.contacts(account_id, phone, name, name_source) VALUES ('${ACCT}', '5511911110001', 'Sara Ferreira', 'verified')`)
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await run()
+    expect(await pg.sql(`SELECT name || '|' || name_source || '|' || coalesce(push_name, '-') FROM public.contacts WHERE phone = '5511911110001'`)).toBe(
+      'Sara Ferreira|push|Sara Ferreira',
+    )
+    // A name typed in the CRM is never touched.
+    await pg.sql(`UPDATE public.contacts SET name = 'Sara (fornecedora)', name_source = 'manual' WHERE phone = '5511911110001'`)
+    await startHistoryImport(db.asClient(), ACCT, SESSION)
+    await run()
+    expect(await pg.sql(`SELECT name || '|' || name_source FROM public.contacts WHERE phone = '5511911110001'`)).toBe('Sara (fornecedora)|manual')
   })
 
   // Phase 5c (real account): 8 chats reimported after 429s, yet the job ended
