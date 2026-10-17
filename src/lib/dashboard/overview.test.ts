@@ -139,6 +139,21 @@ describe('setup', () => {
     ])
   })
 
+  // Found on the owner's Mac: one number, Personal and connected. The
+  // dashboard counts business numbers only (090), so "Connect your
+  // WhatsApp number" was false for him.
+  it('asks for a business number when only the viewer’s personal one is connected', () => {
+    const none = { ...base, whatsappConnected: false }
+    expect(setupSteps(none, { personalConnected: true })[0]).toEqual({
+      id: 'whatsappBusiness',
+      done: false,
+      href: '/settings?tab=whatsapp',
+    })
+    expect(setupSteps(none)[0].id).toBe('whatsapp')
+    // a business number connected: the plain, done step
+    expect(setupSteps(base, { personalConnected: true })[0]).toMatchObject({ id: 'whatsapp', done: true })
+  })
+
   it('shows setup only until the first conversation exists', () => {
     expect(needsSetup(base)).toBe(true)
     expect(needsSetup({ ...base, hasConversations: true })).toBe(false)

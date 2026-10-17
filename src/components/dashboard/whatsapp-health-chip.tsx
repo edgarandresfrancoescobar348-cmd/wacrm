@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useFormatter, useTranslations } from 'next-intl'
 
 import type { PhoneHealth } from '@/lib/whatsapp/phone-health'
+import { formatPhoneDisplay } from '@/lib/whatsapp/phone-display'
 import { cn } from '@/lib/utils'
 
 const DOT_CLASS = {
@@ -46,10 +47,24 @@ export function WhatsAppHealthChip() {
       ? t('disconnected')
       : health.state === 'unavailable'
         ? t('unavailable')
-        : [health.displayPhoneNumber, t(`quality.${health.quality}`), limit].filter(Boolean).join(' · ')
+        : health.state === 'qr_connected'
+          ? [t('qrConnected'), health.displayPhoneNumber ? formatPhoneDisplay(health.displayPhoneNumber) : null]
+              .filter(Boolean)
+              .join(' · ')
+          : health.state === 'no_business'
+            ? t('noBusiness')
+            : [health.displayPhoneNumber, t(`quality.${health.quality}`), limit].filter(Boolean).join(' · ')
 
   const dot =
-    health.state === 'connected' ? DOT_CLASS[health.quality] : health.state === 'disconnected' ? DOT_CLASS.RED : DOT_CLASS.UNKNOWN
+    health.state === 'connected'
+      ? DOT_CLASS[health.quality]
+      : health.state === 'qr_connected'
+        ? DOT_CLASS.GREEN
+        : health.state === 'no_business'
+          ? DOT_CLASS.YELLOW
+          : health.state === 'disconnected'
+            ? DOT_CLASS.RED
+            : DOT_CLASS.UNKNOWN
 
   return (
     <Link

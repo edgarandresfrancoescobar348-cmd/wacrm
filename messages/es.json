@@ -148,7 +148,9 @@
         "perDay": "{count}/día",
         "unlimited": "Sin límite diario",
         "disconnected": "WhatsApp no conectado",
-        "unavailable": "No se pudo comprobar tu número"
+        "unavailable": "No se pudo comprobar tu número",
+        "qrConnected": "WhatsApp Web conectado",
+        "noBusiness": "Ningún número de la Empresa"
       },
       "attention": {
         "waiting": "Esperan respuesta",
@@ -297,6 +299,11 @@
             "title": "Conecta tu número de WhatsApp",
             "description": "Vincula el número al que escriben tus clientes.",
             "action": "Conectar"
+          },
+          "whatsappBusiness": {
+            "title": "Conecta el número de la empresa",
+            "description": "Tu número Personal está conectado, pero solo los números de la Empresa cuentan en el panel del equipo.",
+            "action": "Añadir número"
           },
           "contacts": {
             "title": "Añade tus contactos",

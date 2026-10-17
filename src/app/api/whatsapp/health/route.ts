@@ -8,6 +8,8 @@ import {
   type PhoneHealth,
 } from '@/lib/whatsapp/phone-health'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { loadAccountConnections } from '@/lib/whatsapp/connections'
 
 const CACHE_HEADERS = { 'Cache-Control': 'private, max-age=300' }
 
@@ -35,6 +37,15 @@ export async function GET() {
       .maybeSingle()
 
     if (!config || config.status !== 'connected' || !config.phone_number_id) {
+      // No official number up: say what IS linked (phase 6) instead of
+      // "not connected" — a business QR number, or only the viewer's own
+      // personal number, which the team's dashboard never counts.
+      const numbers = (await loadAccountConnections(supabaseAdmin(), accountId)).filter((n) => n.status === 'connected')
+      const qr = numbers.find((n) => n.scope === 'business' && n.provider === 'openwa')
+      if (qr) return reply({ ...EMPTY, state: 'qr_connected', displayPhoneNumber: qr.phone })
+      if (numbers.some((n) => n.scope === 'personal' && n.ownerUserId === userId)) {
+        return reply({ ...EMPTY, state: 'no_business' })
+      }
       return reply({ state: 'disconnected', ...EMPTY })
     }
 

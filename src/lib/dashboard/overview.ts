@@ -274,14 +274,21 @@ export function bucketDate(t: string): Date {
 }
 
 export interface SetupStep {
-  id: 'whatsapp' | 'contacts' | 'template' | 'teammate'
+  id: 'whatsapp' | 'whatsappBusiness' | 'contacts' | 'template' | 'teammate'
   done: boolean
   href: string
 }
 
-export function setupSteps(setup: OverviewSetup): SetupStep[] {
+/**
+ * `personalConnected`: the viewer's own personal number is linked. The
+ * setup counts business numbers only (090), so with no business number
+ * the first step asks for one — instead of "connect your number" to
+ * someone whose number is connected.
+ */
+export function setupSteps(setup: OverviewSetup, opts: { personalConnected?: boolean } = {}): SetupStep[] {
+  const whatsappId = !setup.whatsappConnected && opts.personalConnected ? 'whatsappBusiness' : 'whatsapp'
   return [
-    { id: 'whatsapp', done: setup.whatsappConnected, href: '/settings?tab=whatsapp' },
+    { id: whatsappId, done: setup.whatsappConnected, href: '/settings?tab=whatsapp' },
     { id: 'contacts', done: setup.hasContacts, href: '/contacts' },
     { id: 'template', done: setup.hasApprovedTemplate, href: '/settings?tab=templates' },
     { id: 'teammate', done: setup.memberCount > 1, href: '/settings?tab=members' },

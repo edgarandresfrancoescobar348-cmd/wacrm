@@ -148,7 +148,9 @@
         "perDay": "{count}/day",
         "unlimited": "No daily limit",
         "disconnected": "WhatsApp not connected",
-        "unavailable": "Couldn't check your number"
+        "unavailable": "Couldn't check your number",
+        "qrConnected": "WhatsApp Web connected",
+        "noBusiness": "No Business number"
       },
       "attention": {
         "waiting": "Waiting for a reply",
@@ -297,6 +299,11 @@
             "title": "Connect your WhatsApp number",
             "description": "Link the number your customers message.",
             "action": "Connect"
+          },
+          "whatsappBusiness": {
+            "title": "Connect the business number",
+            "description": "Your Personal number is connected, but only Business numbers count in the team’s dashboard.",
+            "action": "Add number"
           },
           "contacts": {
             "title": "Add your contacts",

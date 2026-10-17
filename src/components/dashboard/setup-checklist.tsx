@@ -9,9 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { setupSteps, type OverviewSetup } from '@/lib/dashboard/overview'
 import { cn } from '@/lib/utils'
 
-export function SetupChecklist({ setup }: { setup: OverviewSetup }) {
+export function SetupChecklist({ setup, personalConnected = false }: { setup: OverviewSetup; personalConnected?: boolean }) {
   const t = useTranslations('Dashboard.overview.setup')
-  const steps = setupSteps(setup)
+  const steps = setupSteps(setup, { personalConnected })
   const done = steps.filter((s) => s.done).length
   const nextId = steps.find((s) => !s.done)?.id
 

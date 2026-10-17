@@ -148,7 +148,9 @@
         "perDay": "하루 {count}",
         "unlimited": "일일 한도 없음",
         "disconnected": "WhatsApp 연결 안 됨",
-        "unavailable": "번호 상태를 확인하지 못했습니다"
+        "unavailable": "번호 상태를 확인하지 못했습니다",
+        "qrConnected": "WhatsApp Web 연결됨",
+        "noBusiness": "비즈니스 번호 없음"
       },
       "attention": {
         "waiting": "답장 대기",
@@ -297,6 +299,11 @@
             "title": "WhatsApp 번호 연결",
             "description": "고객이 메시지를 보내는 번호를 연결하세요.",
             "action": "연결"
+          },
+          "whatsappBusiness": {
+            "title": "비즈니스 번호를 연결하세요",
+            "description": "개인 번호는 연결되어 있지만, 팀 대시보드에는 비즈니스 번호만 포함됩니다.",
+            "action": "번호 추가"
           },
           "contacts": {
             "title": "연락처 추가",

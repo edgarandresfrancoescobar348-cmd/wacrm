@@ -5,7 +5,13 @@ export type MessagingLimit =
   | { kind: 'unlimited' }
 
 export interface PhoneHealth {
-  state: 'connected' | 'disconnected' | 'unavailable'
+  /**
+   * connected      the official number, with Meta's quality and limit
+   * qr_connected   no official number; a business QR number is linked
+   * no_business    only the viewer's personal number is linked — the team
+   *                dashboard counts business numbers only (migration 090)
+   */
+  state: 'connected' | 'disconnected' | 'unavailable' | 'qr_connected' | 'no_business'
   displayPhoneNumber: string | null
   quality: QualityRating
   limit: MessagingLimit | null

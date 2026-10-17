@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Button } from '@/components/ui/button'
 import { WaPage } from '@/components/layout/wa-panel'
+import { useWhatsAppConnections } from '@/hooks/use-whatsapp-connections'
 import { loadActivity } from '@/lib/dashboard/queries'
 import type { ActivityItem } from '@/lib/dashboard/types'
 import {
@@ -46,6 +47,12 @@ export default function DashboardPage() {
 function DashboardPageInner() {
   const t = useTranslations('Dashboard.overview')
   const tNav = useTranslations('Sidebar')
+  // The viewer's own personal number, linked: the checklist then asks for
+  // a business number instead of "connect your number" (setupSteps).
+  const { connections } = useWhatsAppConnections({ poll: false })
+  const personalConnected = Boolean(
+    connections?.some((n) => n.scope === 'personal' && n.visible && n.status === 'connected' && !n.removed_at),
+  )
   const router = useRouter()
   const searchParams = useSearchParams()
   const range = parseOverviewRange(searchParams.get('range'))
@@ -159,7 +166,7 @@ function DashboardPageInner() {
       />
 
       {data && needsSetup(data.setup) ? (
-        <SetupChecklist setup={data.setup} />
+        <SetupChecklist setup={data.setup} personalConnected={personalConnected} />
       ) : (
         <>
           <AttentionRow data={data} now={now} onlineCount={onlineCount} />

@@ -25,6 +25,10 @@ vi.mock('@/lib/auth/account', async () => {
   }
 })
 
+let numbers: { scope: string; provider: string; status: string; ownerUserId: string | null; phone: string | null }[] = []
+vi.mock('@/lib/flows/admin-client', () => ({ supabaseAdmin: () => ({}) }))
+vi.mock('@/lib/whatsapp/connections', () => ({ loadAccountConnections: async () => numbers }))
+
 vi.mock('@/lib/whatsapp/encryption', () => ({ decrypt: (v: string) => `plain:${v}` }))
 vi.mock('@/lib/whatsapp/meta-api', () => ({
   getPhoneNumberHealth: (args: unknown) => getPhoneNumberHealth(args),
@@ -34,6 +38,7 @@ import { GET } from './route'
 
 beforeEach(() => {
   storedConfig = null
+  numbers = []
   getPhoneNumberHealth.mockReset()
 })
 
@@ -61,6 +66,22 @@ describe('GET /api/whatsapp/health', () => {
       quality: 'GREEN',
       limit: { kind: 'tier', perDay: 2000 },
     })
+  })
+
+  // Phase 6: with no official number, say what is linked.
+  it('reports a connected business QR number', async () => {
+    numbers = [{ scope: 'business', provider: 'openwa', status: 'connected', ownerUserId: null, phone: '5511983663361' }]
+    expect(await (await GET()).json()).toMatchObject({ state: 'qr_connected', displayPhoneNumber: '5511983663361' })
+  })
+
+  it('reports "no business number" when only the viewer’s personal number is connected', async () => {
+    numbers = [{ scope: 'personal', provider: 'openwa', status: 'connected', ownerUserId: 'user-1', phone: '5511983663361' }]
+    expect(await (await GET()).json()).toMatchObject({ state: 'no_business', displayPhoneNumber: null })
+  })
+
+  it('a colleague’s personal number does not count for the viewer', async () => {
+    numbers = [{ scope: 'personal', provider: 'openwa', status: 'connected', ownerUserId: 'user-2', phone: '5511900000000' }]
+    expect(await (await GET()).json()).toMatchObject({ state: 'disconnected' })
   })
 
   it('degrades to unavailable when Meta rejects the lookup', async () => {
