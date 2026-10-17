@@ -1,6 +1,6 @@
 // G5 (second review): completing an inbound message (unread + last
 // summary) happens exactly once, even when a redelivery races the first
-// attempt. Migration 053 on an ephemeral PostgreSQL.
+// attempt. Migration 066 on an ephemeral PostgreSQL.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -16,7 +16,7 @@ describe.skipIf(!pgAvailable())('bump_conversation_on_inbound(conv, text, messag
     await pg.sql(`INSERT INTO public.accounts VALUES ('00000000-0000-0000-0000-00000000000a');
       INSERT INTO public.conversations(id, account_id) VALUES ('${CONV}', '00000000-0000-0000-0000-00000000000a');
       INSERT INTO public.messages(id, conversation_id, message_id) VALUES ('00000000-0000-0000-0000-0000000000f0', '${CONV}', 'old');`)
-    await pg.migrate('053_inbound_completion.sql')
+    await pg.migrate('066_inbound_completion.sql')
   }, 60_000)
   afterAll(() => pg?.stop())
 

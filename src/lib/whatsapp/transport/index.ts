@@ -91,7 +91,7 @@ export async function loadConnectionTransport(
  * The transport of a conversation's own number — every reply goes out
  * from it. `db` reads the conversation: pass the user's RLS client on a
  * user-initiated send, so a member who can't see a personal number's
- * conversation can't send in it either (migration 073).
+ * conversation can't send in it either (migration 086).
  */
 export async function loadConversationTransport(
   db: SupabaseClient,

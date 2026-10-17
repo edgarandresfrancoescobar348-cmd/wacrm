@@ -7,7 +7,7 @@
 // abandoned claim can be taken again by the next redelivery. So a
 // transient failure costs a retry, never the message — and a delivery
 // that did complete is answered "duplicate" forever after (migration
-// 048).
+// 061).
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -54,7 +54,7 @@ export async function claimDelivery(
     .eq('account_id', args.accountId)
     .maybeSingle()
   if (readErr) throw new Error(`ledger read failed: ${readErr.message}`)
-  // The key is (account_id, idempotency_key) (migration 049), so a
+  // The key is (account_id, idempotency_key) (migration 062), so a
   // conflict without a row of ours is a race with a delete — retry later.
   if (!row) return 'busy'
   const current = row as LedgerRow

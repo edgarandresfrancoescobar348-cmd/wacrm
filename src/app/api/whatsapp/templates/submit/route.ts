@@ -15,6 +15,7 @@ import {
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getT } from '@/lib/i18n/translate'
 import { hasOfficialNumber } from '@/lib/whatsapp/connections'
 
@@ -33,7 +34,7 @@ function buildUpsertRow(
     status: 'DRAFT' | string
     metaTemplateId: string | null
     submissionError: string | null
-    /** 'local' on a QR-code connection (migration 047). */
+    /** 'local' on a QR-code connection (migration 060). */
     origin?: 'meta' | 'local'
   },
 ) {
@@ -107,6 +108,9 @@ export async function POST(request: Request) {
     // approval — an external side effect RLS can't roll back — before the
     // local upsert was refused.
     const { supabase, accountId, userId } = await requireRole('admin')
+
+    const limit = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
+    if (!limit.success) return rateLimitResponse(limit)
 
     let payload: TemplatePayload
     try {

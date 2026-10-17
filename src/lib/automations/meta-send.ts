@@ -8,6 +8,7 @@ import {
   resolveTemplateRow,
   templateContentText,
   templateUsableOn,
+  templateHeaderMediaUrl,
 } from '@/lib/whatsapp/template-body'
 import { supabaseAdmin } from './admin-client'
 import { persistOutboundMessage } from '@/lib/whatsapp/outbound-persist'
@@ -135,8 +136,10 @@ async function sendViaTransport(input: SendInput): Promise<{ whatsapp_message_id
         to,
         templateName: input.templateName,
         language: input.language,
-        template:
-          transport.capabilities.templates === 'local' ? templateRow : undefined,
+        // The local row on every transport: Meta needs it for the header
+        // component (upstream f2ce3e07), a local-template transport
+        // renders the whole message from it.
+        template: templateRow ?? undefined,
         params: input.params,
       })
       return r.messageId
@@ -165,6 +168,7 @@ async function sendViaTransport(input: SendInput): Promise<{ whatsapp_message_id
       sender_type: 'bot',
       content_type,
       content_text,
+      media_url: templateHeaderMediaUrl(templateRow),
       template_name,
       message_id: waMessageId,
       status: 'sent',

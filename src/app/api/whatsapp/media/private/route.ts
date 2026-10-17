@@ -2,7 +2,7 @@
 // number's media (phase 6).
 //
 // The file sits in the PRIVATE bucket chat-media-private and is
-// downloaded with the caller's own session: storage RLS (migration 073)
+// downloaded with the caller's own session: storage RLS (migration 086)
 // lets only the number's owner read it — no service role, no public URL.
 // The bytes are whatever a WhatsApp sender sent, so only inert types
 // render inline (untrustedMediaHeaders).

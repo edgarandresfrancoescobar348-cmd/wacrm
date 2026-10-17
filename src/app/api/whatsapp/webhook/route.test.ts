@@ -12,6 +12,9 @@ const h = vi.hoisted(() => ({
     // returns the row; a replayed delivery conflicts and returns [].
     messageUpsertResult: [{ id: 'msg-1' }] as { id: string }[],
     priorCustomerMsgCount: 0,
+    /** conversations.first_inbound_at (upstream 054): null until claimed. */
+    firstInboundAt: null as string | null,
+    firstInboundClaims: 0,
     /** Row `lookupInternalIdByMetaId` resolves for a `context.id`. */
     replyContextParent: null as { id: string } | null,
     conversation: { id: 'conv-1', unread_count: 0, account_id: 'acc-1' },
@@ -109,9 +112,25 @@ vi.mock('@supabase/supabase-js', () => ({
           }
         case 'conversations':
           // findOrCreateConversation: select().eq().eq().order().limit()
+          // first inbound (upstream 054): update().eq().is().select() claims
+          // first_inbound_at; select('first_inbound_at').eq().maybeSingle()
           return {
+            update: (patch: { first_inbound_at?: string }) => ({
+              eq: () => ({
+                is: () => ({
+                  select: () => {
+                    if (h.state.firstInboundAt) return Promise.resolve({ data: [], error: null })
+                    h.state.firstInboundAt = patch.first_inbound_at ?? null
+                    h.state.firstInboundClaims += 1
+                    return Promise.resolve({ data: [{ id: 'conv-1' }], error: null })
+                  },
+                }),
+              }),
+            }),
             select: () => ({
               eq: () => ({
+                maybeSingle: () =>
+                  Promise.resolve({ data: { first_inbound_at: h.state.firstInboundAt }, error: null }),
                 eq: () => ({
                   order: () => ({
                     limit: () =>
@@ -202,14 +221,16 @@ vi.mock('@supabase/supabase-js', () => ({
             // reply-context parent lookup.
             select: (_columns: string, options?: { head?: boolean }) =>
               options?.head
-                ? // priorCustomerMsgCount: select('id',{count,head}).eq().eq()
+                ? // other customer messages: select('id',{count,head}).eq().eq().neq()
                   {
                     eq: () => ({
-                      eq: () =>
-                        Promise.resolve({
-                          count: h.state.priorCustomerMsgCount,
-                          error: null,
-                        }),
+                      eq: () => ({
+                        neq: () =>
+                          Promise.resolve({
+                            count: h.state.priorCustomerMsgCount,
+                            error: null,
+                          }),
+                      }),
                     }),
                   }
                 : // lookupInternalIdByMetaId: select('id').eq().eq().maybeSingle()
@@ -252,7 +273,7 @@ vi.mock('@supabase/supabase-js', () => ({
               }
             },
           }
-        // The fan-out outbox (migration 057): the runner records each step.
+        // The fan-out outbox (migration 070): the runner records each step.
         case 'inbound_fanout_tasks': {
           // Writes return the row's progress, like the real UPDATE … RETURNING.
           let patch: Record<string, unknown> = {}
@@ -272,7 +293,7 @@ vi.mock('@supabase/supabase-js', () => ({
     },
     rpc: (name: string, args: Record<string, unknown>) => {
       h.state.rpcCalls.push({ name, args })
-      // Migration 057: completion enqueues the fan-out task; the claim
+      // Migration 070: completion enqueues the fan-out task; the claim
       // hands it out once.
       if (name === 'complete_inbound_message') {
         h.state.fanoutTasks.push({ id: `task-${h.state.fanoutTasks.length + 1}`, message_id: args.p_message_id,
@@ -355,6 +376,7 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 }))
 
 import { POST } from './route'
+import { MAX_WEBHOOK_BODY_BYTES } from '@/lib/whatsapp/webhook-body'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { findExistingContact } from '@/lib/contacts/dedupe'
 import { handleTemplateWebhookChange } from '@/lib/whatsapp/template-webhook'
@@ -393,10 +415,16 @@ function inboundRequest(
       },
     ],
   }
-  return {
-    text: async () => JSON.stringify(body),
-    headers: { get: () => 'sha256=stub' },
-  } as unknown as Request
+  return signedPost(JSON.stringify(body))
+}
+
+/** A POST like Meta's: a real body stream (read capped, upstream 66517275). */
+function signedPost(raw: string): Request {
+  return new Request('http://localhost/api/whatsapp/webhook', {
+    method: 'POST',
+    headers: { 'x-hub-signature-256': 'sha256=stub' },
+    body: raw,
+  })
 }
 
 async function runWebhook(
@@ -426,10 +454,7 @@ async function runStatusWebhook(status: Record<string, unknown>) {
       },
     ],
   }
-  const res = await POST({
-    text: async () => JSON.stringify(body),
-    headers: { get: () => 'sha256=stub' },
-  } as unknown as Request)
+  const res = await POST(signedPost(JSON.stringify(body)))
   for (const cb of h.state.afterCallbacks) await cb()
   return res
 }
@@ -438,6 +463,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.state.messageUpsertResult = [{ id: 'msg-1' }]
   h.state.priorCustomerMsgCount = 0
+  h.state.firstInboundAt = null
+  h.state.firstInboundClaims = 0
   h.state.replyContextParent = null
   h.state.conversation = { id: 'conv-1', unread_count: 0, account_id: 'acc-1' }
   h.state.upsertCalls = []
@@ -968,10 +995,7 @@ describe('template-lifecycle webhooks: WABA id is threaded to the handler (#534)
         },
       ],
     }
-    const req = {
-      text: async () => JSON.stringify(body),
-      headers: { get: () => 'sha256=stub' },
-    } as unknown as Request
+    const req = signedPost(JSON.stringify(body))
 
     await POST(req)
     for (const cb of h.state.afterCallbacks) await cb()
@@ -1008,14 +1032,14 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
     ],
   }
 
-  // Since migration 052 the status lands through ONE atomic, monotonic
+  // Since migration 065 the status lands through ONE atomic, monotonic
   // database operation (apply_message_receipt) — what it does to the
   // messages / broadcast_recipients rows is covered against a real
   // PostgreSQL in src/lib/whatsapp/sql/receipts.pg.test.ts. Here: what
   // the Meta webhook hands it.
   const receipts = () => h.state.rpcCalls.filter((c) => c.name === 'apply_message_receipt')
 
-  it('hands the failure reason (code, title, details) with the status, globally scoped', async () => {
+  it('hands the failure reason (code, title, details) with the status, scoped to the receiving number\'s account', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       await runStatusWebhook(FAILED_STATUS)
@@ -1025,7 +1049,7 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
 
     expect(receipts()).toHaveLength(1)
     expect(receipts()[0].args).toEqual({
-      p_account: null,
+      p_account: 'acc-1',
       p_provider_message_id: 'wamid.OUT1',
       p_status: 'failed',
       p_failure: {
@@ -1145,5 +1169,73 @@ describe('inbound webhook: message kinds match the QR mode (A2)', () => {
     await runWebhook({ ...base, ...message })
     expect(h.state.upsertCalls[0].row).toMatchObject({ content_type: contentType, content_meta: meta })
     expect(h.state.rpcCalls.find((c) => c.name === 'complete_inbound_message')?.args.p_last_message_text).toBe(preview)
+  })
+})
+
+// Upstream's webhook hardening (66517275, 621a0523, 30afcce5), on this
+// branch's provider-neutral ingest path.
+describe('inbound webhook: oversized body cap', () => {
+  it('answers 413 for a body over the cap and schedules no processing', async () => {
+    const before = h.state.afterCallbacks.length
+    const res = (await POST(signedPost('x'.repeat(MAX_WEBHOOK_BODY_BYTES + 1)))) as unknown as {
+      init?: { status?: number }
+    }
+    expect(res.init?.status).toBe(413)
+    expect(h.state.afterCallbacks).toHaveLength(before)
+  })
+
+  it('answers 413 from the declared Content-Length alone', async () => {
+    const before = h.state.afterCallbacks.length
+    const req = new Request('http://localhost/api/whatsapp/webhook', {
+      method: 'POST',
+      headers: { 'content-length': String(MAX_WEBHOOK_BODY_BYTES + 1), 'x-hub-signature-256': 'sha256=stub' },
+      body: '{}',
+    })
+    const res = (await POST(req)) as unknown as { init?: { status?: number } }
+    expect(res.init?.status).toBe(413)
+    expect(h.state.afterCallbacks).toHaveLength(before)
+  })
+})
+
+describe('status webhook: scoped to the receiving number', () => {
+  const DELIVERED = { id: 'wamid.OUT1', status: 'delivered', timestamp: '1700000100', recipient_id: '15551230000' }
+  const receipts = () => h.state.rpcCalls.filter((c) => c.name === 'apply_message_receipt')
+
+  it('hands the receipt to the account that owns metadata.phone_number_id', async () => {
+    await runStatusWebhook(DELIVERED)
+    expect(receipts()).toHaveLength(1)
+    expect(receipts()[0].args).toMatchObject({ p_account: 'acc-1', p_provider_message_id: 'wamid.OUT1' })
+  })
+
+  it('skips a receipt for a number no account owns — never applied globally', async () => {
+    const body = {
+      entry: [{ changes: [{ field: 'messages', value: { statuses: [DELIVERED] } }] }],
+    }
+    await POST(signedPost(JSON.stringify(body)))
+    for (const cb of h.state.afterCallbacks) await cb()
+    expect(receipts()).toHaveLength(0)
+  })
+})
+
+describe('inbound webhook: first_inbound_message fires once', () => {
+  const firstFlags = () =>
+    h.state.rpcCalls
+      .filter((c) => c.name === 'complete_inbound_message')
+      .map((c) => (c.args.p_fanout as { isFirstInboundMessage: boolean }).isFirstInboundMessage)
+
+  it('claims the conversation atomically: a second message is not first', async () => {
+    await runWebhook()
+    h.state.afterCallbacks = []
+    h.state.priorCustomerMsgCount = 1 // the first one is stored now
+    await runWebhook({ ...TEXT_MESSAGE, id: 'wamid.TEST2' })
+    expect(h.state.firstInboundClaims).toBe(1)
+    expect(firstFlags()).toEqual([true, false])
+  })
+
+  it('a repair of that same first message keeps it first', async () => {
+    h.state.firstInboundAt = new Date(parseInt(TEXT_MESSAGE.timestamp) * 1000).toISOString()
+    await runWebhook()
+    expect(h.state.firstInboundClaims).toBe(0)
+    expect(firstFlags()).toEqual([true])
   })
 })

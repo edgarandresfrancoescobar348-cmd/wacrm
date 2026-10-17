@@ -2,7 +2,7 @@
 // Who may do what with one of the account's WhatsApp numbers (phase 6).
 //
 //   view        see it in Settings and its state: any member. A personal
-//               number's conversations stay its owner's (RLS, 073) —
+//               number's conversations stay its owner's (RLS, 086) —
 //               this is only about the number itself.
 //   operate     connect it, show its QR / pairing code, restart it,
 //               import its history, change its settings: a business
@@ -52,7 +52,7 @@ export async function requireConnection(
 
 /**
  * Who may move a number between Pessoal and Empresa (phase 6b; mirrors
- * set_connection_scope, migration 076): an admin makes a business QR
+ * set_connection_scope, migration 089): an admin makes a business QR
  * number personal; only its owner makes a personal one the team's. The
  * official number is always business.
  */

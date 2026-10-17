@@ -15,7 +15,7 @@
 // marks it failed, and OpenWA's redelivery processes it again (every
 // write is idempotent). The bot fan-out — flows, automations, AI,
 // public webhooks — is a durable outbox row written with the message's
-// completion (migration 057) and runs in `after()`; a redelivery and the
+// completion (migration 070) and runs in `after()`; a redelivery and the
 // cron run it if this request doesn't.
 // ============================================================
 
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
   // redelivers. Only the bot fan-out waits for `after()`.
   const connection = row as OpenWaConnectionRow
   const deferred: (() => Promise<void>)[] = []
-  // The fan-out tasks are durable outbox rows (migration 057), written
+  // The fan-out tasks are durable outbox rows (migration 070), written
   // with the message's completion: they run after the response whatever
   // the delivery's own outcome — a 503 below no longer drops them (H1).
   // Each claims its row, so a redelivery or the cron never runs one twice.

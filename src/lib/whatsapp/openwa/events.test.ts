@@ -51,7 +51,7 @@ import type { WaConnection } from '@/lib/whatsapp/connections'
 const admin = {
   storage: {},
   rpc: async (fn: string, args: Record<string, unknown>) => {
-    // Session state goes through one RPC (migration 061): the account
+    // Session state goes through one RPC (migration 074): the account
     // lock, the newest-wins check and the row update.
     if (fn === 'apply_openwa_session_state') {
       h.updates.push({ table: 'whatsapp_openwa_config', patch: { ...(args.p_patch as object), status_event_at: args.p_event_at } })
@@ -352,7 +352,7 @@ describe('acks, failures, reactions, mutations', () => {
 
 describe('session events', () => {
   // The active-connection flag is derived from this row by the database
-  // (migration 058; sql/openwa-status-mirror.pg.test.ts) — ONE write.
+  // (migration 071; sql/openwa-status-mirror.pg.test.ts) — ONE write.
   it('session.authenticated stores phone + push name in one write (the flag follows in SQL)', async () => {
     await handleOpenWaEvent(env('session.authenticated', { sessionId: 'sess-1', phone: '5511977776666', pushName: 'Loja' }), ctx())
     expect(h.updates).toHaveLength(1)
@@ -393,7 +393,7 @@ describe('message.sent (phone echo)', () => {
         fn: 'broadcast_attempt_reconcile_echo',
         args: {
           p_account_id: 'acct-1',
-          // Only this number's broadcasts (migration 074).
+          // Only this number's broadcasts (migration 087).
           p_connection_id: 'num-1',
           p_to_phone: '5511988887777',
           p_body: 'Olá Ana',
@@ -445,7 +445,7 @@ describe('session events are newest-wins (F4)', () => {
 })
 
 // G5 (second review): a failed session write fails the delivery. The
-// mirror is part of that same write now (migration 058).
+// mirror is part of that same write now (migration 071).
 describe('session write failure (G5)', () => {
   it('fails the delivery so OpenWA redelivers', async () => {
     h.failSession = true

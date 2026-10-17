@@ -14,40 +14,63 @@ and polish.
 Second WhatsApp connection mode: **QR Code** through the OpenWA gateway that
 now ships inside wacrm, next to the official Meta Cloud API.
 
-> **Migration required:** apply `supabase/migrations/047_whatsapp_openwa.sql`,
-> `048_openwa_delivery_state.sql`, `049_openwa_replay_guards.sql` and
-> `050_message_status_pending.sql`, `051_definer_search_path.sql`,
-> `052_apply_message_receipt.sql`, `053_inbound_completion.sql` and
-> `054_broadcast_send_checkpoint.sql`, `055_broadcast_params_jsonb.sql`,
-> `056_broadcast_send_attempts.sql`, `057_inbound_fanout_outbox.sql`,
-> `058_openwa_status_mirror.sql`, `059_send_evidence.sql`,
-> `060_fanout_outcomes.sql`, `061_connection_lock.sql`,
-> `062_message_content_meta.sql`, `063_whatsapp_history_import.sql` and
-> `064_openwa_embedded_gateway.sql`, `065_history_import_empty_conversations.sql`, `066_history_media.sql`, `067_whatsapp_parity.sql`, `068_whatsapp_list_parity.sql`, `069_whatsapp_chat_order.sql`, `070_whatsapp_untimed_chats.sql` and `071_voice_preview_duration.sql`, in order. All additive except 064 (drops the per-account gateway URL/key) and 065 (deletes empty conversations the history import created); existing rows
-> keep working as official-API accounts. 047 adds `whatsapp_config.provider`,
+> **Renumbered migrations (upstream merge).** Upstream shipped its own
+> 047–059, so this fork's WhatsApp migrations moved from 047–076 to
+> **060–089** (same order, same content), followed by
+> `090_dashboard_business_scope.sql` and
+> `091_redeem_invitation_whatsapp_tables.sql`. A fresh database applies
+> everything in filename order. A database that already applied the fork's
+> migrations under the OLD numbers must first move their recorded versions,
+> then apply what is missing (upstream's 047–059, 090, 091):
+>
+> ```sh
+> supabase db query --file scripts/renumber-fork-migrations.sql
+> supabase migration up --include-all
+> ```
+>
+> The script only renames rows in `supabase_migrations.schema_migrations`
+> (matched on old number AND name; running it again does nothing).
+> `--include-all` is needed because upstream's files sort before 089.
+> 090 makes the dashboard count the business numbers only — upstream's
+> `dashboard_overview` would otherwise list members' personal
+> conversations to the whole team — and converges a database migrated
+> this way with a fresh one. 091 keeps accepting an invitation from
+> deleting an old account that holds WhatsApp data.
+
+> **Migration required:** apply `supabase/migrations/060_whatsapp_openwa.sql`,
+> `061_openwa_delivery_state.sql`, `062_openwa_replay_guards.sql` and
+> `063_message_status_pending.sql`, `064_definer_search_path.sql`,
+> `065_apply_message_receipt.sql`, `066_inbound_completion.sql` and
+> `067_broadcast_send_checkpoint.sql`, `068_broadcast_params_jsonb.sql`,
+> `069_broadcast_send_attempts.sql`, `070_inbound_fanout_outbox.sql`,
+> `071_openwa_status_mirror.sql`, `072_send_evidence.sql`,
+> `073_fanout_outcomes.sql`, `074_connection_lock.sql`,
+> `075_message_content_meta.sql`, `076_whatsapp_history_import.sql` and
+> `077_openwa_embedded_gateway.sql`, `078_history_import_empty_conversations.sql`, `079_history_media.sql`, `080_whatsapp_parity.sql`, `081_whatsapp_list_parity.sql`, `082_whatsapp_chat_order.sql`, `083_whatsapp_untimed_chats.sql` and `084_voice_preview_duration.sql`, in order. All additive except 077 (drops the per-account gateway URL/key) and 078 (deletes empty conversations the history import created); existing rows
+> keep working as official-API accounts. 060 adds `whatsapp_config.provider`,
 > the service-role-only `whatsapp_openwa_config` + `openwa_webhook_deliveries`
 > tables, `messages.revoked_at/edited_at` and `message_templates.origin`;
-> 048 the delivery ledger's processing state; 049 its per-account key and the
-> session-event watermark; 050 `message_status_pending` and the triggers that
-> apply early delivery receipts; 051 pins the definer functions'
-> search_path; 052 the atomic receipt function; 053 inbound completion;
-> 054 the broadcast send checkpoint and automatic continuation flag; 055
-> fixes per-recipient params on `POST /api/v1/broadcasts`; 056 durable
-> broadcast send attempts (and recipient status `unknown`); 057 the inbound
-> fan-out outbox; 058 derives the QR "connected" flag from the session;
-> 059 send evidence (one message proves one send, proven refusals resend,
-> uncertain legacy failures quarantined); 060 fan-out step outcomes and
-> the stored inputs the cron completes from; 061 the per-account
-> connection lock; 062 `messages.content_meta` (structured message kinds);
-> 063 the QR-code history import job and `messages.imported_at`; 064 drops the
+> 061 the delivery ledger's processing state; 062 its per-account key and the
+> session-event watermark; 063 `message_status_pending` and the triggers that
+> apply early delivery receipts; 064 pins the definer functions'
+> search_path; 065 the atomic receipt function; 066 inbound completion;
+> 067 the broadcast send checkpoint and automatic continuation flag; 068
+> fixes per-recipient params on `POST /api/v1/broadcasts`; 069 durable
+> broadcast send attempts (and recipient status `unknown`); 070 the inbound
+> fan-out outbox; 071 derives the QR "connected" flag from the session;
+> 072 send evidence (one message proves one send, proven refusals resend,
+> uncertain legacy failures quarantined); 073 fan-out step outcomes and
+> the stored inputs the cron completes from; 074 the per-account
+> connection lock; 075 `messages.content_meta` (structured message kinds);
+> 076 the QR-code history import job and `messages.imported_at`; 077 drops the
 > per-account gateway URL/key (the gateway is embedded) — an account that used
 > an external gateway presses **Conectar** again and scans a new QR code.
 
 ### Added
 
 - **Several WhatsApp numbers per account — Pessoal and Empresa** (apply
-  `072_whatsapp_connections.sql`, `073_whatsapp_connection_visibility.sql`
-  and `074_broadcast_number_evidence.sql`, together with this version — the
+  `085_whatsapp_connections.sql`, `086_whatsapp_connection_visibility.sql`
+  and `087_broadcast_number_evidence.sql`, together with this version — the
   single "active mode" is gone). One official number (Meta) plus any number
   linked by QR code, each **Empresa** (the team sees it; bots, automations,
   flows, AI and broadcasts run on it) or **Pessoal** (one member's: only
@@ -61,7 +84,7 @@ now ships inside wacrm, next to the official Meta Cloud API.
   official one by default; `connection_id` in the public API). Existing
   connections become business numbers — nobody's view changes.
 - **A number can move between Pessoal and Empresa** (apply
-  `076_whatsapp_connection_scope_change.sql`). Settings → WhatsApp shows
+  `089_whatsapp_connection_scope_change.sql`). Settings → WhatsApp shows
   "Pessoal (só eu vejo) / Empresa (a equipe vê)" on each number: an admin
   makes a business QR number someone's personal one (theirs by default),
   and only that number's owner makes it the team's again; the official
@@ -72,7 +95,7 @@ now ships inside wacrm, next to the official Meta Cloud API.
   Pessoal rule, open screens update at once, and every change is audited.
 - The chat wallpaper is WhatsApp's own doodle tile, in light and dark.
 - **The QR-code inbox looks like the phone's WhatsApp** (apply
-  `067_whatsapp_parity.sql`): names like the phone (saved > verified >
+  `080_whatsapp_parity.sql`): names like the phone (saved > verified >
   `~push name` > formatted number; names you edit are never overwritten),
   ticks, groups (with each member's name, never a CRM contact, no bots),
   "Encaminhada", document previews with pages and size, photo/video
@@ -80,14 +103,14 @@ now ships inside wacrm, next to the official Meta Cloud API.
   "Arquivadas", pinned chats on top, the phone's order and unread counts —
   kept in sync every minute — and reading a chat here reads it on the phone.
 - **The chat list reads like the phone's** (apply
-  `068_whatsapp_list_parity.sql`): your own chat is "Seu Nome (Você)"; when
+  `081_whatsapp_list_parity.sql`): your own chat is "Seu Nome (Você)"; when
   the last message is yours the preview starts with its ticks (✓ / ✓✓ /
   blue ✓✓, following receipts); only a group member's message is prefixed
   with their name; filters in WhatsApp's order (Todas, Não lidas, Grupos —
   always shown in QR mode — then the CRM's); voice notes show the sender's
   photo with the mic on it; document cards at WhatsApp's width with the
   name on one line.
-- **The QR-code list matches the phone 1:1** (apply `069_whatsapp_chat_order.sql`):
+- **The QR-code list matches the phone 1:1** (apply `082_whatsapp_chat_order.sql`):
   every chat the phone lists is a conversation, in the phone's order (its
   chat timestamp), with its unread count — also chats whose messages
   WhatsApp hasn't delivered yet, shown as "Aguardando mensagem. Isso pode
@@ -116,15 +139,15 @@ now ships inside wacrm, next to the official Meta Cloud API.
   documents and stickers from the QR-code history import are downloaded from
   WhatsApp on first open (gateway patch) and kept in storage like live media;
   media WhatsApp no longer has says "mídia expirada no WhatsApp". **Apply
-  `066_history_media.sql`**: it gives already-imported media rows their
+  `079_history_media.sql`**: it gives already-imported media rows their
   reference (nothing is re-imported). @mentions of a privacy id show the
   contact's name or number.
 - **QR sessions come back after a restart:** the embedded gateway runs with
   `AUTO_START_SESSIONS=true` (dev/start and compose), so a linked number is
   "Conectado" again after restarting wacrm, without a manual start.
 - **Import fixes (real account):** chats with nothing renderable create no
-  empty conversation (migration 065 removes the ones already created —
-  **apply `065_history_import_empty_conversations.sql`**); the job's error
+  empty conversation (migration 078 removes the ones already created —
+  **apply `078_history_import_empty_conversations.sql`**); the job's error
   count is the chats still failed, not attempts, and a stale last error is
   cleared; contacts without a saved name show their number formatted like
   WhatsApp Web (`+55 11 93373-9259`) in the list, header and contact panel.
@@ -188,7 +211,7 @@ now ships inside wacrm, next to the official Meta Cloud API.
   messages are ignored (groups show up like on the phone; status updates
   and channels stay out), and the history card counts what a re-import
   did — every message of the imported chats, "N novas · M atualizadas"
-  (apply `075_history_import_message_counts.sql`).
+  (apply `088_history_import_message_counts.sql`).
 - AI Agents: the tabs and their content sit in the same centred column
   as Settings, in all three tabs.
 - Inbox: long conversations show every message — the thread opens on the
@@ -209,14 +232,14 @@ now ships inside wacrm, next to the official Meta Cloud API.
   with their business name); stored contacts follow on their next message
   or "Importar de novo".
 - Inbox: the list preview of a voice note already stored gets its length
-  ("Mensagem de voz (0:04)") — migration `071_voice_preview_duration.sql`
+  ("Mensagem de voz (0:04)") — migration `084_voice_preview_duration.sql`
   backfills it and keeps it current when the length arrives later.
 - QR Code: documents show their first-page preview on real accounts — the
   gateway fetches and decrypts the copy WhatsApp uploads when no inline
   preview exists ("Importar de novo" fills it on documents already imported).
 - QR Code: chats with no activity on the phone (timestamp 0, mostly groups)
   sit at the end of the list instead of on top (migration
-  `070_whatsapp_untimed_chats.sql`).
+  `083_whatsapp_untimed_chats.sql`).
 - Inbox: accounts with more than 1000 conversations load all of them, and
   the "Não lidas" count includes every one.
 - Inbox: a message deleted for everyone shows only "Esta mensagem foi

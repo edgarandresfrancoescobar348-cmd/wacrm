@@ -1,6 +1,6 @@
 // ============================================================
 // Inbound fan-out — the durable outbox of an inbound message's side
-// effects (migration 057; third review H1, fourth review K3–K5).
+// effects (migration 070; third review H1, fourth review K3–K5).
 //
 // When ingestion completes a message it also enqueues ONE task for it,
 // in the same transaction (complete_inbound_message). The task carries

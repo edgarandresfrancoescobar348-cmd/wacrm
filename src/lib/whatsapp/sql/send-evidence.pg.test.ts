@@ -1,5 +1,5 @@
 // Fourth review — K1, K2, K7 on broadcast send attempts, against a real
-// PostgreSQL (migrations 056 + 059) with the REAL transports: the Meta
+// PostgreSQL (migrations 069 + 072) with the REAL transports: the Meta
 // transport over a stubbed `fetch` (Graph API answers) and the OpenWA
 // transport over a real HTTP fake gateway. deliverBroadcast runs its real
 // code over real tables (src/test/pg-supabase.ts).
@@ -11,7 +11,7 @@
 //   K2  one provider message id proves at most one attempt; ambiguous
 //       text evidence goes to a person, never to "sent"
 //
-// PROVE_OLD_K=1 skips migrations 059/060 (the "before" run, with the old code).
+// PROVE_OLD_K=1 skips migrations 072/073 (the "before" run, with the old code).
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -80,7 +80,7 @@ describe.skipIf(!pgAvailable())('send evidence (fourth review K1, K2, K7)', () =
     pg = await startPg()
     await pg.sql(WA_SCHEMA)
     await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}');`)
-    for (const m of WA_MIGRATIONS) if (!(OLD && (m.startsWith('059') || m.startsWith('060') || m.startsWith('061')))) await pg.migrate(m)
+    for (const m of WA_MIGRATIONS) if (!(OLD && (m.startsWith('072') || m.startsWith('073') || m.startsWith('074')))) await pg.migrate(m)
     db = new PgSupabase(pg)
     gw = await startFakeOpenWa()
   }, 60_000)

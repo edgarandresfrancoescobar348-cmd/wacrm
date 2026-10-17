@@ -6,7 +6,7 @@
 //          Removed numbers come too (`removed_at`): the inbox still badges
 //          their conversations, Settings leaves them out.
 //          A personal number shows its phone to its owner only; its
-//          conversations are never in here (RLS, migration 073).
+//          conversations are never in here (RLS, migration 086).
 //   POST { scope: 'personal' | 'business', label? } — add a QR number,
 //          not yet paired ("Conectar" in its detail shows the QR).
 //          Business: admins. Personal: any agent, for themselves.

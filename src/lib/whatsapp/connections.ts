@@ -8,7 +8,7 @@
 //             conversations; bots, automations, flows, AI and broadcasts
 //             run on it;
 //   personal  one member's ("Pessoal"): only its owner sees its
-//             conversations (enforced by RLS, migration 073) and nothing
+//             conversations (enforced by RLS, migration 086) and nothing
 //             automated ever runs on it.
 //
 // A reply always goes out from the conversation's own number. Anything
@@ -83,7 +83,7 @@ export function toConnection(row: WhatsAppConnectionRow): WaConnection {
 export const isBusiness = (c: Pick<WaConnection, 'scope'>) => c.scope === 'business'
 export const isPersonal = (c: Pick<WaConnection, 'scope'>) => c.scope === 'personal'
 
-/** Can `userId` see this number's conversations? (073's rule, for server code on the service role.) */
+/** Can `userId` see this number's conversations? (086's rule, for server code on the service role.) */
 export function canSeeConnection(c: Pick<WaConnection, 'scope' | 'ownerUserId'>, userId: string): boolean {
   return c.scope === 'business' || c.ownerUserId === userId
 }

@@ -47,7 +47,7 @@ describe.skipIf(!pgAvailable())(`create_broadcast_with_recipients params${OLD ? 
       ALTER TABLE public.broadcast_recipients ADD COLUMN contact_id uuid, ADD COLUMN template_params jsonb;
       INSERT INTO public.accounts VALUES ('${ACCT}');`)
     await pg.migrate('041_fix_broadcast_contact_id_ambiguity.sql')
-    if (!OLD) await pg.migrate('055_broadcast_params_jsonb.sql')
+    if (!OLD) await pg.migrate('068_broadcast_params_jsonb.sql')
     argType = await pg.sql(`SELECT format_type(proargtypes[7], NULL) FROM pg_proc WHERE proname = 'create_broadcast_with_recipients'`)
   }, 60_000)
   afterAll(() => pg?.stop())

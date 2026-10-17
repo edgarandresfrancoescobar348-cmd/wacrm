@@ -116,11 +116,11 @@ export interface Contact {
    *  are user-changeable, so they must never key a contact. */
   wa_username?: string | null;
   name?: string;
-  /** Where `name` came from (migration 067): saved > verified > push; manual is never overwritten. */
+  /** Where `name` came from (migration 080): saved > verified > push; manual is never overwritten. */
   name_source?: 'saved' | 'verified' | 'push' | 'phone' | 'import' | 'manual' | null;
   /** The sender's own WhatsApp profile name. */
   push_name?: string | null;
-  /** Exists only because of a personal number: its owner's alone (phase 6, migration 073). */
+  /** Exists only because of a personal number: its owner's alone (phase 6, migration 086). */
   personal_only?: boolean;
   email?: string;
   company?: string;
@@ -186,6 +186,9 @@ export interface Conversation {
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
+  last_inbound_at?: string | null;
+  last_reply_at?: string | null;
+  closed_at?: string | null;
   created_at: string;
   updated_at: string;
   contact?: Contact;
@@ -201,7 +204,7 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
-  /** QR mode (migration 067): the WhatsApp chat id, and the phone's state. */
+  /** QR mode (migration 080): the WhatsApp chat id, and the phone's state. */
   wa_chat_id?: string | null;
   is_group?: boolean;
   group_name?: string | null;
@@ -210,17 +213,17 @@ export interface Conversation {
   pinned_at?: string | null;
   /** The group member who sent the last message ("Luciana Alves: …"). */
   last_message_sender?: string | null;
-  /** The chat with your own number: "Seu Nome (Você)" (migration 068). */
+  /** The chat with your own number: "Seu Nome (Você)" (migration 081). */
   is_self?: boolean;
-  /** The newest message's status when it is yours — the list's ticks; null when it is the contact's (068). */
+  /** The newest message's status when it is yours — the list's ticks; null when it is the contact's (081). */
   last_message_status?: MessageStatus | null;
-  /** WhatsApp's chat timestamp: the phone's list order (migration 069). */
+  /** WhatsApp's chat timestamp: the phone's list order (migration 082). */
   wa_sort_at?: string | null;
-  /** A personal number: the name its owner's address book gives the contact (072). */
+  /** A personal number: the name its owner's address book gives the contact (085). */
   saved_name?: string | null;
 }
 
-/** What WhatsApp declares about a message's media (migration 067). */
+/** What WhatsApp declares about a message's media (migration 080). */
 export interface MediaMeta {
   /** Base64 JPEG preview (no data: prefix). */
   thumbnail?: string;
@@ -280,7 +283,7 @@ export interface Message {
   media_url?: string;
   /** Set when WhatsApp no longer has the file (media proxy answered 410). */
   media_expired_at?: string | null;
-  /** Group messages: who sent it (migration 067). */
+  /** Group messages: who sent it (migration 080). */
   sender_wa_id?: string | null;
   sender_name?: string | null;
   /** "Encaminhada" / "Encaminhada com frequência" (score ≥ 4). */
@@ -313,9 +316,9 @@ export interface Message {
    */
   interactive_payload?: InteractiveMessagePayload;
   /** Kind-specific structure — location, shared contact, poll, call,
-   *  order/product, sticker, voice, document, masked (migration 062). */
+   *  order/product, sticker, voice, document, masked (migration 075). */
   content_meta?: import('@/lib/whatsapp/message-content').ContentMeta | null;
-  /** Set on messages imported from the phone's history (migration 063). */
+  /** Set on messages imported from the phone's history (migration 076). */
   imported_at?: string | null;
   /**
    * True when the AI auto-reply bot generated + sent this message (as
@@ -327,7 +330,7 @@ export interface Message {
   /**
    * The customer deleted the message for everyone / edited it. Only a
    * QR-code (OpenWA) connection reports these; the original text is
-   * kept and the bubble is labelled. Migration 047.
+   * kept and the bubble is labelled. Migration 060.
    */
   revoked_at?: string | null;
   edited_at?: string | null;
@@ -357,7 +360,7 @@ export interface WhatsAppConfig {
   id: string;
   user_id: string;
   /**
-   * The ACTIVE connection (migration 047): Meta's Cloud API, or a
+   * The ACTIVE connection (migration 060): Meta's Cloud API, or a
    * regular number paired by QR code through OpenWA. The other mode's
    * settings are kept so switching back is quick.
    */
@@ -425,7 +428,7 @@ export interface MessageTemplate {
   sample_values?: TemplateSampleValues;
   status?: MessageTemplateStatus;
   meta_template_id?: string;
-  /** 'local' = saved on a QR-code connection, never submitted to Meta (047). */
+  /** 'local' = saved on a QR-code connection, never submitted to Meta (060). */
   origin?: 'meta' | 'local';
   rejection_reason?: string;
   quality_score?: 'GREEN' | 'YELLOW' | 'RED';
@@ -479,7 +482,7 @@ export interface Deal {
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
 /** `unknown`: the send's outcome could not be established and it can't
- *  be safely resent — awaiting a person's decision (migration 056). */
+ *  be safely resent — awaiting a person's decision (migration 069). */
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed' | 'unknown';
 
 export interface Broadcast {
@@ -683,6 +686,7 @@ export interface ConditionStepConfig {
   operand?: string;
   /** For contact_field equals / message_content contains — comparison value */
   value?: string;
+  timezone?: string;
 }
 
 export interface SendWebhookStepConfig {

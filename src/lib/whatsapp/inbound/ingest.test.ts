@@ -75,7 +75,7 @@ function table(name: string) {
   }
   const q: Record<string, unknown> = {
     select: () => q,
-    // The unique index each insert can hit (migrations 037, 072, 022).
+    // The unique index each insert can hit (migrations 037, 085, 022).
     insert: (v: Row) => (
       (op = 'insert'),
       (payload = v),
@@ -91,6 +91,9 @@ function table(name: string) {
     // modelled: every fixture row belongs to the one test account.
     eq: (c: string, v: unknown) => (filters.push((r) => (c.includes('.') ? true : r[c] === v)), q),
     in: (c: string, v: unknown[]) => (filters.push((r) => v.includes(r[c])), q),
+    neq: (c: string, v: unknown) => (filters.push((r) => r[c] !== v), q),
+    // `.is(col, null)`: the first-inbound claim (upstream 054).
+    is: (c: string, v: unknown) => (filters.push((r) => (r[c] ?? null) === v), q),
     lt: () => q,
     or: () => q,
     order: (c: string, o?: { ascending?: boolean }) => ((order = [c, o?.ascending !== false]), q),
@@ -113,7 +116,7 @@ vi.mock('@/lib/flows/admin-client', () => ({
     rpc: async (name: string, args: Record<string, unknown>) => {
       h.rpcCalls.push({ name, args })
       if (h.rpcError) return { data: null, error: h.rpcError }
-      // Migration 057's completion (over 053): mark + bump only if not
+      // Migration 070's completion (over 066): mark + bump only if not
       // complete yet, and enqueue the fan-out task in the same step.
       if (name === 'complete_inbound_message' && args.p_message_id && h.completionFails) {
         h.completionFails--
@@ -283,7 +286,7 @@ describe('F5 — echo vs sender reconcile, the sender never fails', () => {
 })
 
 // F6 / G2–G4: receipts go through ONE atomic SQL operation
-// (apply_message_receipt, migration 052). Its ladder, retention and
+// (apply_message_receipt, migration 065). Its ladder, retention and
 // concurrency behaviour are tested on a real PostgreSQL in
 // sql/receipts.pg.test.ts; here, the app hands it the right receipt.
 describe('F6/G2–G4 — receipts are applied by apply_message_receipt', () => {
@@ -438,7 +441,7 @@ describe('K5 — completion errors on the Meta path', () => {
 
 // Phase 6: a personal number's delivery is its owner's — nothing
 // automated runs, the contact it brings in stays hidden from the team
-// (personal_only, migration 073) and the owner's address-book name stays
+// (personal_only, migration 086) and the owner's address-book name stays
 // on the conversation, never on the shared CRM contact.
 describe('phase 6 — a personal number', () => {
   const PERSONAL = { id: 'num-p', accountId: ACCOUNT, scope: 'personal' as const, userId: 'agent-1' }

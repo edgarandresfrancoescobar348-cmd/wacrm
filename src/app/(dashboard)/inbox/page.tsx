@@ -15,10 +15,16 @@ import {
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
+import { parseInboxFilter } from "@/lib/inbox/inbox-filters";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { EmptyPane } from "@/components/inbox/empty-pane";
 import { WaListLayout } from "@/components/layout/wa-panel";
+import {
+  applyMessageUpdate,
+  applyRealtimeInsert,
+  mergeFetchedPage,
+} from "@/lib/inbox/optimistic-messages";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -213,14 +219,12 @@ function InboxPageInner() {
           newMsg.conversation_id === activeConversation.id
         ) {
           setMessages((prev) => {
-            // Avoid duplicates
-            if (prev.some((m) => m.id === newMsg.id)) return prev;
-            // Replace optimistic message if it exists
-            const withoutOptimistic = prev.filter(
-              (m) => !m.id.startsWith("temp-")
-            );
-            // In time order: an imported (older) message lands where it belongs.
-            return mergeMessages(withoutOptimistic, [newMsg]);
+            // Replace only the optimistic bubble this row confirms (a failed
+            // one stays) — upstream's optimistic-messages — then keep time
+            // order: an imported (older) message lands where it belongs.
+            const next = applyRealtimeInsert(prev, newMsg);
+            if (next === prev) return prev;
+            return mergeMessages(next.filter((m) => m.id !== newMsg.id), [newMsg]);
           });
         }
 
@@ -530,10 +534,16 @@ function InboxPageInner() {
   }, [router]);
 
 
-  // A conversation opening replaces the list with its newest page; older
-  // pages and a resync merge into what is loaded (thread-pages.ts).
+  // A conversation opening replaces the list with its newest page — failed
+  // and unconfirmed optimistic bubbles survive it (upstream's
+  // mergeFetchedPage); older pages and a resync merge into what is loaded
+  // (thread-pages.ts).
   const handleMessagesLoaded = useCallback((loaded: Message[], opts?: { merge?: boolean }) => {
-    setMessages((prev) => (opts?.merge ? mergeMessages(prev, loaded) : loaded));
+    setMessages((prev) => {
+      if (opts?.merge) return mergeMessages(prev, loaded);
+      const conversationId = loaded[0]?.conversation_id ?? activeConversationIdRef.current;
+      return conversationId ? mergeFetchedPage(prev, loaded, conversationId) : loaded;
+    });
   }, []);
 
   const handleNewMessage = useCallback((msg: Message) => {
@@ -545,9 +555,7 @@ function InboxPageInner() {
 
   const handleUpdateMessage = useCallback(
     (id: string, updates: Partial<Message>) => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, ...updates } : m))
-      );
+      setMessages((prev) => applyMessageUpdate(prev, id, updates));
     },
     []
   );
@@ -608,6 +616,7 @@ function InboxPageInner() {
           numbers={numbers}
           notice={whatsapp.notice}
           qrMode={hasQrNumber}
+          initialFilter={parseInboxFilter(searchParams.get("filter"))}
         />
       }
     >

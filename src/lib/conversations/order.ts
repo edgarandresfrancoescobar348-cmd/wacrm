@@ -9,9 +9,9 @@ interface Recency {
   id: string
   last_message_at?: string | null
   created_at?: string | null
-  /** Pinned on the phone (QR mode, migration 067): above everything else. */
+  /** Pinned on the phone (QR mode, migration 080): above everything else. */
   pinned_at?: string | null
-  /** WhatsApp's chat timestamp (QR mode, migration 069): the phone's order. */
+  /** WhatsApp's chat timestamp (QR mode, migration 082): the phone's order. */
   wa_sort_at?: string | null
 }
 

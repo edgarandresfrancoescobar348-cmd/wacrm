@@ -375,7 +375,7 @@ async function resolveOpenWaContent(
     fileSize: data.media?.sizeBytes ?? null,
     fileName: data.media?.filename ?? null,
     messageTimestamp: data.timestamp ?? null,
-    // A personal number's media is its owner's: the private bucket (073).
+    // A personal number's media is its owner's: the private bucket (086).
     privateTo: ctx.connection.scope === 'personal' ? { connectionId: ctx.connection.id } : null,
     // Inline base64 (≤ 1 MiB) or the gateway's media route.
     download: async () => {
@@ -805,9 +805,9 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
   // not overwrite newer state — e.g. an old "disconnected" over a live
   // session.
   const eventAt = eventInstant(env)
-  // One RPC: the number's lock first (061/072), then the session row,
+  // One RPC: the number's lock first (074/085), then the session row,
   // newest-wins on the event time; the number's status follows in the
-  // same transaction (072).
+  // same transaction (085).
   const { data: applied, error } = await ctx.admin.rpc('apply_openwa_session_state', {
     p_connection_id: ctx.connection.id,
     p_patch: patch,
@@ -835,6 +835,6 @@ async function applySessionEvent(env: OpenWaEnvelope, ctx: EventContext): Promis
     })
   }
   // The number's status (whatsapp_connections.status) is NOT written
-  // here: migration 072 derives it from this row in the same statement,
+  // here: migration 085 derives it from this row in the same statement,
   // so it can never disagree with the newest applied session state.
 }

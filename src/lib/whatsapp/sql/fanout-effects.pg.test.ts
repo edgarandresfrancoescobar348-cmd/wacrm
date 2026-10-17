@@ -5,7 +5,7 @@
 // (src/test/pg-supabase.ts) with failures injected where a transient
 // error happens in production (a failed read, an endpoint answering 500).
 //
-// PROVE_OLD_FANOUT=1 skips migration 060 (the "before" run).
+// PROVE_OLD_FANOUT=1 skips migration 073 (the "before" run).
 
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -76,7 +76,7 @@ describe.skipIf(!pgAvailable())('fan-out steps complete only on an appropriate o
       CREATE FUNCTION public.record_webhook_failure(endpoint_id text, max_failures int) RETURNS void LANGUAGE sql AS
         $$ UPDATE public.webhook_endpoints SET failure_count = failure_count + 1 WHERE id = endpoint_id $$;
       GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;`)
-    for (const m of WA_MIGRATIONS) if (!(OLD && (m.startsWith('060') || m.startsWith('061')))) await pg.migrate(m)
+    for (const m of WA_MIGRATIONS) if (!(OLD && (m.startsWith('073') || m.startsWith('074')))) await pg.migrate(m)
     db = new PgSupabase(pg)
     h.db = db.asClient()
 

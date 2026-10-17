@@ -15,7 +15,7 @@
 //
 // Phase 6: the conversation is on a BUSINESS number — the one the caller
 // names (`connection_id`), else the account's default. A contact only a
-// personal number knew joins the team by it (migration 073's trigger).
+// personal number knew joins the team by it (migration 086's trigger).
 //
 // Audit user: created rows need a NOT NULL `user_id`. As with the
 // webhook (where there's no logged-in human either), we attribute

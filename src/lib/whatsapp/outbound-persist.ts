@@ -19,6 +19,8 @@ export interface OutboundMessageRow {
   conversation_id: string
   message_id: string
   sender_type: 'agent' | 'bot'
+  /** The member who sent it (upstream: per-agent reply stats). */
+  sender_id?: string | null
   content_type: string
   content_text?: string | null
   media_url?: string | null

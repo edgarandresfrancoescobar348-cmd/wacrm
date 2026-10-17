@@ -75,7 +75,7 @@ export async function PUT(request: Request) {
 
     const admin = supabaseAdmin()
     const existing = await loadOpenWaRow(admin, connection.id)
-    // An existing row changes through the number's lock (061/072) like
+    // An existing row changes through the number's lock (074/085) like
     // every session change.
     const { data, error } = existing
       ? await admin

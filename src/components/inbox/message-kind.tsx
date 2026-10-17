@@ -2,7 +2,7 @@
 
 // ============================================================
 // Inbox bubbles for the message kinds that carry structure beyond text
-// and media (messages.content_meta, migration 062) — the same rendering
+// and media (messages.content_meta, migration 075) — the same rendering
 // for both connection modes, live and imported (owner adjustment A2).
 // ============================================================
 

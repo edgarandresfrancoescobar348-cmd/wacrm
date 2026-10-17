@@ -1,4 +1,4 @@
-// Phase 5f, real account round 3: migration 071 — Ana Carla's list showed
+// Phase 5f, real account round 3: migration 084 — Ana Carla's list showed
 // "Mensagem de voz" ('[voice]') while the bubble said 0:04. A voice note's
 // length that lands in media_meta later (re-import, the bubble reading the
 // file) moves the preview of the conversation it is the newest message of;
@@ -12,7 +12,7 @@ const ACCT = '00000000-0000-0000-0000-0000000000f7'
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
 const VOICE = `'{"kind":"voice"}'::jsonb`
 
-describe.skipIf(!pgAvailable())('071: voice preview duration', () => {
+describe.skipIf(!pgAvailable())('084: voice preview duration', () => {
   let pg: Pg
 
   beforeAll(async () => {
@@ -33,7 +33,7 @@ describe.skipIf(!pgAvailable())('071: voice preview duration', () => {
         ('${id(32)}', '${id(3)}', null, null, now() - interval '1 minute'),
         ('${id(41)}', '${id(4)}', ${VOICE}, '{"durationSeconds":75}', now() - interval '3 minutes'),
         ('${id(42)}', '${id(4)}', '{"kind":"waiting"}', null, now() - interval '1 minute');`)
-    await pg.migrate('071_voice_preview_duration.sql')
+    await pg.migrate('084_voice_preview_duration.sql')
   }, 60_000)
   afterAll(() => pg?.stop())
 
@@ -61,7 +61,7 @@ describe.skipIf(!pgAvailable())('071: voice preview duration', () => {
   })
 
   it('is idempotent', async () => {
-    await pg.migrate('071_voice_preview_duration.sql')
+    await pg.migrate('084_voice_preview_duration.sql')
     expect(await preview(1)).toBe('[voice:0:04]')
   })
 })

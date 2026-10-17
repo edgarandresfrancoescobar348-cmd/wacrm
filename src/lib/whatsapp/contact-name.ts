@@ -9,8 +9,8 @@
 // lists "+55 62 99842-3737" and shows "~Sara Ferreira" (phase 5f, real
 // account).
 // A name a CRM user typed (`manual`, set by the DB trigger of migration
-// 067 on any app edit) is never overwritten by WhatsApp. A contact from
-// before 067 (no source) is treated as a push name: replaced by a saved
+// 080 on any app edit) is never overwritten by WhatsApp. A contact from
+// before 080 (no source) is treated as a push name: replaced by a saved
 // or verified one, like the push names that used to overwrite them.
 
 export type NameSource = 'saved' | 'verified' | 'push' | 'phone' | 'import' | 'manual'
@@ -85,7 +85,7 @@ export function isUnofficialBusinessName(c: {
 function rankOf(existing: { name?: string | null; name_source?: string | null }): number {
   const source = existing.name_source as NameSource | null | undefined
   if (source && source in RANK) return RANK[source]
-  // Before 067: a real name counts as a push name, a number as nothing.
+  // Before 080: a real name counts as a push name, a number as nothing.
   const name = existing.name?.trim()
   return name && !PHONE_LIKE.test(name) ? RANK.push : RANK.phone
 }

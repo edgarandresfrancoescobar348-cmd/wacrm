@@ -5,7 +5,11 @@ import { getMediaUrl } from '@/lib/whatsapp/meta-api'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { resolveInboundIdentity } from '@/lib/whatsapp/wa-identity'
 import { ingestConnectionFor, loadConnection } from '@/lib/whatsapp/connections'
-import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
+import {
+  verifyMetaWebhookSignature,
+  verifyTokenMatches,
+} from '@/lib/whatsapp/webhook-signature'
+import { readCappedBody } from '@/lib/whatsapp/webhook-body'
 import {
   applyStatusUpdate,
   ingestInboundMessage,
@@ -171,7 +175,7 @@ export async function GET(request: Request) {
     for (const config of configs) {
       if (!config.verify_token) continue
       try {
-        if (decrypt(config.verify_token) === verifyToken) {
+        if (verifyTokenMatches(decrypt(config.verify_token), verifyToken)) {
           matchedConfig = config
           break
         }
@@ -221,7 +225,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   // Read raw body first so we can HMAC-verify the exact bytes Meta
   // signed. request.json() would re-encode and break the signature.
-  const rawBody = await request.text()
+  const rawBody = await readCappedBody(request)
+  if (rawBody === null) {
+    console.warn('[webhook] rejected oversized payload')
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
   const signature = request.headers.get('x-hub-signature-256')
 
   if (!verifyMetaWebhookSignature(rawBody, signature)) {
@@ -264,6 +272,29 @@ export async function POST(request: Request) {
   return NextResponse.json({ status: 'received' }, { status: 200 })
 }
 
+async function resolveAccountForPhoneNumber(
+  phoneNumberId: string | undefined
+): Promise<string | null> {
+  if (!phoneNumberId) return null
+  const { data, error } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('account_id')
+    .eq('phone_number_id', phoneNumberId)
+
+  if (error) {
+    console.error('Error resolving account for status update:', phoneNumberId, error)
+    return null
+  }
+  if (!data || data.length !== 1) {
+    console.error(
+      `Status update for phone_number_id ${phoneNumberId} matched ${data?.length ?? 0} configs; message statuses skipped`
+    )
+    return null
+  }
+  return data[0].account_id
+}
+
+
 async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
   if (!body.entry) return
 
@@ -293,8 +324,14 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       // Handle status updates
       if (value.statuses) {
+        const statusAccountId = await resolveAccountForPhoneNumber(
+          value.metadata?.phone_number_id
+        )
         for (const status of value.statuses) {
-          await applyStatusUpdate(toInboundStatus(status))
+          // Account-scoped (upstream 30afcce5): a receipt only advances
+          // that account's messages; an unknown number's are skipped.
+          if (!statusAccountId) continue
+          await applyStatusUpdate(toInboundStatus(status), { accountId: statusAccountId })
         }
       }
 

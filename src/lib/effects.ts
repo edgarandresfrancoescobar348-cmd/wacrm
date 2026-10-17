@@ -1,6 +1,6 @@
 // ============================================================
 // The outcome of a side effect run on behalf of a durable task (the
-// inbound fan-out outbox, migration 057). Executors say what happened
+// inbound fan-out outbox, migration 070). Executors say what happened
 // instead of swallowing failures, so the task is completed only when it
 // should be (fourth review K4):
 //

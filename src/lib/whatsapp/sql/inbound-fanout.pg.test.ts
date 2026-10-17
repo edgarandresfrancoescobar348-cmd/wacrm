@@ -1,5 +1,5 @@
 // H1 (third review): the inbound fan-out is a durable outbox row written
-// in the same transaction that completes the message (migration 057),
+// in the same transaction that completes the message (migration 070),
 // claimed with a lease and resumed step by step. Proven against a real
 // PostgreSQL; the fan-out runner (inbound/fanout.ts) runs its real code
 // over real tables (src/test/pg-supabase.ts) — only the bots are stubs.
@@ -68,8 +68,8 @@ describe.skipIf(!pgAvailable())('inbound fan-out outbox (H1)', () => {
     pg = await startPg()
     await pg.sql(MINIMAL_SCHEMA)
     await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}');`)
-    await pg.migrate('053_inbound_completion.sql')
-    await pg.migrate('057_inbound_fanout_outbox.sql')
+    await pg.migrate('066_inbound_completion.sql')
+    await pg.migrate('070_inbound_fanout_outbox.sql')
     // `held` (and the K5 repair) — skipped for the "before" run.
     if (process.env.PROVE_OLD_FANOUT !== '1') {
       await pg.sql(`CREATE TABLE IF NOT EXISTS public.whatsapp_openwa_config(id uuid, account_id uuid PRIMARY KEY,
@@ -79,7 +79,7 @@ describe.skipIf(!pgAvailable())('inbound fan-out outbox (H1)', () => {
         CREATE TABLE IF NOT EXISTS public.whatsapp_config(account_id uuid PRIMARY KEY, user_id uuid, provider text, status text,
         connected_at timestamptz, updated_at timestamptz);
         ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS status text DEFAULT 'open';`)
-      await pg.migrate('060_fanout_outcomes.sql')
+      await pg.migrate('073_fanout_outcomes.sql')
     }
     db = new PgSupabase(pg)
   }, 60_000)

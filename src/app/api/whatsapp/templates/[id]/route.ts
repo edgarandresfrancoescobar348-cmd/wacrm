@@ -16,6 +16,7 @@ import {
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getT } from '@/lib/i18n/translate'
 import { hasOfficialNumber } from '@/lib/whatsapp/connections'
 
@@ -73,7 +74,10 @@ export async function PATCH(
     }
     // Editing a template pushes a component replacement to Meta before
     // anything is written locally, so the role has to be checked here.
-    const { supabase, accountId } = await requireRole('admin')
+    const { supabase, accountId, userId } = await requireRole('admin')
+
+    const limit = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
+    if (!limit.success) return rateLimitResponse(limit)
 
     let payload: TemplatePayload
     try {
@@ -94,7 +98,7 @@ export async function PATCH(
       return NextResponse.json({ error: t('templates.notFound') }, { status: 404 })
     }
 
-    // A local template (the QR numbers' — migration 047), or an account
+    // A local template (the QR numbers' — migration 060), or an account
     // without an official number: an edit is a local update, ready to use
     // at once. A Meta-approved row edited without an official number no
     // longer matches what Meta approved, so it stops being that template:
@@ -297,7 +301,10 @@ export async function DELETE(
     }
     // Deleting removes the template on Meta first; same reasoning as
     // the PATCH handler above.
-    const { supabase, accountId } = await requireRole('admin')
+    const { supabase, accountId, userId } = await requireRole('admin')
+
+    const limit = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
+    if (!limit.success) return rateLimitResponse(limit)
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')

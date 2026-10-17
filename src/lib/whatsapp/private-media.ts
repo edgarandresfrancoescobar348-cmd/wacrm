@@ -4,7 +4,7 @@
 // chat-media is a PUBLIC bucket: its URLs bypass RLS. A personal
 // number's files — received and sent — go to the PRIVATE bucket
 // chat-media-private instead, under `connection-<id>/…`, which storage
-// RLS lets only the number's owner read (migration 073). The message row
+// RLS lets only the number's owner read (migration 086). The message row
 // stores `privateMediaUrl(path)`, an app route that downloads the file
 // with the viewer's own session; a send hands the provider a short-lived
 // signed link instead.

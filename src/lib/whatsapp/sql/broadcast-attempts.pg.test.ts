@@ -1,4 +1,4 @@
-// Third review — broadcast send attempts (migration 056), proven against
+// Third review — broadcast send attempts (migration 069), proven against
 // a real PostgreSQL: deliverBroadcast, planBroadcastResume and the cron
 // continuation run their real code over real tables and functions
 // (src/test/pg-supabase.ts); only the WhatsApp transport is scripted.
@@ -100,7 +100,7 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
 
   const recipientsStatus = async () =>
     (await pg.sql(`SELECT string_agg(status, ',' ORDER BY id) FROM public.broadcast_recipients`)).split(',')
-  // (Absent without migration 056 — the "before" run.)
+  // (Absent without migration 069 — the "before" run.)
   const attemptRows = async () =>
     (await pg.sql(
       `SELECT coalesce(string_agg(recipient_id || '|' || attempt_no || '|' || state || '|' || needs_decision || '|' || idempotency_key, E'\\n' ORDER BY recipient_id, attempt_no), '') FROM public.broadcast_send_attempts`,
@@ -127,10 +127,10 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
     await pg.sql(WA_FULL_SCHEMA)
     await pg.sql(`INSERT INTO public.accounts VALUES ('${ACCT}'); INSERT INTO auth.users VALUES ('${USER}');
       INSERT INTO public.profiles(user_id, account_id, account_role) VALUES ('${USER}', '${ACCT}', 'owner');`)
-    // PROVE_OLD_ATTEMPTS=1: the "before" run — only up to the checkpoint (054).
+    // PROVE_OLD_ATTEMPTS=1: the "before" run — only up to the checkpoint (067).
     if (process.env.PROVE_OLD_ATTEMPTS === '1') {
-      await pg.migrate('053_inbound_completion.sql')
-      await pg.migrate('054_broadcast_send_checkpoint.sql')
+      await pg.migrate('066_inbound_completion.sql')
+      await pg.migrate('067_broadcast_send_checkpoint.sql')
     } else {
       for (const m of WA_FULL_MIGRATIONS) await pg.migrate(m)
       // The account's business QR number the broadcast goes out from (phase 6).
@@ -374,7 +374,7 @@ describe.skipIf(!pgAvailable())('broadcast send attempts (third review)', () => 
     })
     await deliverBroadcast(db.asClient(), plan([1], transport))
     expect((await recipientsStatus())[0]).toBe('unknown')
-    // Phase 6 (074): an echo from ANOTHER number of the account (same
+    // Phase 6 (087): an echo from ANOTHER number of the account (same
     // phone, same text) is not this broadcast's evidence.
     const other = await db.rpc('broadcast_attempt_reconcile_echo', {
       p_account_id: ACCT, p_connection_id: '00000000-0000-0000-0000-0000000000c9', p_to_phone: PHONE(1),

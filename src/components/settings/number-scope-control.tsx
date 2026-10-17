@@ -34,7 +34,7 @@ interface Preview {
  * pick is disabled with the reason under it. Picking the other side asks
  * first — the confirmation says what changes, with the counts — and an
  * admin making a business number personal chooses its owner (themself by
- * default). The server decides again (set_connection_scope, 076).
+ * default). The server decides again (set_connection_scope, 089).
  */
 export function NumberScopeControl({
   connection,

@@ -47,6 +47,7 @@ import {
   templateContentText,
   templateHeaderTextMissing,
   templateUsableOn,
+  templateHeaderMediaUrl,
 } from '@/lib/whatsapp/template-body';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
@@ -94,6 +95,7 @@ export interface SendMessageParams {
    * number's chats are its owner's alone); the inbox relies on RLS.
    */
   businessOnly?: boolean;
+  senderId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -110,7 +112,7 @@ export interface SendMessageResult {
  * role client (public API) — every query is filtered by `accountId`
  * either way, so tenancy holds regardless of which client is passed.
  * The user client also limits a personal number's conversations to
- * its owner (RLS, migration 073); the public API passes `businessOnly`.
+ * its owner (RLS, migration 086); the public API passes `businessOnly`.
  * The message goes out from the conversation's own number.
  */
 /**
@@ -206,6 +208,7 @@ export async function sendMessageToConversation(
     filename,
     templateName,
     templateLanguage,
+    senderId,
     templateParams,
     templateMessageParams,
     interactivePayload,
@@ -476,9 +479,13 @@ export async function sendMessageToConversation(
     messageRecord = await persistOutboundMessage<{ id: string }>(db, {
       conversation_id: conversationId,
       sender_type: 'agent',
+      sender_id: senderId ?? null,
       content_type: messageType,
       content_text: persistedText,
-      media_url: mediaUrl || null,
+      media_url:
+        messageType === 'template'
+          ? templateHeaderMediaUrl(templateRow, templateMessageParams)
+          : mediaUrl || null,
       template_name: templateName || null,
       interactive_payload:
         messageType === 'interactive' ? interactivePayload : null,

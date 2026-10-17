@@ -4,7 +4,7 @@
 // phone too (phase 5e) — otherwise the chat-state sync would bring the
 // phone's unread count straight back. Anyone who can read the
 // conversation: it is read with the caller's own client, so RLS decides
-// (a personal number's chat is its owner's alone, migration 073).
+// (a personal number's chat is its owner's alone, migration 086).
 // Best-effort: answers 204 whether or not the gateway took it.
 
 import { NextResponse } from 'next/server'

@@ -1,9 +1,9 @@
 // G2/G3/G4 (second review): receipts must be retained per destination
 // and applied monotonically, under real concurrency. Runs migrations
-// 050–052 on an ephemeral PostgreSQL and forces the interleavings the
+// 063–065 on an ephemeral PostgreSQL and forces the interleavings the
 // review found with parallel sessions + pg_sleep.
 //
-// PROVE_OLD_RECEIPTS=1 installs, instead of 052, a SQL port of the old
+// PROVE_OLD_RECEIPTS=1 installs, instead of 065, a SQL port of the old
 // app-side algorithm (check-then-write, unconditional pending upsert,
 // JS-checked recipient update) — every scenario then fails, which is
 // the "before" half of the regression proof.
@@ -49,10 +49,10 @@ describe.skipIf(!pgAvailable())(`receipts under concurrency (G2–G4)${OLD ? ' �
   beforeAll(async () => {
     pg = await startPg()
     await pg.sql(MINIMAL_SCHEMA)
-    await pg.migrate('050_message_status_pending.sql')
-    await pg.migrate('051_definer_search_path.sql')
+    await pg.migrate('063_message_status_pending.sql')
+    await pg.migrate('064_definer_search_path.sql')
     if (OLD) await pg.sql(LEGACY_RECEIPT)
-    else await pg.migrate('052_apply_message_receipt.sql')
+    else await pg.migrate('065_apply_message_receipt.sql')
     await pg.sql(`
       INSERT INTO public.accounts VALUES ('${ACCT}');
       INSERT INTO public.conversations(id, account_id) VALUES ('${CONV}', '${ACCT}');

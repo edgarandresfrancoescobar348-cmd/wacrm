@@ -10,6 +10,7 @@ import {
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
+import { applyInboxFilter } from "@/lib/inbox/inbox-filters";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import {
@@ -76,6 +77,8 @@ interface ConversationListProps {
   notice?: ConnectionNotice;
   /** A QR-code number is there: the phone's filters come first, "Grupos" always shown. */
   qrMode?: boolean;
+  /** The chip to start on (`?filter=` — upstream's dashboard links). */
+  initialFilter?: InboxFilter;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -94,6 +97,7 @@ export function ConversationList({
   numbers,
   notice = { kind: null, down: [] },
   qrMode = false,
+  initialFilter = "all",
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   const tThread = useTranslations("Inbox.messageThread");
@@ -102,9 +106,15 @@ export function ConversationList({
 
 
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<InboxFilter>("all");
+  const [filter, setFilter] = useState<InboxFilter>(initialFilter);
   // WhatsApp's "Arquivadas" (QR mode): archived chats live behind one row.
   const [showArchived, setShowArchived] = useState(false);
+  // "Janela expirando" depends on the clock: re-evaluated every minute.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
   const [loading, setLoading] = useState(true);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
@@ -231,13 +241,9 @@ export function ConversationList({
       result = result.filter((c) => matchesScope(c, scopeFilter, scopeOf));
     }
 
-    if (filter === "unread") {
-      result = result.filter((c) => c.unread_count > 0);
-    } else if (filter === "groups") {
-      result = result.filter((c) => c.is_group);
-    } else if (filter !== "all") {
-      result = result.filter((c) => c.status === filter);
-    }
+    // "Grupos" is the phone's; the rest are upstream's (inbox-filters.ts:
+    // unread, waiting, unassigned, expiring, and the statuses).
+    result = filter === "groups" ? result.filter((c) => c.is_group) : applyInboxFilter(result, filter, now);
 
     // Contact-based filters (tags via OR logic, exact company match).
     if (selectedTagIds.length > 0 || selectedCompany !== null) {
@@ -261,7 +267,7 @@ export function ConversationList({
 
     // Most recent first, like WhatsApp — realtime patches rows in place.
     return byRecency(result);
-  }, [conversations, filter, search, selectedTagIds, selectedCompany, showArchived, scopeFilter, scopeOf]);
+  }, [conversations, filter, now, search, selectedTagIds, selectedCompany, showArchived, scopeFilter, scopeOf]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>

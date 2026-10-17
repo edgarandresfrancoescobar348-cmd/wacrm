@@ -5,6 +5,7 @@ import {
   getSubscribedApps,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -41,6 +42,9 @@ export async function GET() {
     return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
   }
 
+  const limit = checkRateLimit(`whatsapp-admin:${user.id}`, RATE_LIMITS.whatsappAdmin)
+  if (!limit.success) return rateLimitResponse(limit)
+
   // whatsapp_config is one-row-per-account post-017. Resolve the
   // caller's account_id so a teammate who joined an existing account
   // sees the same registration state as the admin who set it up.
@@ -64,7 +68,7 @@ export async function GET() {
     .eq('account_id', accountId)
     .maybeSingle()
 
-  // A QR-code-only account (migration 047) has no Meta number to probe.
+  // A QR-code-only account (migration 060) has no Meta number to probe.
   if (!config || !config.access_token || !config.phone_number_id) {
     return NextResponse.json({
       live: false,

@@ -1,6 +1,6 @@
 // ============================================================
 // Broadcast send attempts — the durable identity of one send to one
-// broadcast recipient (migration 056; third review H3, H5, H6, H7).
+// broadcast recipient (migration 069; third review H3, H5, H6, H7).
 //
 // Every path that sends a broadcast message (the public API's passes,
 // Resume, the cron continuation, the dashboard wizard's batches) goes
@@ -359,7 +359,7 @@ export async function reconcileAttemptFromEcho(
   db: SupabaseClient,
   args: {
     accountId: string
-    /** The number the echo came from: only its broadcasts' sends (migration 074). */
+    /** The number the echo came from: only its broadcasts' sends (migration 087). */
     connectionId: string
     toPhone: string
     body: string | null

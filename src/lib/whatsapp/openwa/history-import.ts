@@ -1,5 +1,5 @@
 // ============================================================
-// QR-code history import (owner adjustment A1; migration 063).
+// QR-code history import (owner adjustment A1; migration 076).
 //
 // Imports every individual chat the linked device sees and its message
 // history into contacts / conversations / messages:
@@ -149,7 +149,7 @@ export interface HistoryImportJob {
   chats_done: number
   chats_skipped: number
   messages_imported: number
-  /** Already stored when the import read them (a re-import), and how many of those it changed (075). */
+  /** Already stored when the import read them (a re-import), and how many of those it changed (088). */
   messages_seen: number
   messages_updated: number
   errors: number
@@ -163,7 +163,7 @@ interface ChatRow {
   unread_count: number
   chat_timestamp: number | null
   attempts: number
-  /** The chat list's state (migration 067), applied to the conversation. */
+  /** The chat list's state (migration 080), applied to the conversation. */
   is_group?: boolean
   archived?: boolean
   pinned?: boolean
@@ -683,7 +683,7 @@ async function importChat(
   const currentAt = (current as { last_message_at?: string | null } | null)?.last_message_at
   // Empty: only placeholders (or nothing) so far — the first real message takes the preview.
   const currentEmpty = !(current as { last_message_text?: string | null } | null)?.last_message_text
-  // Placed where WhatsApp places the chat (its chat timestamp, migration 069).
+  // Placed where WhatsApp places the chat (its chat timestamp, migration 082).
   const chatAt = chat.chat_timestamp ? new Date(chat.chat_timestamp * 1000).toISOString() : null
   if (chatAt) {
     const { error } = await admin

@@ -17,7 +17,7 @@
 // (IngestConnection). The conversation is the (number, contact) one; a
 // personal number's message never runs anything (no flow, automation,
 // AI, public webhook, broadcast reply), the contact it creates is
-// personal-only (hidden from the team, migration 073) and the name the
+// personal-only (hidden from the team, migration 086) and the name the
 // owner's address book gives it stays on that conversation
 // (`saved_name`), never on the shared CRM contact.
 // ============================================================
@@ -34,6 +34,7 @@ import {
 } from '@/lib/whatsapp/wa-identity'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
+import { claimFirstInboundMessage } from '@/lib/conversations/first-inbound'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import type { WhatsAppProvider } from '@/lib/whatsapp/transport/types'
@@ -58,10 +59,10 @@ export interface InboundContent {
   interactiveReplyId: string | null
   /** Overrides the content_type derived from the provider type. */
   contentType?: string
-  /** Kind-specific structure (message-content.ts, migration 062). */
+  /** Kind-specific structure (message-content.ts, migration 075). */
   meta?: ContentMeta | null
   /**
-   * What the phone shows beyond the content (QR mode, migration 067):
+   * What the phone shows beyond the content (QR mode, migration 080):
    * "Encaminhada", the media details WhatsApp knows without a download,
    * and — for the account's own messages — the ticks.
    */
@@ -99,7 +100,7 @@ export interface InboundMessage {
   reaction?: InboundReaction | null
   /** Raw text body, if any — fallback for the automation context. */
   text?: string | null
-  /** QR mode: the WhatsApp chat id, stored on the conversation (migration 067). */
+  /** QR mode: the WhatsApp chat id, stored on the conversation (migration 080). */
   waChatId?: string | null
   /**
    * Provider-specific content resolution (media verification and
@@ -137,7 +138,7 @@ export interface IngestOptions {
   deferFanOut?: (task: () => Promise<void>) => void
 }
 
-/** The message columns of InboundContent.extras (migration 067); none for Meta. */
+/** The message columns of InboundContent.extras (migration 080); none for Meta. */
 function parityColumns(extras: InboundContent['extras']): Record<string, unknown> {
   if (!extras) return {}
   const out: Record<string, unknown> = {}
@@ -166,7 +167,7 @@ async function rememberChatId(conversation: { id: string; wa_chat_id?: string | 
 
 /**
  * A personal number: the name its owner's address book gives the contact
- * lives on this conversation only (migration 072's `saved_name`).
+ * lives on this conversation only (migration 085's `saved_name`).
  */
 export async function rememberSavedName(
   conversation: { id: string; saved_name?: string | null },
@@ -296,7 +297,7 @@ async function mapReplyToLastMenu(
 
 // The status ladder (pending → sent → delivered → read → replied, with
 // `failed` only from pending/sending/sent) lives in SQL since migration
-// 052: public._wa_status_advances, used by apply_message_receipt and the
+// 065: public._wa_status_advances, used by apply_message_receipt and the
 // row-creation triggers, so every writer applies it atomically.
 
 export async function applyStatusUpdate(
@@ -315,7 +316,7 @@ export async function applyStatusUpdate(
     )
   }
 
-  // 1+2) One atomic, monotonic database operation (migration 052):
+  // 1+2) One atomic, monotonic database operation (migration 065):
   //    retains the receipt per destination in message_status_pending,
   //    and advances every matching messages / broadcast_recipients row
   //    with the pending → sent → delivered → read ladder in the UPDATE
@@ -656,15 +657,35 @@ export async function ingestInboundMessage(
     }
   }
 
-  // Determine whether this is the contact's very first inbound message
-  // BEFORE we insert, so the count is accurate. Covers the case where
-  // the contact row already exists (manual add / CSV import) but they've
-  // never messaged us before — which new_contact_created wouldn't catch.
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer')
+  // Is this the conversation's very first inbound message? Claimed
+  // atomically on conversations.first_inbound_at (upstream 30afcce5,
+  // migration 054): of two concurrent first messages exactly one wins —
+  // a count of earlier messages let both, or neither, fire. Decided
+  // BEFORE the insert because the stored fan-out carries it (060). A
+  // redelivery / repair of that same first message (the claim already
+  // made, with its timestamp, and no other customer message stored)
+  // keeps the answer.
+  const receivedAt = new Date(parseInt(inbound.timestamp) * 1000).toISOString()
+  let isFirstInboundMessage = await claimFirstInboundMessage(
+    supabaseAdmin(),
+    { id: conversation.id },
+    receivedAt
+  )
+  if (!isFirstInboundMessage) {
+    const [{ data: conv }, { count: others }] = await Promise.all([
+      supabaseAdmin().from('conversations').select('first_inbound_at').eq('id', conversation.id).maybeSingle(),
+      supabaseAdmin()
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', conversation.id)
+        .eq('sender_type', 'customer')
+        .neq('message_id', inbound.messageId),
+    ])
+    const firstAt = (conv as { first_inbound_at: string | null } | null)?.first_inbound_at
+    isFirstInboundMessage = Boolean(
+      firstAt && Date.parse(firstAt) === Date.parse(receivedAt) && (others ?? 0) === 0
+    )
+  }
 
   // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
   // transient 5xx), and each retry replays the exact same message.id. The
@@ -697,7 +718,7 @@ export async function ingestInboundMessage(
     contentText: contentText ?? null,
     inboundText: contentText ?? inbound.text ?? '',
     interactiveReplyId: interactiveReplyId ?? null,
-    isFirstInboundMessage: (priorCustomerMsgCount ?? 0) === 0,
+    isFirstInboundMessage,
     contactWasCreated: contactOutcome.wasCreated,
     botsEnabled: options.runBots !== false && !personal,
     lastMessageText,
@@ -720,7 +741,7 @@ export async function ingestInboundMessage(
         media_type: mediaType,
         message_id: inbound.messageId,
         status: 'delivered',
-        created_at: new Date(parseInt(inbound.timestamp) * 1000).toISOString(),
+        created_at: receivedAt,
         reply_to_message_id: replyToInternalId,
         // Only populated for content_type='interactive'. Migration 010 added
         // the column; null for every other content_type so existing inserts
@@ -739,7 +760,7 @@ export async function ingestInboundMessage(
   }
 
   // Replayed delivery: the message already exists. If its processing
-  // COMPLETED (migration 053's ingest_completed_at), acknowledge it as a
+  // COMPLETED (migration 066's ingest_completed_at), acknowledge it as a
   // no-op — that is what keeps a retry from double-bumping unread,
   // re-advancing flows, re-firing automations, re-invoking AI handling and
   // re-dispatching public webhooks (issue #367). If it did NOT complete
@@ -747,7 +768,6 @@ export async function ingestInboundMessage(
   // repairs it: the remaining steps are idempotent and completion is
   // claimed atomically below, so they run exactly once.
   let messageRowId: string
-  let repairing = false
   if (!insertedRows || insertedRows.length === 0) {
     // An imported "waiting for this message" placeholder: the real message
     // replaces it in place (phase 5f) — it was imported, so nothing runs.
@@ -794,13 +814,9 @@ export async function ingestInboundMessage(
     }
     console.info('[webhook] completing an interrupted inbound message:', inbound.messageId)
     messageRowId = existing.id
-    repairing = true
   } else {
     messageRowId = insertedRows[0].id
   }
-  // The pre-insert count included nothing; on a repair it includes the
-  // message itself.
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) - (repairing ? 1 : 0) === 0
 
   // A customer writing again re-opens the thread (issue #409). Kept as a
   // separate conditional statement gated on the row's CURRENT status in
@@ -811,15 +827,15 @@ export async function ingestInboundMessage(
 
   // Everything the fan-out (flows, automations, AI, public webhooks)
   // needs, captured now: it is enqueued with the completion below and run
-  // from the outbox — not from closures of this request (migration 057).
+  // from the outbox — not from closures of this request (migration 070).
   // A message that arrived on the account's INACTIVE connection (the
   // number it switched away from) is stored and surfaced, but no bot
   // answers it: the reply would go out from the other number.
   const fanout: InboundFanoutPayload = { ...storedFanout, isFirstInboundMessage }
 
   // Update conversation + mark the message complete + enqueue its
-  // fan-out, atomically and only once (migration 057's
-  // complete_inbound_message over 053's bump). The unread bump stays
+  // fan-out, atomically and only once (migration 070's
+  // complete_inbound_message over 066's bump). The unread bump stays
   // DB-side rather than a read-modify-write of the snapshot loaded above
   // (issue #369). A failure here leaves the message incomplete, so a
   // redelivery repairs it.
@@ -1197,7 +1213,7 @@ export async function findOrCreateContact(
   // user_id is the NOT NULL FK audit column (no inbound message
   // has a single "user who created" it — we attribute to the number's
   // owner / whoever added it). A contact a personal number brings in is
-  // its owner's alone until the business talks to it (migration 073).
+  // its owner's alone until the business talks to it (migration 086).
   //
   // `phone` stays NOT NULL in the schema, so a BSUID-only sender is
   // stored with '' — which migration 022's partial unique index
@@ -1251,7 +1267,7 @@ export async function findOrCreateConversation(
   contactId: string,
 ) {
   // One conversation per (number, contact) — the same person on two of
-  // the account's numbers is two conversations (migration 072).
+  // the account's numbers is two conversations (migration 085).
   // Look for an existing one, oldest-first.
   //
   // We deliberately do NOT use `.single()` here. `.single()` errors on

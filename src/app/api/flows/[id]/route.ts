@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { validateFlowForActivation } from '@/lib/flows/validate'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -9,10 +10,7 @@ const t = getT('Api')
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
  * PUT   /api/flows/[id]  — replace name/trigger/entry/fallback + the
- *                          full node graph (delete-then-insert under
- *                          the hood; not atomic, but the runner is
- *                          resilient to mid-edit reads — node_not_found
- *                          gracefully ends the run).
+ *                          full node graph.
  * DELETE /api/flows/[id] — hard delete (RLS+CASCADE clean up nodes,
  *                          runs, events).
  *
@@ -121,9 +119,30 @@ export async function PUT(
 
   const admin = supabaseAdmin()
 
-  // Update the flow row first — the body may not include `nodes` (a
-  // header-only save for editing the trigger config without touching
-  // the graph). Skip node replacement in that case.
+  const activeBlockers = await validateIfActive(admin, id, body)
+  if (activeBlockers) {
+    return NextResponse.json(
+      { error: t('flows.cannotSaveActive'), issues: activeBlockers },
+      { status: 422 },
+    )
+  }
+
+  if (body.nodes !== undefined) {
+    const { error: nodesErr } = await guard.supabase.rpc('replace_flow_nodes', {
+      p_flow_id: id,
+      p_nodes: body.nodes.map((n) => ({
+        node_key: n.node_key,
+        node_type: n.node_type,
+        config: n.config,
+        position_x: n.position_x ?? 0,
+        position_y: n.position_y ?? 0,
+      })),
+    })
+    if (nodesErr) {
+      return NextResponse.json({ error: nodesErr.message }, { status: 500 })
+    }
+  }
+
   const flowPatch: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   }
@@ -146,33 +165,6 @@ export async function PUT(
     return NextResponse.json({ error: updErr.message }, { status: 500 })
   }
 
-  if (body.nodes !== undefined) {
-    // Delete-then-insert. Not transactional but the runner handles
-    // mid-edit reads safely (a node_not_found ends the run cleanly).
-    const { error: delErr } = await admin
-      .from('flow_nodes')
-      .delete()
-      .eq('flow_id', id)
-    if (delErr) {
-      return NextResponse.json({ error: delErr.message }, { status: 500 })
-    }
-    if (body.nodes.length > 0) {
-      const { error: insErr } = await admin.from('flow_nodes').insert(
-        body.nodes.map((n) => ({
-          flow_id: id,
-          node_key: n.node_key,
-          node_type: n.node_type,
-          config: n.config,
-          position_x: n.position_x ?? 0,
-          position_y: n.position_y ?? 0,
-        })),
-      )
-      if (insErr) {
-        return NextResponse.json({ error: insErr.message }, { status: 500 })
-      }
-    }
-  }
-
   // Re-fetch and return the new state — the editor uses the response
   // to reconcile its local form state.
   const [{ data: flow }, { data: nodes }] = await Promise.all([
@@ -184,6 +176,42 @@ export async function PUT(
       .order('created_at', { ascending: true }),
   ])
   return NextResponse.json({ flow, nodes: nodes ?? [] })
+}
+
+async function validateIfActive(
+  admin: ReturnType<typeof supabaseAdmin>,
+  flowId: string,
+  body: PutBody,
+): Promise<ReturnType<typeof validateFlowForActivation> | null> {
+  const { data: current } = await admin
+    .from('flows')
+    .select('name, status, trigger_type, trigger_config, entry_node_id')
+    .eq('id', flowId)
+    .maybeSingle()
+  if (!current || current.status !== 'active') return null
+
+  const nodes =
+    body.nodes ??
+    ((
+      await admin
+        .from('flow_nodes')
+        .select('node_key, node_type, config')
+        .eq('flow_id', flowId)
+    ).data ?? [])
+
+  const issues = validateFlowForActivation(
+    {
+      name: body.name !== undefined ? body.name.trim() : current.name,
+      trigger_type: body.trigger_type ?? current.trigger_type,
+      trigger_config: body.trigger_config ?? current.trigger_config ?? {},
+      entry_node_id:
+        body.entry_node_id !== undefined
+          ? body.entry_node_id
+          : current.entry_node_id,
+    },
+    nodes,
+  )
+  return issues.some((i) => i.severity === 'error') ? issues : null
 }
 
 export async function DELETE(

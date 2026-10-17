@@ -524,7 +524,7 @@ export default function BroadcastDetailPage() {
               </div>
             )}
 
-            {/* Unconfirmed sends (migration 056): the outcome could not be
+            {/* Unconfirmed sends (migration 069): the outcome could not be
                 established and a resend could message the customer twice,
                 so a person decides after checking the chat. */}
             {unconfirmedCount > 0 && (

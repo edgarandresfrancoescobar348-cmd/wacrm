@@ -114,6 +114,7 @@ vi.mock('@/lib/whatsapp/template-header-handle', () => ({
 }))
 
 import { PATCH, DELETE } from './route'
+import { __resetRateLimitForTests } from '@/lib/rate-limit'
 
 const params = Promise.resolve({ id: TEMPLATE.id })
 
@@ -134,6 +135,7 @@ function patchTemplate() {
 }
 
 beforeEach(() => {
+  __resetRateLimitForTests()
   templateUpdates.length = 0
   templateDeletes = 0
   callerRole = 'admin'
@@ -184,5 +186,20 @@ describe('local edit of a Meta-approved template (F9)', () => {
     expect(meta.editMessageTemplate).not.toHaveBeenCalled()
     expect(templateUpdates).toHaveLength(1)
     expect(templateUpdates[0]).toMatchObject({ origin: 'local', meta_template_id: null })
+  })
+})
+
+describe('template lifecycle rate limit', () => {
+  it('answers 429 before calling Meta once the per-user budget is spent', async () => {
+    for (let i = 0; i < 30; i++) {
+      const res = await DELETE(new Request('http://localhost/t'), { params })
+      expect(res.status).toBe(200)
+    }
+    meta.deleteMessageTemplate.mockClear()
+
+    const limited = await DELETE(new Request('http://localhost/t'), { params })
+    expect(limited.status).toBe(429)
+    expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/)
+    expect(meta.deleteMessageTemplate).not.toHaveBeenCalled()
   })
 })

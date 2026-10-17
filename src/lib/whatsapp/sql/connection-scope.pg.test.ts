@@ -1,5 +1,5 @@
 // Phase 6b: a number changes between Empresa and Pessoal — only through
-// set_connection_scope (migration 076), real PostgreSQL, the migrations as
+// set_connection_scope (migration 089), real PostgreSQL, the migrations as
 // shipped:
 //   * who: Empresa → Pessoal an admin / owner of the account (the new
 //     owner a member); Pessoal → Empresa only that number's owner; never
@@ -30,7 +30,7 @@ const C1 = '20000000-0000-0000-0000-000000000001'
 const C2 = '20000000-0000-0000-0000-000000000002'
 const C3 = '20000000-0000-0000-0000-000000000003'
 
-describe.skipIf(!pgAvailable())('a number changes between Empresa and Pessoal (076)', () => {
+describe.skipIf(!pgAvailable())('a number changes between Empresa and Pessoal (089)', () => {
   let pg: Pg
   const as = (uid: string, query: string) =>
     pg.sql(`SET request.jwt.claims = '{"sub":"${uid}","role":"authenticated"}'; SET ROLE authenticated; ${query}`)
@@ -157,7 +157,7 @@ describe.skipIf(!pgAvailable())('a number changes between Empresa and Pessoal (0
   })
 
   it('re-running the migration keeps everything', async () => {
-    await pg.migrate('076_whatsapp_connection_scope_change.sql')
+    await pg.migrate('089_whatsapp_connection_scope_change.sql')
     expect(await one(`SELECT count(*) FROM public.whatsapp_connection_events`)).toBe('2')
   })
 })

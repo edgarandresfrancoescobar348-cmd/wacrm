@@ -177,6 +177,25 @@ describe('createBroadcast atomicity (#370)', () => {
     ]);
   });
 
+  it('sends one params array per contact, even for a single-variable template', async () => {
+    const { db, calls } = makeDb({
+      data: [{ broadcast_id: 'b-1', recipient_id: 'r-1', contact_id: 'c1' }],
+      error: null,
+    });
+
+    await createBroadcast(db, 'acc', 'user', {
+      templateName: 'promo',
+      recipients: [{ to: '+14155550123', params: ['Ann'] }],
+    });
+
+    const args = calls.rpc[0].args as {
+      p_contact_ids: string[];
+      p_template_params: unknown;
+    };
+    expect(args.p_contact_ids).toEqual(['c1']);
+    expect(args.p_template_params).toEqual([['Ann']]);
+  });
+
   it('throws and leaves no orphaned parent when the atomic create fails', async () => {
     const { db, calls } = makeDb({
       data: null,

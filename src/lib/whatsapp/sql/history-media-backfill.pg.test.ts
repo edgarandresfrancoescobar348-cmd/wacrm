@@ -1,4 +1,4 @@
-// Phase 5d: migration 066 gives every imported media row without a URL
+// Phase 5d: migration 079 gives every imported media row without a URL
 // the media proxy reference — the SAME string openWaMediaProxyUrl() builds
 // (the proxy matches rows on it) — and touches nothing else.
 
@@ -12,7 +12,7 @@ const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')
 const CHAT = '5511933739259@c.us'
 const LID_CHAT = '154112083632297@lid'
 
-describe.skipIf(!pgAvailable())('066: imported history media backfill', () => {
+describe.skipIf(!pgAvailable())('079: imported history media backfill', () => {
   let pg: Pg
   const q = (sql: string) => pg.sql(sql)
 
@@ -25,7 +25,7 @@ describe.skipIf(!pgAvailable())('066: imported history media backfill', () => {
         ADD COLUMN reply_to_message_id uuid, ADD COLUMN interactive_reply_id text, ADD COLUMN revoked_at timestamptz;
       CREATE TABLE public.profiles(user_id uuid, account_id uuid);
       CREATE SCHEMA IF NOT EXISTS auth; CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULL::uuid $$;`)
-    for (const m of [...WA_MIGRATIONS, '062_message_content_meta.sql', '063_whatsapp_history_import.sql', '067_whatsapp_parity.sql']) await pg.migrate(m)
+    for (const m of [...WA_MIGRATIONS, '075_message_content_meta.sql', '076_whatsapp_history_import.sql', '080_whatsapp_parity.sql']) await pg.migrate(m)
     await pg.sql(`
       INSERT INTO public.contacts(id, account_id, phone) VALUES ('${id(11)}', '${ACCT}', '1'), ('${id(12)}', '${ACCT}', '2'), ('${id(13)}', '${ACCT}', '3');
       INSERT INTO public.conversations(id, account_id, contact_id) VALUES
@@ -45,7 +45,7 @@ describe.skipIf(!pgAvailable())('066: imported history media backfill', () => {
   afterAll(() => pg?.stop())
 
   it('builds exactly the proxy URL the TypeScript side builds', async () => {
-    await pg.migrate('066_history_media.sql')
+    await pg.migrate('079_history_media.sql')
     for (const [chat, msg] of [
       [CHAT, `false_${CHAT}_3EB0A1`],
       [LID_CHAT, `true_${LID_CHAT}_ABC+/=`],
@@ -75,7 +75,7 @@ describe.skipIf(!pgAvailable())('066: imported history media backfill', () => {
 
   it('is idempotent', async () => {
     const before = await q(`SELECT string_agg(coalesce(media_url, '-'), ',' ORDER BY message_id) FROM public.messages`)
-    await pg.migrate('066_history_media.sql')
+    await pg.migrate('079_history_media.sql')
     expect(await q(`SELECT string_agg(coalesce(media_url, '-'), ',' ORDER BY message_id) FROM public.messages`)).toBe(before)
   })
 })

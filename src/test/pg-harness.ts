@@ -97,7 +97,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 `
 
 /**
- * MINIMAL_SCHEMA plus every column/table the WhatsApp migrations 053–059
+ * MINIMAL_SCHEMA plus every column/table the WhatsApp migrations 066–072
  * and the code under test touch (contacts, conversation/contact link,
  * broadcast and recipient columns, the two connection tables). Column
  * names match the real tables.
@@ -124,25 +124,25 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 
 /** The WhatsApp migrations in order (each idempotent). */
 export const WA_MIGRATIONS = [
-  '053_inbound_completion.sql',
-  '054_broadcast_send_checkpoint.sql',
-  '056_broadcast_send_attempts.sql',
-  '057_inbound_fanout_outbox.sql',
-  '058_openwa_status_mirror.sql',
-  '059_send_evidence.sql',
-  '060_fanout_outcomes.sql',
-  '061_connection_lock.sql',
-  '064_openwa_embedded_gateway.sql',
-  '067_whatsapp_parity.sql',
+  '066_inbound_completion.sql',
+  '067_broadcast_send_checkpoint.sql',
+  '069_broadcast_send_attempts.sql',
+  '070_inbound_fanout_outbox.sql',
+  '071_openwa_status_mirror.sql',
+  '072_send_evidence.sql',
+  '073_fanout_outcomes.sql',
+  '074_connection_lock.sql',
+  '077_openwa_embedded_gateway.sql',
+  '080_whatsapp_parity.sql',
 ]
 
 /**
  * The account / member / WhatsApp slice as it stood before phase 6
- * (migrations 072–073 apply on top of it): Supabase's auth.uid() from
+ * (migrations 085–086 apply on top of it): Supabase's auth.uid() from
  * the request's JWT claims, storage's buckets/objects, profiles and
  * is_account_member, the conversation / contact / message tables with
- * their pre-072 uniques and their 017 policies, both connection tables
- * in their one-per-account shape, the 063 history-import tables and the
+ * their pre-085 uniques and their 017 policies, both connection tables
+ * in their one-per-account shape, the 076 history-import tables and the
  * outbound rows that get a number. Column names match the real tables.
  */
 export const CONNECTIONS_SCHEMA = `
@@ -257,16 +257,16 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 
 /** Phase 6: several numbers per account, and who sees a personal one. */
 export const CONNECTIONS_MIGRATIONS = [
-  '072_whatsapp_connections.sql',
-  '073_whatsapp_connection_visibility.sql',
-  '076_whatsapp_connection_scope_change.sql',
+  '085_whatsapp_connections.sql',
+  '086_whatsapp_connection_visibility.sql',
+  '089_whatsapp_connection_scope_change.sql',
 ]
 
 /**
  * The whole WhatsApp schema as of phase 6, for tests that run app code
  * over real tables: CONNECTIONS_SCHEMA plus the columns and tables the
- * WhatsApp migrations 053–071 build on, then WA_FULL_MIGRATIONS on top
- * (053 … 074, each as shipped).
+ * WhatsApp migrations 066–084 build on, then WA_FULL_MIGRATIONS on top
+ * (066 … 087, each as shipped).
  */
 export const WA_FULL_SCHEMA = CONNECTIONS_SCHEMA + `
 ALTER TABLE public.messages ADD COLUMN error_code integer, ADD COLUMN error_title text, ADD COLUMN error_details text,
@@ -304,25 +304,25 @@ ALTER TABLE public.notifications ADD COLUMN contact_id uuid;
 `
 
 export const WA_FULL_MIGRATIONS = [
-  '053_inbound_completion.sql',
-  '054_broadcast_send_checkpoint.sql',
-  '056_broadcast_send_attempts.sql',
-  '057_inbound_fanout_outbox.sql',
-  '058_openwa_status_mirror.sql',
-  '059_send_evidence.sql',
-  '060_fanout_outcomes.sql',
-  '061_connection_lock.sql',
-  '062_message_content_meta.sql',
-  '063_whatsapp_history_import.sql',
-  '064_openwa_embedded_gateway.sql',
-  '065_history_import_empty_conversations.sql',
-  '066_history_media.sql',
-  '067_whatsapp_parity.sql',
-  '068_whatsapp_list_parity.sql',
-  '069_whatsapp_chat_order.sql',
-  '070_whatsapp_untimed_chats.sql',
-  '071_voice_preview_duration.sql',
+  '066_inbound_completion.sql',
+  '067_broadcast_send_checkpoint.sql',
+  '069_broadcast_send_attempts.sql',
+  '070_inbound_fanout_outbox.sql',
+  '071_openwa_status_mirror.sql',
+  '072_send_evidence.sql',
+  '073_fanout_outcomes.sql',
+  '074_connection_lock.sql',
+  '075_message_content_meta.sql',
+  '076_whatsapp_history_import.sql',
+  '077_openwa_embedded_gateway.sql',
+  '078_history_import_empty_conversations.sql',
+  '079_history_media.sql',
+  '080_whatsapp_parity.sql',
+  '081_whatsapp_list_parity.sql',
+  '082_whatsapp_chat_order.sql',
+  '083_whatsapp_untimed_chats.sql',
+  '084_voice_preview_duration.sql',
   ...CONNECTIONS_MIGRATIONS,
-  '074_broadcast_number_evidence.sql',
-  '075_history_import_message_counts.sql',
+  '087_broadcast_number_evidence.sql',
+  '088_history_import_message_counts.sql',
 ]

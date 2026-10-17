@@ -223,3 +223,23 @@ export const HEADER_TEXT_REQUIRED_MESSAGE =
   'This template has a variable in its header ({{1}}) — pass its value as "headerText" in the structured params: { "body": [...], "headerText": "..." }.';
 
 export { templateUsableOn, templateModeFor } from './template-usable';
+export function templateHeaderMediaUrl(
+  row: MessageTemplate | null,
+  templateMessageParams?: unknown
+): string | null {
+  if (!row?.header_type || row.header_type === 'text') return null;
+  const params =
+    templateMessageParams && typeof templateMessageParams === 'object'
+      ? (templateMessageParams as {
+          headerMediaUrl?: unknown;
+          headerMediaId?: unknown;
+        })
+      : {};
+  if (typeof params.headerMediaUrl === 'string' && params.headerMediaUrl) {
+    return params.headerMediaUrl;
+  }
+  if (typeof params.headerMediaId === 'string' && params.headerMediaId) {
+    return null;
+  }
+  return row.header_media_url || null;
+}

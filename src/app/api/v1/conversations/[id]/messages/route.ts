@@ -35,7 +35,7 @@ export async function GET(
       .eq('id', id)
       .eq('account_id', ctx.accountId)
       .in('connection_id', business.length ? business : [NO_CONNECTION])
-      // WhatsApp groups (QR mode) are not CRM conversations (migration 067).
+      // WhatsApp groups (QR mode) are not CRM conversations (migration 080).
       .eq('is_group', false)
       .maybeSingle();
     if (!conv) return fail('not_found', 'Conversation not found', 404);

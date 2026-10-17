@@ -47,7 +47,7 @@ interface BroadcastResult {
   whatsapp_message_id?: string
   error?: string
   /** The server already recorded this outcome on the recipient row
-   *  (send attempts, migration 056) — the wizard must not overwrite it. */
+   *  (send attempts, migration 069) — the wizard must not overwrite it. */
   persisted?: boolean
 }
 

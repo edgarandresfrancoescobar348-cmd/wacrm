@@ -3,9 +3,9 @@
 // the newest applied state of its OpenWA session. The real session-event
 // code (events.ts) runs over real tables (src/test/pg-supabase.ts) with
 // the interleaving the review describes: an OLD "disconnected" suspended
-// mid-write while a NEWER "ready" applies. Migration 072 derives the
+// mid-write while a NEWER "ready" applies. Migration 085 derives the
 // number's status from the session row in the same statement (it replaced
-// 058's mirror into the account's single "active" flag); one number's
+// 071's mirror into the account's single "active" flag); one number's
 // session never moves another number's status.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'

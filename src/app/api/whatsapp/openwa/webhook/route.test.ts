@@ -42,7 +42,7 @@ vi.mock('@/lib/whatsapp/openwa/gateway', () => ({
 type LedgerRow = Record<string, unknown> & { idempotency_key: string }
 function ledgerTable() {
   return {
-    // Primary key (account_id, idempotency_key), as migration 049.
+    // Primary key (account_id, idempotency_key), as migration 062.
     insert: async (row: LedgerRow) => {
       const clash = [...h.ledger.values()].some(
         (r) => r.idempotency_key === row.idempotency_key && r.account_id === row.account_id,

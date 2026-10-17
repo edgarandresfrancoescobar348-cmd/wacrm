@@ -1,5 +1,5 @@
 // Phase 6: several WhatsApp numbers per account. Real PostgreSQL, the
-// pre-phase-6 slice (CONNECTIONS_SCHEMA) and migrations 072–073 as
+// pre-phase-6 slice (CONNECTIONS_SCHEMA) and migrations 085–086 as
 // shipped:
 //   * the backfill turns each account's existing connection(s) into
 //     business numbers and gives every conversation its number;
@@ -10,7 +10,7 @@
 //   * a contact joins the team when a business conversation opens with it
 //     or a member creates it by hand;
 //   * a number's identity (scope, owner…) and a conversation's number
-//     never change (scope and owner: only through set_connection_scope, 076).
+//     never change (scope and owner: only through set_connection_scope, 089).
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -26,7 +26,7 @@ const AGENT = '00000000-0000-0000-0000-0000000000f3' // owns a personal number
 const OTHER = '00000000-0000-0000-0000-0000000000f4' // agent without one
 const OUTSIDER = '00000000-0000-0000-0000-0000000000f5' // member of B only
 
-describe.skipIf(!pgAvailable())('WhatsApp numbers: migration, visibility, identity (072–073)', () => {
+describe.skipIf(!pgAvailable())('WhatsApp numbers: migration, visibility, identity (085–086)', () => {
   let pg: Pg
   /** Run `query` as an app user (PostgREST's `authenticated` + JWT sub). */
   const as = (uid: string, query: string) =>
@@ -261,7 +261,7 @@ describe.skipIf(!pgAvailable())('WhatsApp numbers: migration, visibility, identi
   })
 
   describe('identity never changes', () => {
-    // Scope and owner change only through set_connection_scope (076, connection-scope.pg.test.ts).
+    // Scope and owner change only through set_connection_scope (089, connection-scope.pg.test.ts).
     it('a number keeps its provider and account; scope and owner only through the RPC', async () => {
       await expect(pg.sql(`UPDATE public.whatsapp_connections SET scope = 'business', owner_user_id = NULL WHERE id = '${personal}'`))
         .rejects.toThrow(/only through set_connection_scope/)

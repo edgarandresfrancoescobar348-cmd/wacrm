@@ -1,6 +1,6 @@
-// Phase 5f: migration 068 — the list's ticks follow the newest message
+// Phase 5f: migration 081 — the list's ticks follow the newest message
 // (receipts included) and the chat with your own number is marked, also
-// when the linked number changes. Real tables (WA_SCHEMA + 067), the
+// when the linked number changes. Real tables (WA_SCHEMA + 080), the
 // migration file as shipped.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -10,7 +10,7 @@ import { WA_MIGRATIONS, WA_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/
 const ACCT = '00000000-0000-0000-0000-0000000000f5'
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
 
-describe.skipIf(!pgAvailable())('068: list parity', () => {
+describe.skipIf(!pgAvailable())('081: list parity', () => {
   let pg: Pg
 
   beforeAll(async () => {
@@ -30,7 +30,7 @@ describe.skipIf(!pgAvailable())('068: list parity', () => {
       INSERT INTO public.messages(conversation_id, sender_type, status, created_at) VALUES
         ('${id(11)}', 'customer', 'read', now() - interval '2 hours'),
         ('${id(11)}', 'agent', 'read', now() - interval '1 hour');`)
-    await pg.migrate('068_whatsapp_list_parity.sql')
+    await pg.migrate('081_whatsapp_list_parity.sql')
   }, 60_000)
   afterAll(() => pg?.stop())
 
@@ -79,7 +79,7 @@ describe.skipIf(!pgAvailable())('068: list parity', () => {
   })
 
   it('is idempotent', async () => {
-    await pg.migrate('068_whatsapp_list_parity.sql')
+    await pg.migrate('081_whatsapp_list_parity.sql')
     expect(await status(11)).toBe('read')
   })
 })

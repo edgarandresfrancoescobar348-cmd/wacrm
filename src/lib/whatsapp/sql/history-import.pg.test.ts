@@ -1,5 +1,5 @@
 // A1 — QR-code history import, against a real PostgreSQL (migrations
-// 053–063) with the REAL importer and the REAL inbound ingestion
+// 066–076) with the REAL importer and the REAL inbound ingestion
 // (src/test/pg-supabase.ts), and a real HTTP fake gateway serving
 // /chats and /history. Covers: individual chats only, the type mapping,
 // direction and original timestamps, unread from /chats, newest message
@@ -437,7 +437,7 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
     // the preview follows the refreshed newest message
     expect(await pg.sql(`SELECT c.last_message_text FROM public.conversations c JOIN public.contacts ct ON ct.id = c.contact_id WHERE ct.phone = '5511911110001'`)).toBe('[voice:0:09]')
     expect(await count(`SELECT count(*) FROM public.messages WHERE message_id LIKE 'r-%'`)).toBe(2)
-    // What the card shows (075): nothing new, everything found stored, the two refreshed.
+    // What the card shows (088): nothing new, everything found stored, the two refreshed.
     const counts = () =>
       pg.sql(`SELECT messages_imported || '|' || messages_seen || '|' || messages_updated FROM public.whatsapp_history_imports`)
     const stored = await count(`SELECT count(*) FROM public.messages`)
@@ -512,11 +512,11 @@ describe.skipIf(!pgAvailable())('QR-code history import (A1)', () => {
       await run()
       expect(await at(EMPTY.id)).toBe('null|null|')
 
-      // …and so does migration 070, without one; a chat with messages keeps its time.
+      // …and so does migration 083, without one; a chat with messages keeps its time.
       await pg.sql(`UPDATE public.conversations SET last_message_at = now() WHERE wa_chat_id = '${EMPTY.id}'`)
       const ana = await pg.sql(`SELECT last_message_at::text FROM public.conversations WHERE wa_chat_id = '${ANA}'`)
       expect(ana).not.toBe('')
-      await pg.migrate('070_whatsapp_untimed_chats.sql')
+      await pg.migrate('083_whatsapp_untimed_chats.sql')
       expect(await at(EMPTY.id)).toBe('null|null|')
       expect(await pg.sql(`SELECT last_message_at::text FROM public.conversations WHERE wa_chat_id = '${ANA}'`)).toBe(ana)
     } finally {

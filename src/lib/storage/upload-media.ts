@@ -158,7 +158,7 @@ export async function deleteAccountMedia(
 /**
  * Upload a file sent from a PERSONAL WhatsApp number's conversation
  * (phase 6) to the private bucket, under `connection-<id>/…` — storage RLS
- * lets only the number's owner write and read it (migration 073). Returns
+ * lets only the number's owner write and read it (migration 086). Returns
  * the app route the message stores (the send signs a short-lived link for
  * the provider) and the object path.
  */

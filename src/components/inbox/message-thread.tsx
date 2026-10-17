@@ -66,7 +66,22 @@ import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
-import { renderTemplateBody } from "@/lib/whatsapp/template-body";
+import {
+  renderTemplateBody,
+  templateHeaderMediaUrl,
+} from "@/lib/whatsapp/template-body";
+import {
+  matchMessageTemplate,
+  templateNamesInMessages,
+} from "@/lib/whatsapp/template-message-view";
+import {
+  businessReactionOn,
+  withBusinessReaction,
+} from "@/lib/inbox/business-reaction";
+import {
+  confirmedSendUpdate,
+  newTempMessageId,
+} from "@/lib/inbox/optimistic-messages";
 import { contactDisplayName as displayNameOf, contactHandleDisplay, contactProfileName } from "@/lib/whatsapp/phone-display";
 import { toast } from "sonner";
 import { AvatarWithScope } from "./scope-badge";
@@ -221,6 +236,35 @@ export function MessageThread({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  const [sentTemplates, setSentTemplates] = useState<MessageTemplate[]>([]);
+  const sentTemplateNames = useMemo(
+    () => templateNamesInMessages(messages).join("\n"),
+    [messages],
+  );
+  useEffect(() => {
+    if (!sentTemplateNames) return;
+
+    const supabase = createClient();
+    let cancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("message_templates")
+        .select("*")
+        .in("name", sentTemplateNames.split("\n"));
+
+      if (cancelled) return;
+      if (error) {
+        console.error("Failed to fetch sent templates:", error);
+        return;
+      }
+      setSentTemplates((data as MessageTemplate[]) ?? []);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sentTemplateNames]);
   // Purely visual spin state for the manual-refresh button. The actual
   // refetch is fire-and-forget through `onRefresh` (which bumps the
   // parent's resyncToken); the 700ms spin is just feedback so the click
@@ -630,7 +674,7 @@ export function MessageThread({
     async (text: string, replyToId?: string) => {
       if (!conversation) return;
 
-      const tempId = `temp-${Date.now()}`;
+      const tempId = newTempMessageId();
 
       // Optimistic update — shows the message immediately with "sending" status
       const optimisticMsg: Message = {
@@ -672,7 +716,7 @@ export function MessageThread({
         // Success — the realtime INSERT event will replace the temp bubble
         // with the real DB row. If realtime hasn't arrived yet, at least
         // flip status to 'sent' so the UI stops showing "sending".
-        onUpdateMessage(tempId, { status: "sent" });
+        onUpdateMessage(tempId, confirmedSendUpdate(payload));
       } catch (err) {
         console.error("Failed to send message:", err);
         const reason = err instanceof Error ? err.message : t("networkError");
@@ -695,7 +739,7 @@ export function MessageThread({
           ? payload.caption || payload.filename || t("documentFallback")
           : payload.caption;
 
-      const tempId = `temp-${Date.now()}`;
+      const tempId = newTempMessageId();
       const optimisticMsg: Message = {
         id: tempId,
         conversation_id: conversation.id,
@@ -737,7 +781,7 @@ export function MessageThread({
           return;
         }
 
-        onUpdateMessage(tempId, { status: "sent" });
+        onUpdateMessage(tempId, confirmedSendUpdate(data));
       } catch (err) {
         console.error("Failed to send media:", err);
         const reason = err instanceof Error ? err.message : t("networkError");
@@ -753,7 +797,7 @@ export function MessageThread({
     async (payload: InteractiveMessagePayload, replyToId?: string) => {
       if (!conversation) return;
 
-      const tempId = `temp-${Date.now()}`;
+      const tempId = newTempMessageId();
       // Optimistic bubble — renders the buttons/list immediately via the
       // interactive_payload, same as the persisted row will.
       const optimisticMsg: Message = {
@@ -791,7 +835,7 @@ export function MessageThread({
           return;
         }
 
-        onUpdateMessage(tempId, { status: "sent" });
+        onUpdateMessage(tempId, confirmedSendUpdate(data));
       } catch (err) {
         console.error("Failed to send interactive message:", err);
         const reason = err instanceof Error ? err.message : t("networkError");
@@ -833,7 +877,7 @@ export function MessageThread({
       if (!conversation) return;
 
       const renderedBody = renderTemplateBody(template.body_text, values.body);
-      const tempId = `temp-${Date.now()}`;
+      const tempId = newTempMessageId();
 
       const optimisticMsg: Message = {
         id: tempId,
@@ -841,6 +885,7 @@ export function MessageThread({
         sender_type: "agent",
         content_type: "template",
         content_text: renderedBody,
+        media_url: templateHeaderMediaUrl(template) ?? undefined,
         template_name: template.name,
         status: "sending",
         created_at: new Date().toISOString(),
@@ -880,7 +925,7 @@ export function MessageThread({
           return;
         }
 
-        onUpdateMessage(tempId, { status: "sent" });
+        onUpdateMessage(tempId, confirmedSendUpdate(payload));
       } catch (err) {
         console.error("Failed to send template:", err);
         const reason = err instanceof Error ? err.message : t("networkError");
@@ -962,26 +1007,13 @@ export function MessageThread({
       // stale closure. Snapshot stored for rollback on POST failure.
       setReactions((prev) => {
         snapshot = prev;
-        const own = prev.find(
-          (r) =>
-            r.message_id === messageId &&
-            r.actor_type === "agent" &&
-            r.actor_id === userId,
-        );
-        if (emoji === "") return own ? prev.filter((r) => r !== own) : prev;
-        if (own) return prev.map((r) => (r === own ? { ...own, emoji } : r));
-        return [
-          ...prev,
-          {
-            id: `temp-${Date.now()}`,
-            message_id: messageId,
-            conversation_id: convId,
-            actor_type: "agent",
-            actor_id: userId,
-            emoji,
-            created_at: new Date().toISOString(),
-          },
-        ];
+        return withBusinessReaction(prev, {
+          messageId,
+          conversationId: convId,
+          userId,
+          emoji,
+          now: new Date(),
+        });
       });
 
       try {
@@ -1331,15 +1363,10 @@ export function MessageThread({
                         }
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
-                    // Toggle is computed at the call site — `msgReactions`
-                    // and `user?.id` are already in scope, no extra hook.
+                    // Toggle is computed at the call site — no extra hook.
                     const handlePillToggle = (emoji: string) => {
-                      const own = msgReactions?.find(
-                        (r) =>
-                          r.actor_type === "agent" &&
-                          r.actor_id === user?.id,
-                      );
-                      const next = own?.emoji === emoji ? "" : emoji;
+                      const current = businessReactionOn(msgReactions, msg.id);
+                      const next = current?.emoji === emoji ? "" : emoji;
                       void postReaction(msg.id, next);
                     };
                     return (
@@ -1368,9 +1395,13 @@ export function MessageThread({
                             message={msg}
                             senderLabel={isGroup && firstOfRun ? msg.sender_name : null}
                             voiceAvatar={isAudioMessage(msg) ? voiceAvatarFor(msg) : null}
+                            template={
+                              msg.content_type === "template"
+                                ? matchMessageTemplate(msg, sentTemplates)
+                                : null
+                            }
                             reply={reply}
                             reactions={msgReactions}
-                            currentUserId={user?.id}
                             onToggleReaction={handlePillToggle}
                             onOpenMedia={handleMediaChange}
                             showTail={firstOfRun}

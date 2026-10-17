@@ -25,7 +25,7 @@ interface ImportState {
   chats_done: number;
   chats_skipped: number;
   messages_imported: number;
-  /** Already stored when read (a re-import) and, of those, changed (migration 075). */
+  /** Already stored when read (a re-import) and, of those, changed (migration 088). */
   messages_seen?: number;
   messages_updated?: number;
   errors: number;

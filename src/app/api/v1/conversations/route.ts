@@ -14,6 +14,7 @@ import {
   parseListParams,
   keysetFilter,
   buildPage,
+  isUuid,
 } from '@/lib/api/v1/pagination';
 import {
   CONVERSATION_SELECT,
@@ -30,6 +31,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const status = url.searchParams.get('status');
     const contactId = url.searchParams.get('contact_id');
+    if (contactId && !isUuid(contactId)) {
+      return fail('bad_request', "'contact_id' must be a contact id (UUID)", 400);
+    }
     const connectionId = url.searchParams.get('connection_id');
     const business = await businessConnectionIds(ctx.supabase, ctx.accountId);
 
@@ -38,7 +42,7 @@ export async function GET(request: Request) {
       .select(CONVERSATION_SELECT)
       .eq('account_id', ctx.accountId)
       .in('connection_id', business.length ? business : [NO_CONNECTION])
-      // WhatsApp groups (QR mode) are not CRM conversations (migration 067).
+      // WhatsApp groups (QR mode) are not CRM conversations (migration 080).
       .eq('is_group', false);
 
     if (status) query = query.eq('status', status);

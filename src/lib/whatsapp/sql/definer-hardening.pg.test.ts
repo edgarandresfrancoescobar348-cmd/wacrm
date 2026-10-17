@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { MINIMAL_SCHEMA, pgAvailable, startPg, type Pg } from '@/test/pg-harness'
 
-const MIGRATIONS = (process.env.G1_MIGRATIONS ?? '050_message_status_pending.sql,051_definer_search_path.sql').split(',')
+const MIGRATIONS = (process.env.G1_MIGRATIONS ?? '063_message_status_pending.sql,064_definer_search_path.sql').split(',')
 
 describe.skipIf(!pgAvailable())('SECURITY DEFINER receipt triggers (G1)', () => {
   let pg: Pg

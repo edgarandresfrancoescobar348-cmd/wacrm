@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       startedAt,
     })
     // Same safety net as /api/automations/cron: inbound fan-out tasks
-    // nobody ran (migration 057).
+    // nobody ran (migration 070).
     const fanout = await drainInboundFanout(admin, { deadline: startedAt + (maxDuration - 30) * 1000 }).catch((err) => {
       console.error('[broadcast cron] inbound fan-out drain failed:', err)
       return 0

@@ -6,7 +6,7 @@
 //
 // `content_type` stays in the messages CHECK vocabulary; what a kind
 // needs beyond text + media lives in `messages.content_meta`
-// (migration 062). The conversation preview stored in
+// (migration 075). The conversation preview stored in
 // `last_message_text` is a token the list renders like WhatsApp does
 // (icon + "Photo", "Voice message", "👤 Name"…), never "[text]" or empty.
 // ============================================================

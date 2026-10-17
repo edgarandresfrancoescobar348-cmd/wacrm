@@ -257,7 +257,7 @@ export async function createBroadcast(
       // Frozen per-recipient params (migration 038) — without them a
       // resume of this broadcast has no way to reconstruct {{1}}. Sent as
       // ONE JSON array (element i = recipient i's params); the RPC takes
-      // JSONB since 055 — as JSONB[] PostgREST made it a 2-D array.
+      // JSONB since 068 — as JSONB[] PostgREST made it a 2-D array.
       // A header value is frozen with the body as the structured form;
       // without one the stored shape stays the plain array it always was.
       p_template_params: deduped.map((r) =>

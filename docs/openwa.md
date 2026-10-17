@@ -210,7 +210,7 @@ update: the client in `src/lib/whatsapp/openwa/client.ts` targets the v0.25 API.
   number).
 - An inbound message's fan-out (flows, automations, AI reply, the public
   `message.received` webhook) is a durable task written together with the
-  message (migration 057). It runs right after the delivery is processed; if
+  message (migration 070). It runs right after the delivery is processed; if
   that doesn't happen (the delivery couldn't be marked done, the process
   died), a redelivery of the message or the cron above runs it — once, and
   steps already run are not repeated. A step that fails transiently is
@@ -218,7 +218,7 @@ update: the client in `src/lib/whatsapp/openwa/client.ts` targets the v0.25 API.
   with the same delivery id); one whose outcome is uncertain stops the task
   for a person (status `held`) instead of risking a duplicate.
 - The account's "connected" flag is derived in the database from the
-  session state (migration 058), so it can't fall behind a newer session
+  session state (migration 071), so it can't fall behind a newer session
   event.
 
 ## Chat history import
@@ -237,7 +237,7 @@ gateway stored are imported, and the page says the history is limited.
   answer the job waits ("Aguardando o WhatsApp carregar as conversas…
   próxima tentativa às HH:MM") and retries 30 s later.
 - Runs in bounded steps (one cron run, ≤ 280 s, then the next tick),
-  resumable (per-chat checkpoints, migration 063), most recent chats first;
+  resumable (per-chat checkpoints, migration 076), most recent chats first;
   the inbox shows each conversation as it lands, most recent first.
 - Respects the gateway's rate limit (above): every call is paced, a 429
   waits what `Retry-After*` says (and holds back every import call), and a
@@ -247,7 +247,7 @@ gateway stored are imported, and the page says the history is limited.
   the next run. A disconnected session waits.
 - **Every chat the phone lists is a conversation** (phase 5f; replaces 5c's
   "no messages, no conversation"), placed by WhatsApp's chat timestamp
-  (`conversations.wa_sort_at`, migration 069 — the inbox orders by the later
+  (`conversations.wa_sort_at`, migration 082 — the inbox orders by the later
   of it and the last message, so the list is in the phone's order) with the
   phone's unread count. WhatsApp's content-less placeholders become the
   phone's "Aguardando mensagem. Isso pode levar algum tempo." bubble; when the
@@ -255,7 +255,7 @@ gateway stored are imported, and the page says the history is limited.
   phone echo, group) — it replaces the placeholder in place. A chat with
   nothing at all has an empty preview (never "Nenhuma mensagem ainda"). On an
   account imported before, **Importar de novo** creates the missing ones.
-  (Migration 065 still removed the empty conversations a 5b-era import made.)
+  (Migration 078 still removed the empty conversations a 5b-era import made.)
 - **A re-import refreshes what is stored:** ticks only go up (sent <
   delivered < read; a failed send is left alone), forwarded / score / media
   details are filled, "played" is kept, and text edited or deleted in wacrm
@@ -269,7 +269,7 @@ gateway stored are imported, and the page says the history is limited.
   rules as live media and keeps a copy in storage when "Guardar cópia das
   mídias recebidas" is on, so the next open doesn't go to WhatsApp. When
   WhatsApp no longer has a file the bubble says "mídia expirada no WhatsApp".
-  Migration 066 gave the rows imported before this their reference.
+  Migration 079 gave the rows imported before this their reference.
 - @mentions of a privacy id (`@154112083632297`) read as the contact's name or
   number, like WhatsApp Web (resolved through the gateway, cached).
 - Never a silent stall: every run that stops leaves its reason and next
@@ -289,7 +289,7 @@ gateway stored are imported, and the page says the history is limited.
 
 ## WhatsApp parity (QR Code inbox)
 
-The QR-code inbox follows the linked phone (migration 067):
+The QR-code inbox follows the linked phone (migration 080):
 
 - **Names** like the phone: the saved address-book name, else the name of
   an official business account (`verifiedLevel` 2 or enterprise, e.g.
@@ -317,7 +317,7 @@ The QR-code inbox follows the linked phone (migration 067):
   message reads "Mensagem apagada"; the "Mensagem não lida/não ouvida: N"
   line where the unread messages begin. Previews: "Mensagem de voz (0:09)",
   "x.pdf · 1 página", "4 fotos", "Mensagem apagada".
-- **The chat list** (migration 068 for the first two): your own chat reads
+- **The chat list** (migration 081 for the first two): your own chat reads
   "Seu Nome (Você)" (`conversations.is_self`, from the linked number); when
   the newest message is yours the preview starts with its ticks
   (`last_message_status`, kept by a trigger, receipts included); a group
@@ -345,7 +345,7 @@ The QR-code inbox follows the linked phone (migration 067):
   prepares a media header before reserving a paced slot, only starts sends
   that can finish inside the request (the gateway call is aborted at the
   budget, DNS check included).
-- **Every broadcast send has a durable send attempt** (migration 056): its
+- **Every broadcast send has a durable send attempt** (migration 069): its
   own idempotency key and frozen payload, recorded BEFORE anything is sent —
   if that checkpoint can't be written, nothing is sent. A retry of the same
   attempt resends the identical request with the identical key; a new key

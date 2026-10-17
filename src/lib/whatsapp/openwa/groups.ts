@@ -32,7 +32,7 @@ function isUniqueViolation(err: { code?: string } | null | undefined): boolean {
 /**
  * The number's conversation for a group, created on first sight (name
  * and photo from the gateway when not given). Keyed on (number,
- * wa_chat_id) — migration 072's unique index (the same group on two of
+ * wa_chat_id) — migration 085's unique index (the same group on two of
  * the account's numbers is two conversations); a concurrent creator wins
  * and its row is returned.
  */

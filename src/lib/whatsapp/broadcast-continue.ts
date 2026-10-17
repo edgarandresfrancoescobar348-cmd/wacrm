@@ -3,7 +3,7 @@
 //
 // A paced (QR-code) broadcast — or any large one — runs in time-boxed
 // passes (deliverBroadcast with a deadline). A pass that stops with
-// recipients left stamps `broadcasts.auto_resume_at` (migration 054).
+// recipients left stamps `broadcasts.auto_resume_at` (migration 067).
 // The project's existing scheduler hits /api/automations/cron (and the
 // dedicated /api/whatsapp/broadcast/cron) every few minutes; both call
 // this, which claims each due broadcast's delivery lock — the same

@@ -6,7 +6,7 @@
 // webhook on it (random secret, encrypted at rest), starts it, and
 // mirrors its state into `whatsapp_openwa_config`, whose status the
 // number (`whatsapp_connections.status`) follows in the same transaction
-// (migration 072). All functions here assume the caller has already
+// (migration 085). All functions here assume the caller has already
 // checked the user may manage the number; every query is filtered by it.
 // ============================================================
 
@@ -53,7 +53,7 @@ function sessionName(connectionId: string): string {
  * Row patch for a session state read live from the gateway. It is the
  * state as of NOW, so it also advances `status_event_at`: a webhook
  * event dated before this read (late redelivery, replay) must not
- * overwrite it (migration 049).
+ * overwrite it (migration 062).
  */
 export function sessionPatch(session: OpenWaSession, row: OpenWaConnectionRow | null) {
   const now = new Date().toISOString()
@@ -75,7 +75,7 @@ async function updateRow(
   connectionId: string,
   patch: Record<string, unknown>,
 ): Promise<OpenWaConnectionRow> {
-  // Through the per-number lock (migrations 061/072), newest-wins with
+  // Through the per-number lock (migrations 074/085), newest-wins with
   // the session events.
   const { data, error } = await admin.rpc('apply_openwa_session_state', {
     p_connection_id: connectionId,
@@ -205,7 +205,7 @@ export async function restartOpenWa(
     console.warn('[openwa] stop before restart failed:', err instanceof Error ? err.message : err)
   })
   const session = await startOpenWaSession(creds, row.session_id)
-  // The number's status follows the session row (migration 072).
+  // The number's status follows the session row (migration 085).
   const updated = await updateRow(admin, connectionId, sessionPatch(session, row))
   return toPublicOpenWaState(updated)
 }

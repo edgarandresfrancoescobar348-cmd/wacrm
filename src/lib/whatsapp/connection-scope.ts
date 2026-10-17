@@ -3,7 +3,7 @@
 // service role.
 //
 // The database does the change in one transaction under the number's lock
-// (set_connection_scope, migration 076): scope and owner, who may,
+// (set_connection_scope, migration 089): scope and owner, who may,
 // contacts.personal_only both ways, and on Empresa → Pessoal assignments
 // to others, flow runs, pending automation executions, broadcasts and
 // bound automations, plus the audit row.
@@ -11,7 +11,7 @@
 // Media — the choice: a business number's files live in the PUBLIC bucket
 // chat-media (their URLs bypass RLS); a personal number's in the PRIVATE
 // one, chat-media-private, under `connection-<id>/…`, read by whoever sees
-// the number (storage RLS on visible_connection_ids(), 073). So:
+// the number (storage RLS on visible_connection_ids(), 086). So:
 //   * Empresa → Pessoal moves the number's public files to the private
 //     bucket and rewrites the messages' links; the public object is
 //     deleted, so the old public link stops serving it. A file another
@@ -23,7 +23,7 @@
 //     idempotent).
 //   * Pessoal → Empresa moves nothing: the private files become the
 //     team's through the same storage RLS the moment the number does.
-// The account's default business number is computed (072's
+// The account's default business number is computed (085's
 // default_business_connection: business numbers only), so a number that
 // becomes personal leaves that role by itself.
 //

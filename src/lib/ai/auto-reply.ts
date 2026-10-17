@@ -184,6 +184,14 @@ export async function dispatchInboundToAiReply(
       return handoffErr ? 'retry' : 'ok'
     }
 
+    if (
+      inboundMessageId &&
+      (await hasNewerInbound(db, conversationId, inboundMessageId))
+    ) {
+      // A newer inbound arrived: its own dispatch answers the thread.
+      return 'noop'
+    }
+
     // Atomically claim a reply slot: the cap check + increment happen in
     // one UPDATE, so concurrent inbounds can never overshoot the cap. If
     // another inbound just took the last slot, `claimed` is false and we
@@ -222,6 +230,22 @@ export async function dispatchInboundToAiReply(
     // After it: the reply may be out.
     return claimedSlot ? 'uncertain' : 'retry'
   }
+}
+
+async function hasNewerInbound(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+  inboundMessageId: string,
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('messages')
+    .select('message_id')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error || !data || data.length === 0) return false
+  return data[0].message_id !== inboundMessageId
 }
 
 /**

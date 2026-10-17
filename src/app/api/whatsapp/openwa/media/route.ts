@@ -9,7 +9,7 @@
 // `media_expired_at` and the bubble says so. Whoever can read the
 // conversation may read it: the message is looked up with the caller's
 // own client, so RLS decides (a personal number's media is its owner's
-// alone, migration 073) and it must point at exactly this proxy URL, so
+// alone, migration 086) and it must point at exactly this proxy URL, so
 // the route can't be used to pull arbitrary media off the number. A
 // personal number's copy goes to the private bucket.
 

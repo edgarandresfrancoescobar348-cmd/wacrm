@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
+  ForbiddenError,
+  UnauthorizedError,
+  requireRole,
+  toErrorResponse,
+} from '@/lib/auth/account'
+import {
   getSubscribedApps,
   listWabaPhoneNumbers,
   registerPhoneNumber,
@@ -22,6 +28,7 @@ import {
 } from '@/lib/whatsapp/waba-pairing'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { resolveVerifyTokenForSave } from '@/lib/whatsapp/verify-token'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -258,24 +265,10 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
+    const { supabase, accountId, userId } = await requireRole('admin')
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: t('common.profileNotLinked') },
-        { status: 403 },
-      )
-    }
+    const limit = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
+    if (!limit.success) return rateLimitResponse(limit)
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
@@ -539,16 +532,8 @@ export async function POST(request: Request) {
       }
     } else {
       // The official number these credentials belong to (phase 6): the
-      // account's live one, else a new business number. Only an admin
-      // gets here with RLS's blessing — check it before creating it.
-      const { data: me } = await supabase
-        .from('profiles')
-        .select('account_role')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      if (!me || !['owner', 'admin'].includes(String(me.account_role))) {
-        return NextResponse.json({ error: t('common.forbidden') }, { status: 403 })
-      }
+      // account's live one, else a new business number (the caller is an
+      // admin — requireRole above).
       const admin = supabaseAdmin()
       const { data: live } = await admin
         .from('whatsapp_connections')
@@ -562,7 +547,7 @@ export async function POST(request: Request) {
       if (!connectionId) {
         const { data: created, error: numberErr } = await admin
           .from('whatsapp_connections')
-          .insert({ account_id: accountId, provider: 'meta', scope: 'business', created_by: user.id })
+          .insert({ account_id: accountId, provider: 'meta', scope: 'business', created_by: userId })
           .select('id')
           .single()
         if (numberErr || !created) {
@@ -582,7 +567,7 @@ export async function POST(request: Request) {
         .insert({
           account_id: accountId,
           connection_id: connectionId,
-          user_id: user.id,
+          user_id: userId,
           ...baseRow,
         })
 
@@ -623,6 +608,9 @@ export async function POST(request: Request) {
       phone_info: phoneInfo,
     })
   } catch (error) {
+    if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
+      return toErrorResponse(error)
+    }
     console.error('Error in WhatsApp config POST:', error)
     return NextResponse.json({ error: t('common.internalServerError') }, { status: 500 })
   }
@@ -637,24 +625,7 @@ export async function POST(request: Request) {
  */
 export async function DELETE() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: t('common.profileNotLinked') },
-        { status: 403 },
-      )
-    }
+    const { supabase, accountId } = await requireRole('admin')
 
     // The credentials go; the official number stays (its history too),
     // "not set up" until credentials are saved again.
@@ -680,6 +651,9 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
+      return toErrorResponse(error)
+    }
     console.error('Error in WhatsApp config DELETE:', error)
     return NextResponse.json({ error: t('common.internalServerError') }, { status: 500 })
   }
