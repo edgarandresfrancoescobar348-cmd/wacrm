@@ -11,8 +11,13 @@ export function formatPhoneDisplay(phone: string | null | undefined): string {
   if (!raw) return ''
   const digits = raw.replace(/^\+/, '')
   if (!/^\d+$/.test(digits)) return raw
-  // Brazil: +55 DDD then 8 (landline) or 9 (mobile) digits.
-  const br = /^55(\d{2})(\d{4,5})(\d{4})$/.exec(digits)
+  // Brazil: +55 DDD then 8 (landline) or 9 (mobile) digits. WhatsApp ids
+  // of older mobile numbers lack the ninth digit (556298423737); the phone
+  // shows them with it, "+55 62 99842-3737": DDD + 8 digits starting 6–9
+  // is a mobile. Landlines (2–5) stay as they are. Display only — the
+  // stored number and the JID are untouched.
+  const oldMobile = /^55([1-9][1-9])([6-9]\d{7})$/.exec(digits)
+  const br = /^55(\d{2})(\d{4,5})(\d{4})$/.exec(oldMobile ? `55${oldMobile[1]}9${oldMobile[2]}` : digits)
   if (br) return `+55 ${br[1]} ${br[2]}-${br[3]}`
   // North America (NANP).
   const nanp = /^1(\d{3})(\d{3})(\d{4})$/.exec(digits)
