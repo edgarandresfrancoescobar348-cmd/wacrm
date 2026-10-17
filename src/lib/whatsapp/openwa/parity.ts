@@ -31,6 +31,10 @@ export function mediaMetaFor(data: OpenWaMessageData): MediaMeta | null {
   if (m?.pageCount && m.pageCount > 0) meta.pageCount = Math.trunc(m.pageCount)
   if (m?.sizeBytes && m.sizeBytes > 0) meta.sizeBytes = m.sizeBytes
   if (m?.mimetype) meta.mimetype = m.mimetype
+  if (m?.width && m.height && m.width > 0 && m.height > 0) {
+    meta.width = Math.round(m.width)
+    meta.height = Math.round(m.height)
+  }
   // A voice note's "played" (blue mic): WhatsApp's ack 4.
   if ((data.type === 'voice' || data.type === 'audio') && data.ack === 4) meta.played = true
   return Object.keys(meta).length ? meta : null

@@ -224,6 +224,9 @@ export interface MediaMeta {
   mimetype?: string;
   /** A voice note was played (by the phone's owner, or in wacrm). */
   played?: boolean;
+  /** Pixel size WhatsApp declares for an image / video / sticker (phase 5g). */
+  width?: number;
+  height?: number;
 }
 
 // ============================================================

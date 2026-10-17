@@ -195,3 +195,27 @@ describe('history document preview from the uploaded copy (wacrm patch)', () => 
     expect(doc.media).toMatchObject({ pageCount: 21, filename: '7 DOSSIE.pdf', omitted: true, thumbnail: v.jpeg });
   });
 });
+
+// wacrm patch 7 (phase 5g): the bubble's size before the photo loads — on the real account a photo
+// with a caption became a cropped strip as wide as the conversation.
+describe('history media marker carries the declared pixel size (wacrm patch)', () => {
+  it('an image says its width and height; nonsense sizes are dropped', async () => {
+    const photo = historyMessage({
+      id: { _serialized: `false_${CHAT}_IMG2` },
+      type: 'image',
+      body: 'Realizamos os exames nesta clinica',
+      _data: { mimetype: 'image/jpeg', size: 90_000, width: 1200, height: 1600 },
+    });
+    const odd = historyMessage({
+      id: { _serialized: `false_${CHAT}_IMG3` },
+      type: 'image',
+      _data: { mimetype: 'image/jpeg', size: 1000, width: 'x', height: -3 },
+    });
+    const chat = { fetchMessages: jest.fn().mockResolvedValue([photo, odd]) };
+    const messaging = makeMessaging({ getChatById: jest.fn().mockResolvedValue(chat) });
+    const [a, b] = await messaging.getChatHistory(CHAT, 2000, false);
+    expect(a.media).toMatchObject({ width: 1200, height: 1600 });
+    expect(b.media?.width).toBeUndefined();
+    expect(b.media?.height).toBeUndefined();
+  });
+});

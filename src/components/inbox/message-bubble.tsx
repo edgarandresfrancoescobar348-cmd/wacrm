@@ -222,8 +222,9 @@ function MessageContent({
       );
 
     case "image":
+      // As wide as the photo: the caption wraps under it, never widens it (phase 5g).
       return (
-        <div>
+        <div className="w-min max-w-full" data-testid="media-with-caption">
           {playable ? (
             <MediaImageBubble
               message={message}
@@ -235,7 +236,7 @@ function MessageContent({
             <MediaUnavailable label={t("photo")} t={t} expired={expired} />
           )}
           {message.content_text ? (
-            <p className={cn(TEXT, "px-1.5 pt-1.5 pb-1")}>
+            <p className={cn(TEXT, "min-w-[120px] px-1.5 pt-1.5 pb-1 break-words")}>
               <MentionText text={message.content_text} />
               {meta}
             </p>
@@ -247,14 +248,14 @@ function MessageContent({
 
     case "video":
       return (
-        <div>
+        <div className="w-min max-w-full">
           {playable ? (
             <MediaVideoBubble message={message} onOpen={openMedia} t={t} />
           ) : (
             <MediaUnavailable label={t("video")} t={t} expired={expired} />
           )}
           {message.content_text ? (
-            <p className={cn(TEXT, "px-1.5 pt-1.5 pb-1")}>
+            <p className={cn(TEXT, "min-w-[120px] px-1.5 pt-1.5 pb-1 break-words")}>
               <MentionText text={message.content_text} />
               {meta}
             </p>

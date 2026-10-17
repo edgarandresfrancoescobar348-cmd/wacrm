@@ -214,6 +214,9 @@ export interface IncomingMessage {
      * (base64, no data: prefix) — shown before the media itself is downloaded. History markers only.
      */
     thumbnail?: string;
+    /** wacrm patch: an image's / video's / sticker's pixel size as WhatsApp declares it. */
+    width?: number;
+    height?: number;
   };
   quotedMessage?: {
     id: string;

@@ -80,14 +80,15 @@ export function declaredOnlyMedia(msg: Message): IncomingMessage['media'] {
 
 /**
  * wacrm patch: what WhatsApp declares about the media without downloading it — the length of an
- * audio/video (seconds, sometimes a numeric string), a document's page count, and the JPEG preview
+ * audio/video (seconds, sometimes a numeric string), a document's page count, an image's/video's
+ * pixel size (wacrm patch 7), and the JPEG preview
  * WhatsApp Web keeps in the raw `body` of an image/video/sticker/document (the message's own `body`
  * is the caption). Only a base64 JPEG of reasonable size is passed on. Added to the declared-only
  * marker (history) and to downloaded live media alike.
  */
 export function declaredMediaDetails(
   msg: Message,
-): Pick<NonNullable<IncomingMessage['media']>, 'durationSeconds' | 'pageCount' | 'thumbnail'> {
+): Pick<NonNullable<IncomingMessage['media']>, 'durationSeconds' | 'pageCount' | 'thumbnail' | 'width' | 'height'> {
   const data = (
     msg as unknown as {
       _data?: {
@@ -97,6 +98,8 @@ export function declaredMediaDetails(
         duration?: unknown;
         pageCount?: unknown;
         body?: unknown;
+        width?: unknown;
+        height?: unknown;
       };
     }
   )._data;
@@ -109,8 +112,19 @@ export function declaredMediaDetails(
     /^[A-Za-z0-9+/=]+$/.test(data.body)
       ? data.body
       : undefined;
+  // The pixel size (image, video, sticker), so a client reserves the bubble before the file loads.
+  const width = Number(data?.width);
+  const height = Number(data?.height);
+  const sized =
+    Number.isInteger(width) &&
+    Number.isInteger(height) &&
+    width > 0 &&
+    height > 0 &&
+    width <= 20_000 &&
+    height <= 20_000;
   return {
     ...(Number.isFinite(duration) && duration > 0 ? { durationSeconds: Math.round(duration) } : {}),
+    ...(sized ? { width, height } : {}),
     ...(Number.isFinite(pageCount) && pageCount > 0 ? { pageCount: Math.trunc(pageCount) } : {}),
     ...(thumbnail ? { thumbnail } : {}),
   };

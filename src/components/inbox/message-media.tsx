@@ -19,6 +19,7 @@ import type { Message } from "@/types";
 import { downloadMediaMessage } from "@/lib/media/download";
 import { useMediaBlobUrl } from "@/hooks/use-media-blob-url";
 import { formatFileSize } from "@/lib/whatsapp/message-content";
+import { mediaBox } from "@/lib/inbox/media-box";
 import { WaAvatar } from "@/components/layout/wa-panel";
 
 /**
@@ -44,6 +45,18 @@ function thumbnailSrc(message: Message): string | null {
 
 /** Inline media size cap, shared so the four bubbles can't drift apart. */
 const MEDIA_BOX = "max-h-[330px] max-w-[min(330px,100%)]";
+/**
+ * A photo whose size nothing declares: capped in pixels, not in percent —
+ * inside a caption's shrink-to-fit bubble a percentage cap has nothing to
+ * resolve against (phase 5g).
+ */
+const MEDIA_BOX_FALLBACK = "block max-h-[338px] max-w-[330px] min-w-[120px]";
+/**
+ * A photo/video at the size WhatsApp declares (media-box.ts). `max-w-none`:
+ * the base style's `max-width: 100%` would resolve against the caption in
+ * the shrink-to-fit bubble and squeeze the photo to the caption's width.
+ */
+const MEDIA_SIZED = "block max-w-none";
 
 export function MediaUnavailable({
   label,
@@ -143,6 +156,8 @@ export function MediaImageBubble({
   overlay?: React.ReactNode;
 }) {
   const { src, status } = useMediaBlobUrl(message.media_url);
+  // The size WhatsApp declares (or its preview's): reserved before the photo loads.
+  const box = mediaBox(message.media_meta);
   // The fetch can succeed and the bytes still not be a decodable image.
   const [broken, setBroken] = useState(false);
   const { downloading, download } = useMediaDownload(message, t);
@@ -161,7 +176,12 @@ export function MediaImageBubble({
     return thumb ? (
       <div className="relative w-fit" data-testid="media-thumbnail">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={thumb} alt={t("imageAlt")} className={cn(MEDIA_BOX, "block min-w-40 rounded-[6px] object-cover blur-[2px]")} />
+        <img
+          src={thumb}
+          alt={t("imageAlt")}
+          style={box ?? undefined}
+          className={cn(box ? MEDIA_SIZED : MEDIA_BOX_FALLBACK, "rounded-[6px] object-cover blur-[2px]")}
+        />
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
         </div>
@@ -178,7 +198,9 @@ export function MediaImageBubble({
     <img
       src={src}
       alt={t("imageAlt")}
-      className={cn(MEDIA_BOX, "block min-w-40 rounded-[6px] object-cover")}
+      style={box ?? undefined}
+      className={cn(box ? MEDIA_SIZED : MEDIA_BOX_FALLBACK, "rounded-[6px] object-cover object-center")}
+      data-testid="media-image"
       onError={() => setBroken(true)}
     />
   );
@@ -224,6 +246,7 @@ export function MediaVideoBubble({
   t: Translator;
 }) {
   const { downloading, download } = useMediaDownload(message, t);
+  const box = mediaBox(message.media_meta);
 
   return (
     <div className="relative w-fit">
@@ -234,7 +257,8 @@ export function MediaVideoBubble({
         controls
         preload="metadata"
         poster={thumbnailSrc(message) ?? undefined}
-        className={cn(MEDIA_BOX, "rounded-[6px]")}
+        style={box ?? undefined}
+        className={cn(box ? `${MEDIA_SIZED} bg-black object-contain` : MEDIA_BOX, "rounded-[6px]")}
       />
       {/* Top-right, clear of the native controls — and always visible, since
           expanding is the only way to watch a clip capped at 15rem wide and

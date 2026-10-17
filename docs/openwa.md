@@ -170,6 +170,9 @@ conflicts (each is marked `wacrm patch` in the source):
   Keys"), verified against `thumbnailEncSha256`, the MAC and `thumbnailSha256`
   (`wwebjs-document-thumbnail.ts`). Any failure leaves the card without a
   preview.
+- An image's / video's / sticker's pixel size as WhatsApp declares it
+  (`width`, `height` in the media marker and live media), so the inbox sizes
+  the bubble before the file loads.
 
 Re-run the QR flow (connect, receive, send) after an
 update: the client in `src/lib/whatsapp/openwa/client.ts` targets the v0.25 API.

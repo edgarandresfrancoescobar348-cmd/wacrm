@@ -95,6 +95,9 @@ export interface OpenWaMessageData {
     sizeBytes?: number
     /** wacrm gateway patch: what WhatsApp declares without a download. */
     durationSeconds?: number
+    /** wacrm patch 7: the pixel size WhatsApp declares (image, video, sticker). */
+    width?: number
+    height?: number
     pageCount?: number
     thumbnail?: string
   }
