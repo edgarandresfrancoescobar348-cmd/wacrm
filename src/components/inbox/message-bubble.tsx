@@ -63,13 +63,34 @@ export function senderColor(key: string): string {
 
 /** A received voice note played here: WhatsApp's mic turns blue (media_meta.played). */
 function markPlayed(message: Message) {
-  void createClient()
+  void mergeMediaMeta(message, { played: true }, "Failed to mark the voice note played:");
+}
+
+/**
+ * Merge into the stored media_meta (read first): "played" and a length
+ * read from the file are written at different moments, and neither may
+ * drop the other.
+ */
+async function mergeMediaMeta(message: Message, patch: Record<string, unknown>, failure: string) {
+  const supabase = createClient();
+  const { data } = await supabase.from("messages").select("media_meta").eq("id", message.id).maybeSingle();
+  const current = ((data as { media_meta?: Record<string, unknown> | null } | null)?.media_meta ?? message.media_meta ?? {}) as Record<string, unknown>;
+  const { error } = await supabase
     .from("messages")
-    .update({ media_meta: { ...(message.media_meta ?? {}), played: true } })
-    .eq("id", message.id)
-    .then(({ error }) => {
-      if (error) console.warn("Failed to mark the voice note played:", error.message);
-    });
+    .update({ media_meta: { ...current, ...patch } })
+    .eq("id", message.id);
+  if (error) console.warn(failure, error.message);
+}
+
+/**
+ * Keep the length the bubble read from the file on a voice note WhatsApp
+ * declared none for: the list preview follows it (migration 071's trigger
+ * turns the conversation's "[voice]" into "[voice:0:04]").
+ */
+function persistDuration(message: Message, seconds: number) {
+  const durationSeconds = Math.round(seconds);
+  if (!(durationSeconds > 0)) return;
+  void mergeMediaMeta(message, { durationSeconds }, "Failed to keep the voice note's length:");
 }
 
 /**
@@ -245,7 +266,7 @@ function MessageContent({
 
     case "audio":
       return playable ? (
-        <MediaAudioBubble message={message} t={t} meta={metaBlock} onPlayed={() => markPlayed(message)} avatar={voiceAvatar} />
+        <MediaAudioBubble message={message} t={t} meta={metaBlock} onPlayed={() => markPlayed(message)} onDuration={(s) => persistDuration(message, s)} avatar={voiceAvatar} />
       ) : (
         <div>
           <MediaUnavailable label={t("audio")} t={t} expired={expired} />

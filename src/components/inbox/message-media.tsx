@@ -296,6 +296,7 @@ export function MediaAudioBubble({
   t,
   meta,
   onPlayed,
+  onDuration,
   avatar,
 }: {
   message: Message;
@@ -304,6 +305,11 @@ export function MediaAudioBubble({
   meta?: React.ReactNode;
   /** A received voice note was played for the first time here. */
   onPlayed?: () => void;
+  /**
+   * The length read from the file, when WhatsApp declared none: kept on
+   * the message so the list preview says "Mensagem de voz (0:04)" too.
+   */
+  onDuration?: (seconds: number) => void;
   /** Who recorded it: WhatsApp shows their photo (or initials) with the mic on it. */
   avatar?: { name: string; src?: string | null } | null;
 }) {
@@ -313,6 +319,8 @@ export function MediaAudioBubble({
   const [current, setCurrent] = useState(0);
   // WhatsApp's declared length shows before the audio loads (phase 5e).
   const [duration, setDuration] = useState(message.media_meta?.durationSeconds ?? 0);
+  const declaredDuration = (message.media_meta?.durationSeconds ?? 0) > 0;
+  const reportedDuration = useRef(false);
   const isOwn = message.sender_type === "agent" || message.sender_type === "bot";
   const [played, setPlayed] = useState(Boolean(message.media_meta?.played));
   const bars = useMemo(() => waveformBars(message.id), [message.id]);
@@ -323,7 +331,12 @@ export function MediaAudioBubble({
     if (!el) return;
     const onTime = () => setCurrent(el.currentTime);
     const onMeta = () => {
-      if (Number.isFinite(el.duration)) setDuration(el.duration);
+      if (!Number.isFinite(el.duration)) return;
+      setDuration(el.duration);
+      if (!declaredDuration && el.duration > 0 && !reportedDuration.current) {
+        reportedDuration.current = true;
+        onDuration?.(el.duration);
+      }
     };
     const onPlay = () => {
       setPlaying(true);
@@ -351,7 +364,7 @@ export function MediaAudioBubble({
       el.removeEventListener("pause", onPause);
       el.removeEventListener("ended", onEnded);
     };
-  }, [isOwn, onPlayed]);
+  }, [isOwn, onPlayed, onDuration, declaredDuration]);
 
   const toggle = () => {
     const el = audioRef.current;
