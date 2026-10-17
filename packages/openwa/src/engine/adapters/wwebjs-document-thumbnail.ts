@@ -89,14 +89,22 @@ export async function withDocumentThumbnail(
   msg: unknown,
   media: IncomingMessage['media'] | undefined,
   fetchEncrypted: FetchEncrypted,
+  /** Why a document got no preview (diagnostics; the message is never affected). */
+  onMissing?: (reason: string) => void,
 ): Promise<IncomingMessage['media'] | undefined> {
   if (!media || media.thumbnail) return media;
-  const src = documentThumbnailSource((msg as { _data?: Record<string, unknown> } | null)?._data);
-  if (!src) return media;
+  const data = (msg as { _data?: Record<string, unknown> } | null)?._data;
+  const src = documentThumbnailSource(data);
+  if (!src) {
+    if (data?.type === 'document') onMissing?.('no inline preview and no uploaded copy declared');
+    return media;
+  }
   try {
     const thumbnail = decryptDocumentThumbnail(await fetchEncrypted(`${WHATSAPP_MEDIA_HOST}${src.directPath}`), src);
+    if (!thumbnail) onMissing?.('the uploaded copy did not verify');
     return thumbnail ? { ...media, thumbnail } : media;
-  } catch {
+  } catch (error) {
+    onMissing?.(`the uploaded copy could not be fetched: ${String(error)}`);
     return media;
   }
 }

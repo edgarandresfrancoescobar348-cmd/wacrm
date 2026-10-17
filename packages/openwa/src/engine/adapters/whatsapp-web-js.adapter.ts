@@ -316,8 +316,12 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
     msg: Message,
     media: IncomingMessage['media'] | undefined,
   ): Promise<IncomingMessage['media'] | undefined> {
-    return withDocumentThumbnail(msg, media, url =>
-      loadRemoteMediaBuffer(url, this.config.proxy?.url, { Origin: 'https://web.whatsapp.com' }).then(r => r.data),
+    return withDocumentThumbnail(
+      msg,
+      media,
+      url =>
+        loadRemoteMediaBuffer(url, this.config.proxy?.url, { Origin: 'https://web.whatsapp.com' }).then(r => r.data),
+      reason => this.logger.debug('Document without a first-page preview', { msgId: readWid(msg.id), reason }),
     );
   }
 

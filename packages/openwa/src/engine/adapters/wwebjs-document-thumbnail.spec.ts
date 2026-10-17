@@ -80,6 +80,24 @@ describe('document first-page preview (wacrm patch)', () => {
     expect(decryptDocumentThumbnail(encrypted, { ...src, mediaKey: Buffer.alloc(32, 7) })).toBeNull();
   });
 
+  it('says why a document got no preview (debug log), without touching the message', async () => {
+    const reasons: string[] = [];
+    const fail = () => Promise.reject(new Error('Media fetch failed with status 404'));
+    await withDocumentThumbnail(rawDocument({ thumbnailDirectPath: undefined }), marker, fail, r => reasons.push(r));
+    await withDocumentThumbnail(rawDocument(), marker, fail, r => reasons.push(r));
+    await withDocumentThumbnail(
+      rawDocument(),
+      marker,
+      () => Promise.resolve(Buffer.alloc(64)),
+      r => reasons.push(r),
+    );
+    expect(reasons).toEqual([
+      'no inline preview and no uploaded copy declared',
+      'the uploaded copy could not be fetched: Error: Media fetch failed with status 404',
+      'the uploaded copy did not verify',
+    ]);
+  });
+
   it('a failed fetch (expired on the CDN, no network) leaves the envelope as it was', async () => {
     await expect(
       withDocumentThumbnail(rawDocument(), marker, () =>
