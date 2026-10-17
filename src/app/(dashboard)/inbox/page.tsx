@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useWhatsAppStatus } from "@/hooks/use-whatsapp-status";
-import { previewFor } from "@/lib/whatsapp/message-content";
+import { previewForMessage } from "@/lib/whatsapp/message-content";
 import { mergeFetchedConversation } from "@/lib/inbox/conversation-merge";
 import {
   CONVERSATION_SELECT,
@@ -236,7 +236,7 @@ function InboxPageInner() {
               c.id === newMsg.conversation_id
                 ? {
                     ...c,
-                    last_message_text: previewFor(newMsg.content_type, newMsg.content_meta ?? null, newMsg.content_text),
+                    last_message_text: previewForMessage(newMsg),
                     last_message_at: newMsg.created_at,
                     // Only a customer message adds to unread (our own sends
                     // and the phone's echoes don't).

@@ -148,6 +148,26 @@ export function previewFor(
   }
 }
 
+/**
+ * The list preview of a stored message row — with the details the phone
+ * shows (a voice note's length, a document's pages, deleted). The inbox's
+ * realtime patch used previewFor without them, so a live voice note read
+ * "Mensagem de voz" in the list while its bubble said 0:04 (phase 5f).
+ */
+export function previewForMessage(m: {
+  content_type: string
+  content_meta?: ContentMeta | null
+  content_text?: string | null
+  media_meta?: { durationSeconds?: number | null; pageCount?: number | null } | null
+  revoked_at?: string | null
+}): string {
+  return previewFor(m.content_type, m.content_meta ?? null, m.content_text, {
+    durationSeconds: m.media_meta?.durationSeconds,
+    pageCount: m.media_meta?.pageCount,
+    revoked: Boolean(m.revoked_at),
+  })
+}
+
 /** WhatsApp shows 4+ photos sent together as one album ("4 fotos"). */
 export const ALBUM_MIN = 4
 const ALBUM_GAP_MS = 60_000

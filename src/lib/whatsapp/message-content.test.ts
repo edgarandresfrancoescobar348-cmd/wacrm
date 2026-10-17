@@ -2,7 +2,7 @@
 // and list previews like WhatsApp's — never "[text]" or empty.
 import { describe, expect, it } from 'vitest'
 
-import { contentTypeForKind, formatFileSize, mapsUrl, parsePreviewToken, parseVcards, previewFor } from './message-content'
+import { contentTypeForKind, formatFileSize, mapsUrl, parsePreviewToken, parseVcards, previewFor, previewForMessage } from './message-content'
 import { mapOpenWaMessage } from './openwa/events'
 import { previewParts } from '@/components/inbox/message-preview'
 
@@ -105,6 +105,20 @@ describe('previewFor / previewParts — like WhatsApp, never "[text]" or empty',
   })
   it('maps link', () => {
     expect(mapsUrl({ latitude: -23.5, longitude: -46.6 })).toBe('https://www.google.com/maps/search/?api=1&query=-23.5,-46.6')
+  })
+})
+
+// Phase 5f, real account: Ana Carla's last message, a live voice note of
+// 0:04 — the bubble said 0:04, the list "Mensagem de voz" (the realtime
+// patch built the preview without the media details).
+describe('previewForMessage — the list preview of a stored row, with its details', () => {
+  it('a voice note carries its length, a document its pages, a deleted message nothing of its content', () => {
+    expect(previewForMessage({ content_type: 'audio', content_meta: { kind: 'voice' }, content_text: null, media_meta: { durationSeconds: 4 } })).toBe(
+      previewFor('audio', { kind: 'voice' }, null, { durationSeconds: 4 }),
+    )
+    expect(previewForMessage({ content_type: 'audio', content_meta: { kind: 'voice' }, media_meta: { durationSeconds: 4 } })).toContain('0:04')
+    expect(previewForMessage({ content_type: 'text', content_text: '3742', revoked_at: '2026-10-16T23:09:00Z' })).toBe('[revoked]')
+    expect(previewForMessage({ content_type: 'text', content_text: 'oi' })).toBe(previewFor('text', null, 'oi'))
   })
 })
 
