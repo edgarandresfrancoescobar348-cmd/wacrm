@@ -51,7 +51,7 @@ export function MessageActions({
   };
 
   const handleCopy = async () => {
-    const text = message.content_text ?? "";
+    const text = message.revoked_at ? "" : (message.content_text ?? "");
     if (!text) {
       toast.error(t("nothingToCopy"));
       return;

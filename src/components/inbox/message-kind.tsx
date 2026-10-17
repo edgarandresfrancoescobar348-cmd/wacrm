@@ -202,13 +202,17 @@ export function KindContent({
   }
 }
 
-/** "This message was deleted" — a deletion we never saw the content of. */
-export function RevokedLine({ inlineMeta }: { inlineMeta: React.ReactNode }) {
+/**
+ * "Esta mensagem foi apagada" / "Você apagou esta mensagem": a message
+ * deleted for everyone shows only that, like WhatsApp — never its content,
+ * even when we stored it before the deletion (phase 5f).
+ */
+export function RevokedLine({ inlineMeta, own = false }: { inlineMeta: React.ReactNode; own?: boolean }) {
   const t = useTranslations("Inbox.kinds");
   return (
     <p className={cn(TEXT, "flex items-center gap-1.5 italic opacity-75")}>
       <Ban className="size-4 shrink-0" />
-      <span>{t("revokedEmpty")}</span>
+      <span>{t(own ? "revokedByYou" : "revokedEmpty")}</span>
       {inlineMeta}
     </p>
   );

@@ -303,8 +303,6 @@
       "pause": "일시정지",
       "seek": "위치 이동",
       "playbackFailed": "오디오를 재생할 수 없습니다",
-      "revoked": "삭제됨",
-      "revokedTitle": "연락처가 모든 사람에게서 이 메시지를 삭제했습니다",
       "edited": "수정됨",
       "pages": "{count}페이지",
       "forwarded": "전달됨",
@@ -342,6 +340,7 @@
       "location": "[위치]",
       "template": "[템플릿]",
       "message": "[메시지]",
+      "revoked": "삭제된 메시지입니다",
       "cancelReply": "답장 취소"
     },
     "templatePicker": {
@@ -422,6 +421,7 @@
       "template": "템플릿",
       "message": "메시지",
       "revokedEmpty": "삭제된 메시지입니다",
+      "revokedByYou": "메시지를 삭제했습니다",
       "voiceWithDuration": "음성 메시지 ({duration})",
       "pages": "{count}페이지",
       "revoked": "삭제된 메시지",

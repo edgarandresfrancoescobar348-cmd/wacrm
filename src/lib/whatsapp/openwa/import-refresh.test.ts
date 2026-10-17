@@ -49,6 +49,17 @@ describe('refreshPatch (phase 5f: re-import updates what is stored)', () => {
     expect(refreshPatch(stored({ status: 'read' }), incoming({ status: 'read', content_text: 'texto original' }))).toBeNull()
   })
 
+  // Phase 5f, real account: "3742 · apagada" — deleted on the phone,
+  // stored with its text before. A re-import marks it deleted, text left
+  // as stored (the bubble shows only "Esta mensagem foi apagada").
+  it('a message deleted on the phone since is marked deleted; an earlier deletion is kept', () => {
+    const del = incoming({ sender_type: 'customer', content_text: null, revoked_at: '2026-10-16T23:09:00Z' })
+    expect(refreshPatch(stored({ sender_type: 'customer', status: 'delivered' }), { ...del, status: 'delivered' })).toEqual({
+      revoked_at: '2026-10-16T23:09:00Z',
+    })
+    expect(refreshPatch(stored({ revoked_at: '2026-10-16T20:00:00Z' }), del)).toBeNull()
+  })
+
   it('a waiting placeholder becomes the real message; a placeholder never replaces content', () => {
     const real = incoming({ sender_type: 'customer', status: 'delivered', content_type: 'audio', content_text: null, content_meta: { kind: 'voice' }, media_url: '/m', media_type: 'audio/ogg' })
     expect(refreshPatch(stored({ sender_type: 'customer', status: 'delivered', content_meta: { kind: 'waiting' } }), real)).toEqual({

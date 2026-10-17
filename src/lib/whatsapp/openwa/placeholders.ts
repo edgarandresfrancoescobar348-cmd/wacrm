@@ -19,7 +19,7 @@ export async function replaceWaitingPlaceholder(
 ): Promise<boolean> {
   const { data, error } = await admin
     .from('messages')
-    .select('id, sender_type, status, content_meta, is_forwarded, forwarding_score, media_meta, created_at')
+    .select('id, sender_type, status, content_meta, is_forwarded, forwarding_score, media_meta, revoked_at, created_at')
     .eq('conversation_id', args.conversationId)
     .eq('message_id', args.messageId)
     .maybeSingle()

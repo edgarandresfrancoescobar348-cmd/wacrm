@@ -72,6 +72,8 @@ export function ReplyQuote({
 
 /** Build the one-line preview text shown inside a reply quote. */
 export function buildReplyPreview(message: Message, t: ReturnType<typeof useTranslations>): string {
+  // Deleted for everyone: never its content, here either.
+  if (message.revoked_at) return t("revoked");
   if (message.content_text) return message.content_text;
   switch (message.content_type) {
     case "image":

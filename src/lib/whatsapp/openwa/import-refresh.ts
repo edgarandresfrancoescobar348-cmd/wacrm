@@ -19,6 +19,8 @@ export interface StoredMessageState {
   is_forwarded: boolean | null
   forwarding_score: number | null
   media_meta: object | null
+  /** Deleted for everyone (absent: not selected — treated as not deleted). */
+  revoked_at?: string | null
 }
 
 export interface IncomingMessageRow {
@@ -56,6 +58,10 @@ export function refreshPatch(existing: StoredMessageState, incoming: IncomingMes
       ...(incoming.sender_name !== undefined ? { sender_name: incoming.sender_name } : {}),
     })
   }
+
+  // Deleted on the phone since the last import: deleted here too (the
+  // bubble then shows only "Esta mensagem foi apagada").
+  if (incoming.revoked_at && !existing.revoked_at && !('revoked_at' in patch)) patch.revoked_at = incoming.revoked_at
 
   // Ticks only go up, and only on what you sent.
   const own = existing.sender_type === 'agent' || existing.sender_type === 'bot'

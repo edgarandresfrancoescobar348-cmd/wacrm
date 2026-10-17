@@ -303,8 +303,6 @@
       "pause": "Pausar",
       "seek": "Ir a la posición",
       "playbackFailed": "No se pudo reproducir este audio",
-      "revoked": "eliminado",
-      "revokedTitle": "El contacto eliminó este mensaje para todos",
       "edited": "editado",
       "pages": "{count, plural, one {# página} other {# páginas}}",
       "forwarded": "Reenviado",
@@ -342,6 +340,7 @@
       "location": "[Ubicación]",
       "template": "[Plantilla]",
       "message": "[Mensaje]",
+      "revoked": "Se eliminó este mensaje",
       "cancelReply": "Cancelar respuesta"
     },
     "templatePicker": {
@@ -422,6 +421,7 @@
       "template": "Plantilla",
       "message": "Mensaje",
       "revokedEmpty": "Se eliminó este mensaje",
+      "revokedByYou": "Eliminaste este mensaje",
       "voiceWithDuration": "Mensaje de voz ({duration})",
       "pages": "{count, plural, one {# página} other {# páginas}}",
       "revoked": "Mensaje eliminado",

@@ -303,8 +303,6 @@
       "pause": "Pausar",
       "seek": "Avançar para posição",
       "playbackFailed": "Não foi possível reproduzir este áudio",
-      "revoked": "apagada",
-      "revokedTitle": "O contato apagou esta mensagem para todos",
       "edited": "editada",
       "pages": "{count, plural, one {# página} other {# páginas}}",
       "forwarded": "Encaminhada",
@@ -342,6 +340,7 @@
       "location": "[Localização]",
       "template": "[Modelo]",
       "message": "[Mensagem]",
+      "revoked": "Esta mensagem foi apagada",
       "cancelReply": "Cancelar resposta"
     },
     "templatePicker": {
@@ -422,6 +421,7 @@
       "template": "Modelo",
       "message": "Mensagem",
       "revokedEmpty": "Esta mensagem foi apagada",
+      "revokedByYou": "Você apagou esta mensagem",
       "voiceWithDuration": "Mensagem de voz ({duration})",
       "pages": "{count, plural, one {# página} other {# páginas}}",
       "revoked": "Mensagem apagada",

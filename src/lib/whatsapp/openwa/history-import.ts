@@ -725,7 +725,7 @@ async function refreshStoredMessages(
   for (const slice of chunkForUrl(rows.map((r) => r.message_id))) {
     const { data, error } = await admin
       .from('messages')
-      .select('id, message_id, sender_type, status, content_meta, is_forwarded, forwarding_score, media_meta')
+      .select('id, message_id, sender_type, status, content_meta, is_forwarded, forwarding_score, media_meta, revoked_at')
       .eq('conversation_id', conversationId)
       .in('message_id', slice)
     if (error) throw new HistoryStoreError('messages (refresh lookup)', error)

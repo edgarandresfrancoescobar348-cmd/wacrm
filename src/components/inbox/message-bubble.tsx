@@ -160,11 +160,11 @@ function MessageContent({
   // parent wired up no viewer, which is what makes them non-clickable.
   const openMedia = onOpenMedia ? () => onOpenMedia(message.id) : undefined;
 
-  // Deleted before we ever saw its content (imported history, A1/A2):
-  // WhatsApp's "this message was deleted" line. A message deleted after
-  // we stored it keeps its text, labelled in the meta row.
-  if (message.revoked_at && !message.content_text && !message.media_url) {
-    return <RevokedLine inlineMeta={meta} />;
+  // Deleted for everyone: WhatsApp's "this message was deleted" line and
+  // nothing else — also when we stored the content before the deletion
+  // (a live revoke of an imported message kept its text, phase 5f).
+  if (message.revoked_at) {
+    return <RevokedLine inlineMeta={meta} own={message.sender_type === "agent" || message.sender_type === "bot"} />;
   }
 
   // Structured kinds (location, shared contact, poll, call, order,
@@ -411,13 +411,9 @@ export function MessageBubble({
           {t("aiBadge")}
         </span>
       )}
-      {/* QR-code connections report customer edits / deletions
-          (migration 047). The original text is kept; WA labels it. */}
-      {message.revoked_at && (message.content_text || message.media_url) ? (
-        <span className="italic" title={t("revokedTitle")}>
-          {t("revoked")}
-        </span>
-      ) : message.edited_at ? (
+      {/* QR-code connections report customer edits (migration 047); a
+          deletion replaces the whole bubble (RevokedLine). */}
+      {message.edited_at && !message.revoked_at ? (
         <span className="italic">{t("edited")}</span>
       ) : null}
       <span>{time}</span>
