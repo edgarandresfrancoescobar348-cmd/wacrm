@@ -29,6 +29,11 @@ export interface WwebjsEngineHost {
     maxBytesOverride?: number,
     ticket?: InboundTicket,
   ): Promise<IncomingMessage['media'] | undefined>;
+  /** wacrm patch: add a document's uploaded first-page preview (wwebjs-document-thumbnail). */
+  withDocumentThumbnail?(
+    msg: Message,
+    media: IncomingMessage['media'] | undefined,
+  ): Promise<IncomingMessage['media'] | undefined>;
   readonly config: WhatsAppWebJsConfig;
   /** Live callbacks bag — read per event, since initialize() installs it after delegates are built. */
   getCallbacks(): EngineEventCallbacks;

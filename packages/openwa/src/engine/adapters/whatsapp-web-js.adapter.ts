@@ -78,6 +78,8 @@ import {
 } from './inbound-media-cap';
 import { ConcurrencyLimiter } from '../../common/utils/concurrency-limiter';
 import { readWid } from '../types/whatsapp-web-js.types';
+import { withDocumentThumbnail } from './wwebjs-document-thumbnail';
+import { loadRemoteMediaBuffer } from '../../common/media/load-remote-media';
 
 export interface WhatsAppWebJsConfig {
   sessionId: string;
@@ -223,6 +225,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       ensureNotChannelRecipient: chatId => this.ensureNotChannelRecipient(chatId),
       getNumberId: number => this.getNumberId(number),
       capInboundMediaFor: (msg, maxBytesOverride, ticket) => this.capInboundMediaFor(msg, maxBytesOverride, ticket),
+      withDocumentThumbnail: (msg, media) => this.withDocumentThumbnail(msg, media),
       config: this.config,
       getCallbacks: () => this.callbacks,
     };
@@ -297,6 +300,28 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
    * slot is held until the page download settles, since it cannot be aborted.
    */
   private async capInboundMediaFor(
+    msg: Message,
+    maxBytesOverride?: number,
+    ticket?: InboundTicket,
+  ): Promise<IncomingMessage['media'] | undefined> {
+    // wacrm patch: every envelope (downloaded or declared-only) gets the document's first-page preview.
+    return this.withDocumentThumbnail(msg, await this.capInboundMediaEnvelope(msg, maxBytesOverride, ticket));
+  }
+
+  /**
+   * wacrm patch: a document whose inline preview WhatsApp Web doesn't hold gets the uploaded copy
+   * (wwebjs-document-thumbnail), fetched through this session's egress like any remote media.
+   */
+  private withDocumentThumbnail(
+    msg: Message,
+    media: IncomingMessage['media'] | undefined,
+  ): Promise<IncomingMessage['media'] | undefined> {
+    return withDocumentThumbnail(msg, media, url =>
+      loadRemoteMediaBuffer(url, this.config.proxy?.url, { Origin: 'https://web.whatsapp.com' }).then(r => r.data),
+    );
+  }
+
+  private async capInboundMediaEnvelope(
     msg: Message,
     maxBytesOverride?: number,
     ticket?: InboundTicket,

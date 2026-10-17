@@ -1027,12 +1027,15 @@ export class WwebjsMessaging {
       // wacrm patch: a metadata-only read (includeMedia off — always the case for deep history) still
       // says the message HAS media and what it is, so a client can show it and fetch it later through
       // the media route (downloadMessageMedia). Before, such rows carried no `media` at all.
+      // wacrm patch: a document gets its uploaded first-page preview (wwebjs-document-thumbnail).
+      const thumbnailed = async (media: IncomingMessage['media']) =>
+        this.host.withDocumentThumbnail ? this.host.withDocumentThumbnail(msg, media) : media;
       if (!includeMedia && msg.hasMedia) {
-        out.media = declaredOnlyMedia(msg);
+        out.media = await thumbnailed(declaredOnlyMedia(msg));
       }
       if (includeMedia && msg.hasMedia) {
         if (mediaBudget <= 0) {
-          out.media = declaredOnlyMedia(msg);
+          out.media = await thumbnailed(declaredOnlyMedia(msg));
         } else {
           try {
             // Same pre-gate + limiter as live media: a large historical blob shouldn't bloat the

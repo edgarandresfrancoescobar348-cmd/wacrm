@@ -53,6 +53,8 @@ function positiveIntFromEnv(name: string, fallback: number): number {
 export async function loadRemoteMediaBuffer(
   url: string,
   sessionProxyUrl: string | undefined,
+  /** wacrm patch: extra request headers (WhatsApp's media CDN expects the web client's Origin). */
+  headers?: Record<string, string>,
 ): Promise<{ data: Buffer; mimetype: string }> {
   const maxBytes = positiveIntFromEnv('MEDIA_DOWNLOAD_MAX_BYTES', DEFAULT_MEDIA_MAX_BYTES);
   const timeoutMs = positiveIntFromEnv('MEDIA_DOWNLOAD_TIMEOUT_MS', DEFAULT_MEDIA_TIMEOUT_MS);
@@ -64,7 +66,7 @@ export async function loadRemoteMediaBuffer(
   let responded = false;
   return withSafeFetch(
     url,
-    { signal: AbortSignal.timeout(timeoutMs) },
+    { signal: AbortSignal.timeout(timeoutMs), ...(headers ? { headers } : {}) },
     async response => {
       responded = true;
       if (!response.ok) {

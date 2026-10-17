@@ -162,6 +162,13 @@ conflicts (each is marked `wacrm patch` in the source):
 - Live media downloaded on arrival keeps WhatsApp's declared details too
   (voice length, page count, preview) — `declaredMediaDetails`, so a live voice
   note previews "Mensagem de voz (0:09)" like an imported one.
+- A document's first-page preview: when WhatsApp Web holds no inline JPEG
+  (the case on a real account), the uploaded copy (`thumbnailDirectPath`) is
+  fetched from WhatsApp's media CDN through the session's egress and
+  decrypted with the document's media key ("WhatsApp Document Thumbnail
+  Keys"), verified against `thumbnailEncSha256`, the MAC and `thumbnailSha256`
+  (`wwebjs-document-thumbnail.ts`). Any failure leaves the card without a
+  preview.
 
 Re-run the QR flow (connect, receive, send) after an
 update: the client in `src/lib/whatsapp/openwa/client.ts` targets the v0.25 API.
