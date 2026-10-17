@@ -46,47 +46,47 @@ export default function AgentsPage() {
       bodyClassName="bg-wallpaper p-0 sm:p-0"
     >
       {decided && (
-        <Tabs
-          value={tab}
-          onValueChange={(v) => setTab(v as Tab)}
-          className="gap-0"
-        >
-          {/* Section switcher as WA filter chips, flush under the
-              header bar like the inbox chip row. */}
-          <div className="sticky top-0 z-10 mb-4 bg-background px-5 pb-3">
-            <TabsList>
-              <TabsTrigger value="playground">
-                <Sparkles /> {t('tabPlayground')}
-              </TabsTrigger>
-              <TabsTrigger value="setup">
-                <Settings2 /> {t('tabSetup')}
-              </TabsTrigger>
-              {canViewUsage && (
-                <TabsTrigger value="usage">
-                  <BarChart3 /> {t('tabUsage')}
+        // The same centred column as Settings (max-w-4xl): the tab chips
+        // and the three tabs line up with it, in both themes.
+        <div className="mx-auto w-full max-w-4xl px-4 sm:px-8">
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab(v as Tab)}
+            className="gap-0"
+          >
+            {/* Section switcher as WA filter chips, flush under the
+                header bar like the inbox chip row. */}
+            <div className="sticky top-0 z-10 -mx-4 mb-4 bg-wallpaper px-4 pt-5 pb-3 sm:-mx-8 sm:px-8 sm:pt-6">
+              <TabsList>
+                <TabsTrigger value="playground">
+                  <Sparkles /> {t('tabPlayground')}
                 </TabsTrigger>
-              )}
-            </TabsList>
-          </div>
-
-          <TabsContent value="playground" className="px-4 pb-4 sm:px-6 sm:pb-6">
-            <AiPlayground onGoToSetup={() => setTab('setup')} />
-          </TabsContent>
-
-          <TabsContent value="setup" className="px-4 pb-4 sm:px-6 sm:pb-6">
-            <div className="max-w-4xl">
-              <AiConfig />
+                <TabsTrigger value="setup">
+                  <Settings2 /> {t('tabSetup')}
+                </TabsTrigger>
+                {canViewUsage && (
+                  <TabsTrigger value="usage">
+                    <BarChart3 /> {t('tabUsage')}
+                  </TabsTrigger>
+                )}
+              </TabsList>
             </div>
-          </TabsContent>
 
-          {canViewUsage && (
-            <TabsContent value="usage" className="px-4 pb-4 sm:px-6 sm:pb-6">
-              <div className="max-w-5xl">
-                <AiUsageCard />
-              </div>
+            <TabsContent value="playground" className="pb-5 sm:pb-6">
+              <AiPlayground onGoToSetup={() => setTab('setup')} />
             </TabsContent>
-          )}
-        </Tabs>
+
+            <TabsContent value="setup" className="pb-5 sm:pb-6">
+              <AiConfig />
+            </TabsContent>
+
+            {canViewUsage && (
+              <TabsContent value="usage" className="pb-5 sm:pb-6">
+                <AiUsageCard />
+              </TabsContent>
+            )}
+          </Tabs>
+        </div>
       )}
     </WaPage>
   );
