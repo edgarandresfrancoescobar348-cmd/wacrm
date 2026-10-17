@@ -310,6 +310,13 @@ export function openWaEnv({ mode, port, key }) {
   const env = {}
   for (const k of pass) if (process.env[k] !== undefined) env[k] = process.env[k]
   for (const [k, v] of Object.entries(process.env)) if (k.startsWith('PUPPETEER_')) env[k] = v
+  // The gateway's log level and format (OpenWA's LOG_LEVEL: error | warn | info | debug | verbose;
+  // LOG_FORMAT: json | pretty), e.g. OPENWA_LOG_LEVEL=debug to see why a document got no preview.
+  // Unset: OpenWA's defaults (info; pretty in dev, json in start).
+  const logLevel = process.env.OPENWA_LOG_LEVEL?.trim()
+  const logFormat = process.env.OPENWA_LOG_FORMAT?.trim()
+  if (logLevel) env.LOG_LEVEL = logLevel
+  if (logFormat) env.LOG_FORMAT = logFormat
   return {
     ...env,
     NODE_ENV: mode === 'dev' ? 'development' : 'production',

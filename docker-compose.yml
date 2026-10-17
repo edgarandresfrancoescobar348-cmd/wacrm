@@ -122,6 +122,9 @@ services:
       # The sender's full contact on every message (saved name, verified
       # business name), not only the push name.
       WEBHOOK_CONTACT_DETAILS: 'true'
+      # Gateway logs (error | warn | info | debug | verbose; json | pretty).
+      LOG_LEVEL: ${OPENWA_LOG_LEVEL:-info}
+      LOG_FORMAT: ${OPENWA_LOG_FORMAT:-json}
     # The provisioned key seeds OpenWA's admin key on its first boot
     # (API_MASTER_KEY; an existing data volume keeps the key it has —
     # openwa-key adopts it).

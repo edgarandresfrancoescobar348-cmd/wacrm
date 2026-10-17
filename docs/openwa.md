@@ -136,6 +136,7 @@ which unlinks every QR session.
 | `OPENWA_PORT` | Gateway port in dev/start (default `2785`, loopback only). |
 | `WACRM_OPENWA_DATA_DIR` | Gateway data dir in dev/start (default `.openwa-data`). |
 | `OPENWA_ENGINE_TYPE` | `whatsapp-web.js` (default) or `baileys`. |
+| `OPENWA_LOG_LEVEL`, `OPENWA_LOG_FORMAT` | The gateway's `LOG_LEVEL` (`error`, `warn`, `info` — default, `debug`, `verbose`) and `LOG_FORMAT` (`json`, `pretty`; default pretty in dev, json in start and Docker), passed by the start script and compose. `OPENWA_LOG_LEVEL=debug npm run dev` shows, for instance, why a document got no first-page preview (`Document without a first-page preview`, with the reason). An invalid level stops the gateway at boot with the accepted values. |
 | `OPENWA_URL`, `OPENWA_API_KEY` / `OPENWA_API_KEY_FILE`, `OPENWA_WEBHOOK_BASE_URL` | Set by the start script / compose. Only set them yourself to run the gateway elsewhere on your own infrastructure (e.g. a separate container); they are server config, never user input. |
 
 Running Node directly (`next start` without the script) means no gateway unless

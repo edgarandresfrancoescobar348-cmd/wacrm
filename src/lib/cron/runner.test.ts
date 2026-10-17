@@ -157,6 +157,36 @@ describe('gateway environment (scripts/wacrm.mjs)', () => {
     expect(openWaEnv({ mode: 'dev', port: 2785, key: 'k' }).AUTO_START_SESSIONS).toBe('false')
   })
 
+  // Patch 6 logs at debug why a document got no first-page preview; the
+  // runner never passed a log level, so the gateway stayed at info.
+  it('passes OPENWA_LOG_LEVEL / OPENWA_LOG_FORMAT as the gateway\'s LOG_LEVEL / LOG_FORMAT; unset, OpenWA\'s defaults', () => {
+    const saved = { level: process.env.OPENWA_LOG_LEVEL, format: process.env.OPENWA_LOG_FORMAT, raw: process.env.LOG_LEVEL }
+    try {
+      process.env.OPENWA_LOG_LEVEL = ' debug '
+      process.env.OPENWA_LOG_FORMAT = 'json'
+      expect(openWaEnv({ mode: 'dev', port: 2785, key: 'k' })).toMatchObject({ LOG_LEVEL: 'debug', LOG_FORMAT: 'json' })
+      delete process.env.OPENWA_LOG_LEVEL
+      delete process.env.OPENWA_LOG_FORMAT
+      // wacrm's own LOG_LEVEL is not the gateway's.
+      process.env.LOG_LEVEL = 'verbose'
+      const env = openWaEnv({ mode: 'start', port: 2785, key: 'k' })
+      expect(env.LOG_LEVEL).toBeUndefined()
+      expect(env.LOG_FORMAT).toBeUndefined()
+    } finally {
+      for (const [k, v] of [['OPENWA_LOG_LEVEL', saved.level], ['OPENWA_LOG_FORMAT', saved.format], ['LOG_LEVEL', saved.raw]] as const) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+  })
+
+  it('docker-compose.yml passes the same log settings to the openwa service', () => {
+    const compose = fs.readFileSync(path.join(__dirname, '../../../docker-compose.yml'), 'utf8')
+    const openwa = compose.slice(compose.indexOf('\n  openwa:\n'), compose.indexOf('\n  openwa-key:\n'))
+    expect(openwa).toMatch(/LOG_LEVEL: \$\{OPENWA_LOG_LEVEL:-info\}/)
+    expect(openwa).toMatch(/LOG_FORMAT: \$\{OPENWA_LOG_FORMAT:-json\}/)
+  })
+
   it('docker-compose.yml turns it on for the openwa service too', () => {
     const compose = fs.readFileSync(path.join(__dirname, '../../../docker-compose.yml'), 'utf8')
     const openwa = compose.slice(compose.indexOf('\n  openwa:\n'), compose.indexOf('\n  openwa-key:\n'))
